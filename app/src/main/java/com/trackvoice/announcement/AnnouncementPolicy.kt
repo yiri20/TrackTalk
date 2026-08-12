@@ -37,7 +37,7 @@ object AnnouncementPolicy {
         val appGuideSettings = appSettings?.takeIf { it.useCustomGuideSettings }
         val collection = PlaybackCollectionResolver.resolve(event)
         val configuredMode = appGuideSettings?.mode ?: userSettings.defaultMode
-        val mode = if (configuredMode == AnnouncementMode.SMART) {
+        val mode = if (configuredMode == AnnouncementMode.SMART || appGuideSettings != null) {
             when (collection) {
                 PlaybackCollection.ALBUM -> userSettings.albumMode
                 PlaybackCollection.PLAYLIST -> userSettings.playlistMode

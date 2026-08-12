@@ -231,8 +231,12 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
         t("안내 탭의 기본 설정을 사용합니다.", "Uses the defaults from Guide.")
     }
     val appOverrideDetails: String get() = t("앱별 안내 예외", "App-specific overrides")
-    val appReadMode: String get() = t("이 앱의 읽기 방식", "Reading mode for this app")
     val appAnnouncementTiming: String get() = t("이 앱의 안내 시점", "Timing for this app")
+    val appReadItems: String get() = t("읽을 항목", "Items to read")
+    val appReadItemsSummary: String get() = t(
+        "이 앱에서 재생 중인 콘텐츠 중 안내할 항목을 선택합니다. 앨범·재생목록·랜덤 재생 형식은 안내 탭 설정을 따릅니다.",
+        "Choose the metadata to announce for this app. Album, playlist, and algorithmic or shuffle formats follow the Guide settings.",
+    )
     val appReadTitle: String get() = t("제목", "Title")
     val appReadArtist: String get() = t("아티스트", "Artist")
     val appReadTrackNumber: String get() = t("트랙 번호", "Track number")

@@ -13,7 +13,7 @@ import org.junit.Test
 
 class AnnouncementPolicyTest {
     @Test
-    fun appSettingTakesPriorityOverGlobalMode() {
+    fun appChecklistTakesPriorityOverLegacyAppMode() {
         val decision = AnnouncementPolicy.decide(
             event = event(),
             userSettings = UserSettings(defaultMode = AnnouncementMode.TITLE_ONLY, suppressDuringSpeakerPlayback = false),
@@ -22,11 +22,13 @@ class AnnouncementPolicyTest {
                 "YouTube Music",
                 useCustomGuideSettings = true,
                 mode = AnnouncementMode.TITLE_AND_ARTIST,
+                readArtist = false,
+                readCollection = false,
             ),
             externalAudioOutput = true,
         )
         assertTrue(decision.shouldAnnounce)
-        assertEquals("Glass Eyes, Radiohead.", decision.text)
+        assertEquals("앨범 A Moon Shaped Pool, 트랙 3번, Glass Eyes.", decision.text)
     }
 
     @Test

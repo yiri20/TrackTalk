@@ -1143,9 +1143,6 @@ private fun AppSettingsCard(
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
                 )
-                OptionDropdown(strings.appReadMode, app.mode, AnnouncementMode.values().toList(), strings::announcementMode) {
-                    onUpdate(app.copy(mode = it))
-                }
                 OptionDropdown(
                     strings.appAnnouncementTiming,
                     app.timing,
@@ -1153,14 +1150,31 @@ private fun AppSettingsCard(
                     { it?.let(strings::announcementTiming) ?: strings.text("기본 설정 사용", "Use default") },
                 ) { onUpdate(app.copy(timing = it)) }
                 HorizontalDivider()
-                CheckRow(strings.appReadTitle, app.readTitle) { onUpdate(app.copy(readTitle = it)) }
-                CheckRow(strings.appReadArtist, app.readArtist) { onUpdate(app.copy(readArtist = it)) }
-                CheckRow(strings.appReadTrackNumber, app.readTrackNumber) { onUpdate(app.copy(readTrackNumber = it)) }
-                CheckRow(strings.appReadAlbum, app.readAlbum) { onUpdate(app.copy(readAlbum = it)) }
-                CheckRow(strings.appReadCollection, app.readCollection) { onUpdate(app.copy(readCollection = it)) }
+                AppReadChecklist(app = app, onUpdate = onUpdate)
             }
         }
     }
+}
+
+@Composable
+private fun AppReadChecklist(
+    app: AppSettings,
+    onUpdate: (AppSettings) -> Unit,
+) {
+    val strings = LocalTrackTalkStrings.current
+    val availableFields = listOf(
+        AnnouncementReadField.TITLE,
+        AnnouncementReadField.ARTIST,
+        AnnouncementReadField.TRACK_NUMBER,
+        AnnouncementReadField.ALBUM,
+        AnnouncementReadField.COLLECTION,
+    )
+    ContentReadChecklist(
+        title = strings.appReadItems,
+        hint = strings.appReadItemsSummary,
+        availableFields = availableFields,
+        selectedFields = app.toReadFields(),
+    ) { fields -> onUpdate(app.withReadFields(fields)) }
 }
 
 @Composable
@@ -1394,6 +1408,7 @@ private fun BasicPlaybackDefaults(musicDuckPercent: Int) {
 @Composable
 private fun ContentReadChecklist(
     title: String,
+    hint: String? = null,
     availableFields: List<AnnouncementReadField>,
     selectedFields: Set<AnnouncementReadField>,
     onUpdate: (Set<AnnouncementReadField>) -> Unit,
@@ -1402,7 +1417,7 @@ private fun ContentReadChecklist(
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         Text(
-            strings.contentReadChecklistHint,
+            hint ?: strings.contentReadChecklistHint,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -1413,6 +1428,25 @@ private fun ContentReadChecklist(
         }
     }
 }
+
+private fun AppSettings.toReadFields(): Set<AnnouncementReadField> = buildSet {
+    if (readTitle) add(AnnouncementReadField.TITLE)
+    if (readArtist) add(AnnouncementReadField.ARTIST)
+    if (readTrackNumber) add(AnnouncementReadField.TRACK_NUMBER)
+    if (readAlbum) add(AnnouncementReadField.ALBUM)
+    if (readCollection) add(AnnouncementReadField.COLLECTION)
+}
+
+private fun AppSettings.withReadFields(fields: Set<AnnouncementReadField>): AppSettings = copy(
+    // The checklist is the source of truth. SMART lets the Guide choose the
+    // album, playlist, or algorithmic format from the current media context.
+    mode = AnnouncementMode.SMART,
+    readTitle = AnnouncementReadField.TITLE in fields,
+    readArtist = AnnouncementReadField.ARTIST in fields,
+    readTrackNumber = AnnouncementReadField.TRACK_NUMBER in fields,
+    readAlbum = AnnouncementReadField.ALBUM in fields,
+    readCollection = AnnouncementReadField.COLLECTION in fields,
+)
 
 private fun AnnouncementMode.toReadFields(defaultFields: Set<AnnouncementReadField>): Set<AnnouncementReadField> = when (this) {
     AnnouncementMode.ALBUM -> setOf(
