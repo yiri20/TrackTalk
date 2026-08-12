@@ -105,6 +105,8 @@ class DataStoreRepository(private val context: Context) {
             preferences.remove(AppKeys.readTitle(packageName))
             preferences.remove(AppKeys.readArtist(packageName))
             preferences.remove(AppKeys.readTrackNumber(packageName))
+            preferences.remove(AppKeys.readAlbum(packageName))
+            preferences.remove(AppKeys.readCollection(packageName))
             preferences.remove(AppKeys.timing(packageName))
             preferences.remove(AppKeys.alwaysExclude(packageName))
         }
@@ -126,6 +128,8 @@ class DataStoreRepository(private val context: Context) {
         val defaultMode = stringPreferencesKey("default_mode")
         val allowRepeatAnnouncements = booleanPreferencesKey("allow_repeat")
         val minimumPlaybackSeconds = intPreferencesKey("minimum_playback_seconds")
+        val albumMode = stringPreferencesKey("album_mode")
+        val playlistMode = stringPreferencesKey("playlist_mode")
         val voiceLanguage = stringPreferencesKey("voice_language")
         val voiceName = stringPreferencesKey("voice_name")
         val genderFilter = stringPreferencesKey("gender_filter")
@@ -145,6 +149,8 @@ class DataStoreRepository(private val context: Context) {
         fun readTitle(packageName: String) = appBooleanKey(packageName, "read_title")
         fun readArtist(packageName: String) = appBooleanKey(packageName, "read_artist")
         fun readTrackNumber(packageName: String) = appBooleanKey(packageName, "read_track_number")
+        fun readAlbum(packageName: String) = appBooleanKey(packageName, "read_album")
+        fun readCollection(packageName: String) = appBooleanKey(packageName, "read_collection")
         fun timing(packageName: String) = appKey(packageName, "timing")
         fun alwaysExclude(packageName: String) = appBooleanKey(packageName, "always_exclude")
     }
@@ -156,8 +162,8 @@ class DataStoreRepository(private val context: Context) {
         headphonesOnly = this[Keys.headphonesOnly] ?: false,
         bluetoothOnlyForAutoEnable = this[Keys.bluetoothOnlyForAutoEnable] ?: false,
         suppressDuringSpeakerPlayback = this[Keys.suppressDuringSpeakerPlayback] ?: true,
-        musicTreatment = this[Keys.musicTreatment]?.let { enumOrDefault(it, MusicTreatment.PAUSE) }
-            ?: if (this[Keys.pauseMusicDuringAnnouncement] ?: true) MusicTreatment.PAUSE else MusicTreatment.DUCK,
+        musicTreatment = this[Keys.musicTreatment]?.let { enumOrDefault(it, MusicTreatment.DUCK) }
+            ?: if (this[Keys.pauseMusicDuringAnnouncement] ?: false) MusicTreatment.PAUSE else MusicTreatment.DUCK,
         trackStartBehavior = enumOrDefault(this[Keys.trackStartBehavior], TrackStartBehavior.PLAY_IMMEDIATELY),
         showStatusNotification = this[Keys.showStatusNotification] ?: true,
         timing = enumOrDefault(this[Keys.timing], AnnouncementTiming.IMMEDIATE),
@@ -165,13 +171,15 @@ class DataStoreRepository(private val context: Context) {
         defaultMode = enumOrDefault(this[Keys.defaultMode], AnnouncementMode.SMART),
         allowRepeatAnnouncements = this[Keys.allowRepeatAnnouncements] ?: false,
         minimumPlaybackSeconds = (this[Keys.minimumPlaybackSeconds] ?: 0).coerceIn(0, 120),
+        albumMode = enumOrDefault(this[Keys.albumMode], AnnouncementMode.ALBUM),
+        playlistMode = enumOrDefault(this[Keys.playlistMode], AnnouncementMode.PLAYLIST),
          voiceLanguage = enumOrDefault(this[Keys.voiceLanguage], VoiceLanguage.AUTO),
         voiceName = this[Keys.voiceName],
         genderFilter = enumOrDefault(this[Keys.genderFilter], GenderFilter.ANY),
         speechRate = (this[Keys.speechRate] ?: 1f).coerceIn(0.5f, 2f),
         pitch = (this[Keys.pitch] ?: 1f).coerceIn(0.5f, 2f),
         volume = (this[Keys.volume] ?: 1f).coerceIn(0f, 1f),
-        raiseDeviceVolume = this[Keys.raiseDeviceVolume] ?: true,
+        raiseDeviceVolume = this[Keys.raiseDeviceVolume] ?: false,
         deviceVolumePercent = (this[Keys.deviceVolumePercent] ?: 90).coerceIn(10, 100),
     )
 
@@ -196,6 +204,8 @@ class DataStoreRepository(private val context: Context) {
                 readTitle = this[AppKeys.readTitle(packageName)] ?: true,
                 readArtist = this[AppKeys.readArtist(packageName)] ?: true,
                 readTrackNumber = this[AppKeys.readTrackNumber(packageName)] ?: true,
+                readAlbum = this[AppKeys.readAlbum(packageName)] ?: true,
+                readCollection = this[AppKeys.readCollection(packageName)] ?: true,
                 timing = nullableEnum<AnnouncementTiming>(this[AppKeys.timing(packageName)]),
                 alwaysExclude = this[AppKeys.alwaysExclude(packageName)] ?: false,
             )
@@ -216,6 +226,8 @@ class DataStoreRepository(private val context: Context) {
         this[Keys.defaultMode] = settings.defaultMode.name
         this[Keys.allowRepeatAnnouncements] = settings.allowRepeatAnnouncements
         this[Keys.minimumPlaybackSeconds] = settings.minimumPlaybackSeconds.coerceIn(0, 120)
+        this[Keys.albumMode] = settings.albumMode.name
+        this[Keys.playlistMode] = settings.playlistMode.name
         this[Keys.voiceLanguage] = settings.voiceLanguage.name
         if (settings.voiceName == null) remove(Keys.voiceName) else this[Keys.voiceName] = settings.voiceName
         this[Keys.genderFilter] = settings.genderFilter.name
@@ -233,6 +245,8 @@ class DataStoreRepository(private val context: Context) {
         this[AppKeys.readTitle(settings.packageName)] = settings.readTitle
         this[AppKeys.readArtist(settings.packageName)] = settings.readArtist
         this[AppKeys.readTrackNumber(settings.packageName)] = settings.readTrackNumber
+        this[AppKeys.readAlbum(settings.packageName)] = settings.readAlbum
+        this[AppKeys.readCollection(settings.packageName)] = settings.readCollection
         if (settings.timing == null) remove(AppKeys.timing(settings.packageName))
         else this[AppKeys.timing(settings.packageName)] = settings.timing.name
         this[AppKeys.alwaysExclude(settings.packageName)] = settings.alwaysExclude

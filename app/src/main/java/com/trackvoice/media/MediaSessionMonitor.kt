@@ -82,8 +82,8 @@ class MediaSessionMonitor(
         val tracked = sessions[token.sessionKey] ?: return
         val event = mapper.map(tracked.controller)
         if (TrackFingerprint.stable(event) != token.fingerprint || event.isPlaying) return
-        if (event.playbackState != PlaybackStatus.PAUSED && event.playbackState != PlaybackStatus.BUFFERING) return
         runCatching { tracked.controller.transportControls.play() }
+        retryResume(token, 180L)
     }
 
     fun toggleSelectedPlayback(): Boolean? {
@@ -97,6 +97,13 @@ class MediaSessionMonitor(
 
             event.hasTitle -> runCatching {
                 tracked.controller.transportControls.play()
+                retryResume(
+                    PlaybackPauseToken(
+                        sessionKey = sessionKey(tracked.controller),
+                        fingerprint = TrackFingerprint.stable(event),
+                    ),
+                    180L,
+                )
                 true
             }.getOrNull()
 
@@ -210,6 +217,16 @@ class MediaSessionMonitor(
     private fun selectedTrackedSession(): TrackedSession? =
         selectedSessionKey?.let(sessions::get)
             ?: sessions.values.maxByOrNull { it.lastObservedAt }
+
+    private fun retryResume(token: PlaybackPauseToken, delayMs: Long) {
+        handler.postDelayed({
+            val tracked = sessions[token.sessionKey] ?: return@postDelayed
+            val event = mapper.map(tracked.controller)
+            if (TrackFingerprint.stable(event) != token.fingerprint || event.isPlaying) return@postDelayed
+            runCatching { tracked.controller.transportControls.play() }
+            if (delayMs < 700L) retryResume(token, delayMs * 2)
+        }, delayMs)
+    }
 
     private fun resolveAppName(packageName: String): String = runCatching {
         appContext.packageManager.getApplicationLabel(

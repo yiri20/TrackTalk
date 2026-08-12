@@ -137,4 +137,37 @@ class TrackMetadataMapperInstrumentedTest {
         assertEquals("Queue Artist", event.artist)
         assertEquals("queue-track-7", event.mediaId)
     }
+
+    @Test
+    fun mapsQueueTitleAndActiveQueuePosition() {
+        session.setQueueTitle("Morning playlist")
+        session.setPlaybackState(
+            PlaybackState.Builder()
+                .setState(PlaybackState.STATE_PLAYING, 0L, 1f)
+                .setActiveQueueItemId(2L)
+                .build(),
+        )
+        session.setQueue(
+            listOf(
+                MediaSession.QueueItem(
+                    MediaDescription.Builder().setMediaId("first").setTitle("First").build(),
+                    1L,
+                ),
+                MediaSession.QueueItem(
+                    MediaDescription.Builder().setMediaId("second").setTitle("Second").build(),
+                    2L,
+                ),
+                MediaSession.QueueItem(
+                    MediaDescription.Builder().setMediaId("third").setTitle("Third").build(),
+                    3L,
+                ),
+            ),
+        )
+
+        val controller = MediaController(context, session.sessionToken)
+        val event = TrackMetadataMapper { "Test Music" }.map(controller, observedAt = 999L)
+
+        assertEquals("Morning playlist", event.queueTitle)
+        assertEquals(1, event.activeQueuePosition)
+    }
 }

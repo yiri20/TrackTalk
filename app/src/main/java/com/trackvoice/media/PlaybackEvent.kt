@@ -1,5 +1,7 @@
 package com.trackvoice.media
 
+import java.util.Locale
+
 enum class PlaybackStatus {
     PLAYING,
     PAUSED,
@@ -30,9 +32,41 @@ data class PlaybackEvent(
     val playbackPosition: Long?,
     val queue: List<QueueItemSnapshot> = emptyList(),
     val observedAt: Long,
+    val queueTitle: String? = null,
+    val activeQueuePosition: Int? = null,
 ) {
     val hasTitle: Boolean get() = !title.isNullOrBlank()
     val isPlaying: Boolean get() = playbackState == PlaybackStatus.PLAYING
+}
+
+enum class PlaybackCollection {
+    ALBUM,
+    PLAYLIST,
+    UNKNOWN,
+}
+
+object PlaybackCollectionResolver {
+    fun resolve(event: PlaybackEvent): PlaybackCollection {
+        val queueTitle = event.queueTitle.orEmpty().lowercase(Locale.ROOT)
+        when {
+            queueTitle.containsAny("playlist", "재생목록", "믹스", "mix", "radio", "라디오", "queue") -> {
+                return PlaybackCollection.PLAYLIST
+            }
+            queueTitle.containsAny("album", "앨범") -> return PlaybackCollection.ALBUM
+        }
+
+        if (event.album != null && event.trackNumber != null && event.totalTracks != null) {
+            return PlaybackCollection.ALBUM
+        }
+
+        val queueLooksLikeAlbum = event.totalTracks != null &&
+            event.queue.size in 2..(event.totalTracks + 1)
+        if (event.queue.size > 1 && !queueLooksLikeAlbum) return PlaybackCollection.PLAYLIST
+        return PlaybackCollection.UNKNOWN
+    }
+
+    private fun String.containsAny(vararg candidates: String): Boolean =
+        candidates.any(::contains)
 }
 
 data class SessionSnapshot(

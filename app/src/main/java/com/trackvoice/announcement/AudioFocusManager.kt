@@ -11,6 +11,8 @@ class AudioFocusManager(context: Context) {
     private var focusRequest: AudioFocusRequest? = null
 
     fun request(duck: Boolean): Boolean {
+        // Replace an existing request cleanly when a new TTS batch starts.
+        abandon()
         val request = AudioFocusRequest.Builder(
             if (duck) AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
             else AudioManager.AUDIOFOCUS_GAIN_TRANSIENT,

@@ -26,12 +26,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Pause
@@ -55,6 +58,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -84,7 +88,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.core.graphics.drawable.toBitmap
 import androidx.core.content.ContextCompat
@@ -107,7 +110,9 @@ import com.trackvoice.data.AudioDeviceSettings
 import com.trackvoice.announcement.ConnectedAudioDevice
 import com.trackvoice.media.PlaybackEvent
 import com.trackvoice.media.PlaybackStatus
+import com.trackvoice.media.PlaybackCollection
 import com.trackvoice.monetization.PremiumState
+import com.trackvoice.monetization.forPremiumEntitlement
 import com.trackvoice.monetization.promoCodeRedeemUrl
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -134,6 +139,7 @@ fun TrackVoiceApp(viewModel: TrackVoiceViewModel, activity: Activity) {
     val connectedDevices by viewModel.connectedAudioDevices.collectAsStateWithLifecycle()
     val deviceSettings by viewModel.audioDeviceSettings.collectAsStateWithLifecycle()
     val premiumState by viewModel.premiumState.collectAsStateWithLifecycle()
+    val effectiveSettings = settings.forPremiumEntitlement(premiumState.isPremium)
     var selectedSectionName by rememberSaveable { mutableStateOf(AppSection.HOME.name) }
     var showPremiumDialog by rememberSaveable { mutableStateOf(false) }
     val selectedSection = AppSection.valueOf(selectedSectionName)
@@ -184,16 +190,16 @@ fun TrackVoiceApp(viewModel: TrackVoiceViewModel, activity: Activity) {
         SurfaceContent(padding) {
             when (selectedSection) {
                 AppSection.HOME -> HomeScreen(
-                    settings = settings,
+                    settings = effectiveSettings,
                     mediaEvent = mediaState.currentEvent,
                     currentMode = mediaState.currentMode,
+                    currentCollection = mediaState.currentCollection,
                     lastDetectedAt = mediaState.lastDetectedAt,
                     effectiveEnabled = mediaState.effectiveEnabled,
                     notificationAccess = diagnostics.notificationListenerConnected,
                     notificationPermissionGranted = notificationPermissionGranted,
                     premiumState = premiumState,
                     onToggle = viewModel.controller::setEnabled,
-                    onTest = viewModel.controller::speakTest,
                     onTogglePlayback = { viewModel.controller.togglePlayback() },
                     onOpenPermission = {
                         context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
@@ -208,7 +214,7 @@ fun TrackVoiceApp(viewModel: TrackVoiceViewModel, activity: Activity) {
                 )
 
                 AppSection.GENERAL -> GeneralSettingsScreen(
-                    settings = settings,
+                    settings = effectiveSettings,
                     connectedDevices = connectedDevices,
                     deviceSettings = deviceSettings,
                     isPremium = premiumState.isPremium,
@@ -219,12 +225,14 @@ fun TrackVoiceApp(viewModel: TrackVoiceViewModel, activity: Activity) {
 
                 AppSection.APPS -> AppSettingsScreen(
                     apps = appSettings.values.sortedBy { it.appName.lowercase(Locale.getDefault()) },
+                    isPremium = premiumState.isPremium,
                     onUpdate = viewModel.controller::updateAppSettings,
                     onRefresh = viewModel.controller::refreshSupportedMediaApps,
+                    onOpenPremium = { showPremiumDialog = true },
                 )
 
                 AppSection.VOICE -> VoiceSettingsScreen(
-                    settings = settings,
+                    settings = effectiveSettings,
                     voices = voices,
                     ttsStatus = diagnostics.ttsState,
                     isPremium = premiumState.isPremium,
@@ -281,13 +289,13 @@ private fun HomeScreen(
     settings: UserSettings,
     mediaEvent: PlaybackEvent?,
     currentMode: AnnouncementMode,
+    currentCollection: PlaybackCollection,
     lastDetectedAt: Long?,
     effectiveEnabled: Boolean,
     notificationAccess: Boolean,
     notificationPermissionGranted: Boolean,
     premiumState: PremiumState,
     onToggle: (Boolean) -> Unit,
-    onTest: () -> Unit,
     onTogglePlayback: () -> Unit,
     onOpenPermission: () -> Unit,
     onRequestNotificationPermission: () -> Unit,
@@ -317,32 +325,10 @@ private fun HomeScreen(
             }
         }
         item {
-            CurrentTrackCard(mediaEvent, currentMode, lastDetectedAt, onTogglePlayback)
+            CurrentTrackCard(mediaEvent, currentMode, currentCollection, lastDetectedAt, onTogglePlayback)
         }
         item {
             PremiumCard(premiumState, onOpenPremium)
-        }
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = TrackVoiceCardShape,
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-            ) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("음성 테스트", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text(
-                        "현재 설정으로 안내 음성을 확인합니다.",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Button(onClick = onTest) {
-                        Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("테스트 재생")
-                    }
-                }
-            }
         }
         item {
             Card(
@@ -609,6 +595,7 @@ private fun PermissionCard(onOpenPermission: () -> Unit) {
 private fun CurrentTrackCard(
     event: PlaybackEvent?,
     mode: AnnouncementMode,
+    collection: PlaybackCollection,
     lastDetectedAt: Long?,
     onTogglePlayback: () -> Unit,
 ) {
@@ -629,7 +616,12 @@ private fun CurrentTrackCard(
                 TrackField("곡", event.title ?: "제목 없음")
                 TrackField("아티스트", event.artist ?: "아티스트 없음")
                 TrackField("앨범", event.album ?: "앨범 없음")
-                AssistChip(onClick = {}, label = { Text("${mode.label} · ${event.playbackState.label()}") })
+                if (!event.queueTitle.isNullOrBlank()) TrackField("재생목록", event.queueTitle.orEmpty())
+                if (event.trackNumber != null) TrackField("트랙", "${event.trackNumber}번${event.totalTracks?.let { " / $it" } ?: ""}")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AssistChip(onClick = {}, label = { Text(collection.label()) })
+                    AssistChip(onClick = {}, label = { Text("${mode.label} · ${event.playbackState.label()}") })
+                }
                 OutlinedButton(onClick = onTogglePlayback, modifier = Modifier.fillMaxWidth()) {
                     Icon(
                         if (event.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
@@ -713,29 +705,79 @@ private fun GeneralSettingsScreen(
         }
         item {
             SettingCard("곡 안내") {
-                OptionDropdown("재생 시작", settings.trackStartBehavior, TrackStartBehavior.values().toList(), { it.label }) { value ->
-                    onUpdate { it.copy(trackStartBehavior = value) }
+                if (isPremium) {
+                    OptionDropdown("재생 시작", settings.trackStartBehavior, TrackStartBehavior.values().toList(), { it.label }) { value ->
+                        onUpdate { current ->
+                            current.copy(
+                                trackStartBehavior = value,
+                                musicTreatment = if (value == TrackStartBehavior.PLAY_IMMEDIATELY && current.musicTreatment == MusicTreatment.PAUSE) {
+                                    MusicTreatment.DUCK
+                                } else current.musicTreatment,
+                            )
+                        }
+                    }
+                    val treatmentOptions = if (settings.trackStartBehavior == TrackStartBehavior.PLAY_IMMEDIATELY) {
+                        listOf(MusicTreatment.KEEP, MusicTreatment.DUCK)
+                    } else {
+                        MusicTreatment.values().toList()
+                    }
+                    OptionDropdown("안내 중 음악", settings.musicTreatment, treatmentOptions, { it.label }) { value ->
+                        onUpdate { it.copy(musicTreatment = value) }
+                    }
+                    Text(
+                        "음성 음량은 음성 탭에서 따로 조절하고, 음악은 그대로·줄이기·일시정지로 제어합니다.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OptionDropdown("안내 시점", settings.timing, AnnouncementTiming.values().toList(), { it.label }) { selectedTiming ->
+                        onUpdate { current -> current.copy(timing = selectedTiming) }
+                    }
+                    OptionDropdown("읽을 내용", settings.defaultMode, AnnouncementMode.values().toList(), { it.label }) { selectedMode ->
+                        onUpdate { current -> current.copy(defaultMode = selectedMode) }
+                    }
+                    SliderSetting("안내 지연", settings.delaySeconds.toFloat(), 0f..2f, "${settings.delaySeconds}초") { value ->
+                        onUpdate { it.copy(delaySeconds = value.toInt()) }
+                    }
+                    SliderSetting(
+                        "최소 재생 시간",
+                        settings.minimumPlaybackSeconds.toFloat(),
+                        0f..60f,
+                        "${settings.minimumPlaybackSeconds}초",
+                    ) { value -> onUpdate { it.copy(minimumPlaybackSeconds = value.toInt()) } }
+                    SettingSwitchRow("같은 곡 다시 안내", "기본값은 같은 곡을 한 번만 안내합니다.", settings.allowRepeatAnnouncements) { enabled ->
+                        onUpdate { current -> current.copy(allowRepeatAnnouncements = enabled) }
+                    }
+                } else {
+                    BasicPlaybackDefaults()
+                    PremiumLockedContent(
+                        title = "안내 방식 세부 설정은 Plus 기능입니다.",
+                        summary = "무료 버전은 새 트랙을 바로 안내하고 음악을 적당히 줄입니다.",
+                        onOpenPremium = onOpenPremium,
+                    )
                 }
-                OptionDropdown("안내 중 음악", settings.musicTreatment, MusicTreatment.values().toList(), { it.label }) { value ->
-                    onUpdate { it.copy(musicTreatment = value) }
-                }
-                OptionDropdown("안내 시점", settings.timing, AnnouncementTiming.values().toList(), { it.label }) { selectedTiming ->
-                    onUpdate { current -> current.copy(timing = selectedTiming) }
-                }
-                OptionDropdown("읽을 내용", settings.defaultMode, AnnouncementMode.values().toList(), { it.label }) { selectedMode ->
-                    onUpdate { current -> current.copy(defaultMode = selectedMode) }
-                }
-                SliderSetting("안내 지연", settings.delaySeconds.toFloat(), 0f..2f, "${settings.delaySeconds}초") { value ->
-                    onUpdate { it.copy(delaySeconds = value.toInt()) }
-                }
-                SliderSetting(
-                    "최소 재생 시간",
-                    settings.minimumPlaybackSeconds.toFloat(),
-                    0f..60f,
-                    "${settings.minimumPlaybackSeconds}초",
-                ) { value -> onUpdate { it.copy(minimumPlaybackSeconds = value.toInt()) } }
-                SettingSwitchRow("같은 곡 다시 안내", "기본값은 같은 곡을 한 번만 안내합니다.", settings.allowRepeatAnnouncements) { enabled ->
-                    onUpdate { current -> current.copy(allowRepeatAnnouncements = enabled) }
+            }
+        }
+        item {
+            SettingCard("앨범·재생목록 읽기") {
+                Text(
+                    "MediaSession의 queue 제목과 트랙 metadata를 함께 분석해 콘텐츠 유형별로 다르게 읽습니다.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (isPremium) {
+                    OptionDropdown("앨범 재생", settings.albumMode, AnnouncementMode.values().toList(), { it.label }) { mode ->
+                        onUpdate { it.copy(albumMode = mode) }
+                    }
+                    OptionDropdown("재생목록 재생", settings.playlistMode, AnnouncementMode.values().toList(), { it.label }) { mode ->
+                        onUpdate { it.copy(playlistMode = mode) }
+                    }
+                } else {
+                    Text("무료 기본값: 앨범은 앨범·트랙·아티스트, 재생목록은 재생목록·곡·아티스트를 안내합니다.")
+                    PremiumLockedContent(
+                        title = "콘텐츠별 읽기 방식 변경은 Plus 기능입니다.",
+                        summary = "앨범과 재생목록의 안내 문장을 각각 선택할 수 있습니다.",
+                        onOpenPremium = onOpenPremium,
+                    )
                 }
             }
         }
@@ -770,11 +812,19 @@ private fun GeneralSettingsScreen(
 @Composable
 private fun AppSettingsScreen(
     apps: List<AppSettings>,
+    isPremium: Boolean,
     onUpdate: (AppSettings) -> Unit,
     onRefresh: () -> Unit,
+    onOpenPremium: () -> Unit,
 ) {
+    var selectedCategoryNames by rememberSaveable {
+        mutableStateOf(AppCategory.values().map { it.name })
+    }
     val appsByCategory = remember(apps) {
         apps.groupBy { app -> categorizeApp(app.packageName, app.appName) }
+    }
+    val visibleAppCount = selectedCategoryNames.sumOf { name ->
+        appsByCategory[AppCategory.valueOf(name)].orEmpty().size
     }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -806,12 +856,42 @@ private fun AppSettingsScreen(
         }
         if (apps.isNotEmpty()) {
             item {
-                Text(
-                    "${apps.size}개 앱이 ${appsByCategory.size}개 카테고리로 정리되어 있습니다.",
-                    modifier = Modifier.padding(horizontal = 4.dp),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "표시할 카테고리",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        AppCategory.values().forEach { category ->
+                            val selected = category.name in selectedCategoryNames
+                            FilterChip(
+                                selected = selected,
+                                onClick = {
+                                    selectedCategoryNames = if (selected) {
+                                        selectedCategoryNames - category.name
+                                    } else {
+                                        selectedCategoryNames + category.name
+                                    }
+                                },
+                                label = { Text(category.title) },
+                                leadingIcon = if (selected) {
+                                    { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                                } else null,
+                            )
+                        }
+                    }
+                    Text(
+                        "${visibleAppCount}개 앱 표시 · ${selectedCategoryNames.size}개 카테고리 선택",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
         if (apps.isEmpty()) {
@@ -821,10 +901,17 @@ private fun AppSettingsScreen(
                     Text("앱이 미디어 세션을 만들면 자동으로 추가됩니다.", style = MaterialTheme.typography.bodySmall)
                 }
             }
+        } else if (visibleAppCount == 0) {
+            item {
+                Text(
+                    "선택한 카테고리가 없습니다. 위에서 하나 이상 선택하세요.",
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                )
+            }
         } else {
             AppCategory.values().forEach { category ->
                 val categoryApps = appsByCategory[category].orEmpty()
-                if (categoryApps.isNotEmpty()) {
+                if (category.name in selectedCategoryNames && categoryApps.isNotEmpty()) {
                     item(key = "category-${category.name}") {
                         AppCategoryHeader(category, categoryApps.size)
                     }
@@ -832,7 +919,7 @@ private fun AppSettingsScreen(
                         items = categoryApps,
                         key = { app -> "app-${app.packageName}" },
                     ) { app ->
-                        AppSettingsCard(app, onUpdate)
+                        AppSettingsCard(app, isPremium, onUpdate, onOpenPremium)
                     }
                 }
             }
@@ -884,7 +971,12 @@ private fun AppCategory.icon() = when (this) {
 }
 
 @Composable
-private fun AppSettingsCard(app: AppSettings, onUpdate: (AppSettings) -> Unit) {
+private fun AppSettingsCard(
+    app: AppSettings,
+    isPremium: Boolean,
+    onUpdate: (AppSettings) -> Unit,
+    onOpenPremium: () -> Unit,
+) {
     var expanded by rememberSaveable(app.packageName) { mutableStateOf(false) }
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -917,10 +1009,18 @@ private fun AppSettingsCard(app: AppSettings, onUpdate: (AppSettings) -> Unit) {
                     onCheckedChange = { onUpdate(app.copy(enabled = it, alwaysExclude = false)) },
                 )
             }
-            TextButton(onClick = { expanded = !expanded }) {
-                Text(if (expanded) "세부 설정 접기" else "세부 설정")
+            if (isPremium) {
+                TextButton(onClick = { expanded = !expanded }) {
+                    Text(if (expanded) "세부 설정 접기" else "세부 설정")
+                }
+            } else {
+                PremiumLockedContent(
+                    title = "앱별 세부 설정은 Plus 기능입니다.",
+                    summary = "무료 버전은 기본 Smart 안내를 사용합니다.",
+                    onOpenPremium = onOpenPremium,
+                )
             }
-                if (expanded) {
+            if (expanded && isPremium) {
                 OptionDropdown("읽을 내용", app.mode, AnnouncementMode.values().toList(), { it.label }) {
                     onUpdate(app.copy(mode = it))
                 }
@@ -934,6 +1034,8 @@ private fun AppSettingsCard(app: AppSettings, onUpdate: (AppSettings) -> Unit) {
                 CheckRow("제목", app.readTitle) { onUpdate(app.copy(readTitle = it)) }
                 CheckRow("아티스트", app.readArtist) { onUpdate(app.copy(readArtist = it)) }
                 CheckRow("트랙 번호", app.readTrackNumber) { onUpdate(app.copy(readTrackNumber = it)) }
+                CheckRow("앨범", app.readAlbum) { onUpdate(app.copy(readAlbum = it)) }
+                CheckRow("앨범·재생목록 이름", app.readCollection) { onUpdate(app.copy(readCollection = it)) }
                 CheckRow("이 앱은 항상 제외", app.alwaysExclude) {
                     onUpdate(
                         app.copy(
@@ -1042,24 +1144,18 @@ private fun VoiceSettingsScreen(
                     SliderSetting("높이", settings.pitch, 0.5f..2f, "${"%.1f".format(Locale.getDefault(), settings.pitch)}x") { value ->
                         onUpdate { current -> current.copy(pitch = value) }
                     }
-                    SliderSetting("음량", settings.volume, 0f..1f, "${(settings.volume * 100).toInt()}%") { value ->
+                    SliderSetting("음성 음량 · 음악과 별도", settings.volume, 0f..1f, "${(settings.volume * 100).toInt()}%") { value ->
                         onUpdate { current -> current.copy(volume = value) }
                     }
-                    SettingSwitchRow("기기 음량 올리기", "안내 중에만 미디어 음량을 올리고 복원합니다.", settings.raiseDeviceVolume) { enabled ->
-                        onUpdate { it.copy(raiseDeviceVolume = enabled) }
-                    }
-                    if (settings.raiseDeviceVolume) {
-                        SliderSetting(
-                            "안내 시 기기 음량",
-                            settings.deviceVolumePercent.toFloat(),
-                            50f..100f,
-                            "${settings.deviceVolumePercent}%",
-                        ) { value -> onUpdate { it.copy(deviceVolumePercent = value.toInt()) } }
-                    }
+                    Text(
+                        "음악 음량은 안내 중 음악 옵션에서 줄이기/그대로/일시정지를 선택합니다. Android의 공용 미디어 음량을 임의로 바꾸지 않습니다.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 } else {
                     PremiumLockedContent(
                         title = "음성 세밀 조절은 Plus 기능입니다.",
-                        summary = "말하기 속도·높이·음량과 안내 중 기기 음량을 직접 조절할 수 있습니다.",
+                        summary = "말하기 속도·높이·음량을 음악과 분리해 직접 조절할 수 있습니다.",
                         onOpenPremium = onOpenPremium,
                     )
                 }
@@ -1163,6 +1259,16 @@ private fun PremiumLockedContent(
             )
         }
         TextButton(onClick = onOpenPremium) { Text("Plus 보기") }
+    }
+}
+
+@Composable
+private fun BasicPlaybackDefaults() {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("무료 기본값", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        Text("새 트랙이 시작되면 음악과 함께 음성 안내")
+        Text("안내 중에는 음악 음량을 자동으로 줄임")
+        Text("음성 음량은 음악과 분리된 기본 음량으로 출력")
     }
 }
 
@@ -1310,6 +1416,12 @@ private fun PlaybackStatus.label(): String = when (this) {
     PlaybackStatus.BUFFERING -> "버퍼링"
     PlaybackStatus.STOPPED -> "정지"
     PlaybackStatus.NONE -> "상태 없음"
+}
+
+private fun PlaybackCollection.label(): String = when (this) {
+    PlaybackCollection.ALBUM -> "앨범 재생"
+    PlaybackCollection.PLAYLIST -> "재생목록 재생"
+    PlaybackCollection.UNKNOWN -> "콘텐츠 유형 확인 중"
 }
 
 private fun formatTime(timestamp: Long): String = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(timestamp))

@@ -17,6 +17,10 @@ class TrackMetadataMapper(
         val activeQueueDescription = state?.activeQueueItemId
             ?.takeIf { it >= 0L }
             ?.let { queueId -> rawQueue.firstOrNull { it.queueId == queueId }?.description }
+        val activeQueuePosition = state?.activeQueueItemId
+            ?.takeIf { it >= 0L }
+            ?.let { queueId -> rawQueue.indexOfFirst { it.queueId == queueId } }
+            ?.takeIf { it >= 0 }
         return PlaybackEvent(
             sourcePackageName = controller.packageName,
             sourceAppName = appNameForPackage(controller.packageName),
@@ -36,6 +40,8 @@ class TrackMetadataMapper(
             playbackPosition = state?.position?.takeIf { it >= 0L },
             queue = queue,
             observedAt = observedAt,
+            queueTitle = controller.queueTitle?.toString().clean(),
+            activeQueuePosition = activeQueuePosition,
         )
     }
 

@@ -143,8 +143,14 @@ class TtsEngine(context: Context) : TextToSpeech.OnInitListener {
             }
 
             // QUEUE_FLUSH stops the old audio, but old progress callbacks can still
-            // arrive. Forget them before starting a new batch so an interrupted
-            // announcement cannot resume music or restore volume a second time.
+            // arrive. Complete interrupted batches first so the controller can
+            // abandon focus and resume a track that it paused for the old batch.
+            pendingResults.values.distinct().forEach { batch ->
+                if (!batch.completed) {
+                    batch.completed = true
+                    batch.callback(false, "이전 음성 안내가 중단되었습니다.")
+                }
+            }
             pendingResults.clear()
             engine.stop()
             val supportedLocales = engine.voices.orEmpty().map { it.locale }.toSet()

@@ -4,6 +4,8 @@ import com.trackvoice.data.AnnouncementMode
 import com.trackvoice.data.AppSettings
 import com.trackvoice.data.UserSettings
 import com.trackvoice.media.PlaybackEvent
+import com.trackvoice.media.PlaybackCollection
+import com.trackvoice.media.PlaybackCollectionResolver
 
 enum class AnnouncementSkipReason {
     DISABLED,
@@ -31,7 +33,16 @@ object AnnouncementPolicy {
         effectiveEnabled: Boolean = userSettings.enabled,
         externalAudioOutput: Boolean = true,
     ): AnnouncementDecision {
-        val mode = appSettings?.mode ?: userSettings.defaultMode
+        val configuredMode = appSettings?.mode ?: userSettings.defaultMode
+        val mode = if (configuredMode == AnnouncementMode.SMART) {
+            when (PlaybackCollectionResolver.resolve(event)) {
+                PlaybackCollection.ALBUM -> userSettings.albumMode
+                PlaybackCollection.PLAYLIST -> userSettings.playlistMode
+                PlaybackCollection.UNKNOWN -> AnnouncementMode.TITLE_AND_ARTIST
+            }
+        } else {
+            configuredMode
+        }
         val configuredDelayMs = if (userSettings.trackStartBehavior == com.trackvoice.data.TrackStartBehavior.ANNOUNCE_THEN_PLAY) {
             0L
         } else (appSettings?.timing ?: userSettings.timing).let {
@@ -65,7 +76,10 @@ object AnnouncementPolicy {
                 readTitle = appSettings?.readTitle ?: true,
                 readArtist = appSettings?.readArtist ?: true,
                 readTrackNumber = appSettings?.readTrackNumber ?: true,
+                readAlbum = appSettings?.readAlbum ?: true,
+                readCollection = appSettings?.readCollection ?: true,
             ),
+            collection = PlaybackCollectionResolver.resolve(event),
         )
         return if (text == null) {
             skipped(mode, delayMs, AnnouncementSkipReason.NO_TEXT)

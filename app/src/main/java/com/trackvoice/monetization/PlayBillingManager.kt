@@ -2,6 +2,7 @@ package com.trackvoice.monetization
 
 import android.app.Activity
 import android.content.Context
+import androidx.core.content.edit
 import com.android.billingclient.api.AcknowledgePurchaseParams
 import com.android.billingclient.api.BillingClient
 import com.android.billingclient.api.BillingClientStateListener
@@ -142,9 +143,9 @@ class PlayBillingManager(context: Context) : PurchasesUpdatedListener {
     fun redeemLocalPlusCode(rawCode: String): Boolean {
         if (!isLocalPlusPromoCode(rawCode)) return false
         localPlusUnlocked = true
-        localEntitlementPreferences.edit()
-            .putBoolean("local_plus_unlocked", true)
-            .apply()
+        localEntitlementPreferences.edit {
+            putBoolean("local_plus_unlocked", true)
+        }
         _state.value = _state.value.copy(
             isPremium = true,
             isLocalUnlock = true,

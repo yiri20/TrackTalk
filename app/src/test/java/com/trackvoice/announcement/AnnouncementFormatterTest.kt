@@ -2,6 +2,7 @@ package com.trackvoice.announcement
 
 import com.trackvoice.data.AnnouncementMode
 import com.trackvoice.media.PlaybackEvent
+import com.trackvoice.media.PlaybackCollection
 import com.trackvoice.media.PlaybackStatus
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -20,12 +21,42 @@ class AnnouncementFormatterTest {
 
     @Test
     fun albumModeReadsTrackAndTitle() {
-        assertEquals("트랙 3번, Glass Eyes.", AnnouncementFormatter.format(event(), AnnouncementMode.ALBUM))
+        assertEquals(
+            "앨범 A Moon Shaped Pool, 트랙 3번, Glass Eyes, Radiohead.",
+            AnnouncementFormatter.format(event(), AnnouncementMode.ALBUM),
+        )
     }
 
     @Test
     fun nullTrackFallsBackToTitle() {
-        assertEquals("Glass Eyes.", AnnouncementFormatter.format(event(trackNumber = null), AnnouncementMode.ALBUM))
+        assertEquals(
+            "앨범 A Moon Shaped Pool, Glass Eyes, Radiohead.",
+            AnnouncementFormatter.format(event(trackNumber = null), AnnouncementMode.ALBUM),
+        )
+    }
+
+    @Test
+    fun playlistModeReadsCollectionTitleAndArtist() {
+        assertEquals(
+            "재생목록 출근길, Glass Eyes, Radiohead.",
+            AnnouncementFormatter.format(
+                event(queueTitle = "출근길"),
+                AnnouncementMode.PLAYLIST,
+                collection = PlaybackCollection.PLAYLIST,
+            ),
+        )
+    }
+
+    @Test
+    fun readOptionsCanSuppressAlbumAndArtistWithoutSuppressingTitle() {
+        assertEquals(
+            "트랙 3번, Glass Eyes.",
+            AnnouncementFormatter.format(
+                event(),
+                AnnouncementMode.ALBUM,
+                AnnouncementFormatOptions(readArtist = false, readAlbum = false),
+            ),
+        )
     }
 
     @Test
@@ -36,6 +67,7 @@ class AnnouncementFormatterTest {
     private fun event(
         title: String? = "Glass Eyes",
         trackNumber: Int? = 3,
+        queueTitle: String? = null,
     ) = PlaybackEvent(
         sourcePackageName = "com.spotify.music",
         sourceAppName = "Spotify",
@@ -51,5 +83,6 @@ class AnnouncementFormatterTest {
         playbackState = PlaybackStatus.PLAYING,
         playbackPosition = 0L,
         observedAt = 1L,
+        queueTitle = queueTitle,
     )
 }

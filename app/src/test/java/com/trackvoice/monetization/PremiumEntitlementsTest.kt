@@ -1,6 +1,11 @@
 package com.trackvoice.monetization
 
 import com.trackvoice.data.UserSettings
+import com.trackvoice.data.MusicTreatment
+import com.trackvoice.data.TrackStartBehavior
+import com.trackvoice.data.AnnouncementMode
+import com.trackvoice.data.AnnouncementTiming
+import com.trackvoice.data.AppSettings
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -21,8 +26,10 @@ class PremiumEntitlementsTest {
         assertFalse(effective.autoEnableOnScreenOff)
         assertEquals(1f, effective.speechRate)
         assertEquals(1f, effective.pitch)
-        assertEquals(1f, effective.volume)
-        assertTrue(effective.raiseDeviceVolume)
+        assertEquals(0.85f, effective.volume)
+        assertEquals(MusicTreatment.DUCK, effective.musicTreatment)
+        assertEquals(TrackStartBehavior.PLAY_IMMEDIATELY, effective.trackStartBehavior)
+        assertFalse(effective.raiseDeviceVolume)
         assertEquals(90, effective.deviceVolumePercent)
     }
 
@@ -38,5 +45,26 @@ class PremiumEntitlementsTest {
         )
 
         assertEquals(settings, settings.forPremiumEntitlement(isPremium = true))
+    }
+
+    @Test
+    fun freeAppSettingsReturnToBasicAnnouncementDefaults() {
+        val effective = AppSettings(
+            packageName = "com.example.player",
+            appName = "Player",
+            mode = AnnouncementMode.TITLE_ONLY,
+            readArtist = false,
+            readAlbum = false,
+            readCollection = false,
+            timing = AnnouncementTiming.DELAYED,
+            alwaysExclude = true,
+        ).forPremiumEntitlement(isPremium = false)
+
+        assertEquals(AnnouncementMode.SMART, effective.mode)
+        assertTrue(effective.readArtist)
+        assertTrue(effective.readAlbum)
+        assertTrue(effective.readCollection)
+        assertEquals(null, effective.timing)
+        assertFalse(effective.alwaysExclude)
     }
 }

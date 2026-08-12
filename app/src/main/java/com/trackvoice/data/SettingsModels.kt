@@ -2,7 +2,8 @@ package com.trackvoice.data
 
 enum class AnnouncementMode(val label: String) {
     SMART("Smart"),
-    ALBUM("Album"),
+    ALBUM("앨범 정보"),
+    PLAYLIST("재생목록 정보"),
     TITLE_AND_ARTIST("제목 + 아티스트"),
     TITLE_ONLY("제목만"),
 }
@@ -45,7 +46,7 @@ data class UserSettings(
     val headphonesOnly: Boolean = false,
     val bluetoothOnlyForAutoEnable: Boolean = false,
     val suppressDuringSpeakerPlayback: Boolean = true,
-    val musicTreatment: MusicTreatment = MusicTreatment.PAUSE,
+    val musicTreatment: MusicTreatment = MusicTreatment.DUCK,
     val trackStartBehavior: TrackStartBehavior = TrackStartBehavior.PLAY_IMMEDIATELY,
     val showStatusNotification: Boolean = true,
     val timing: AnnouncementTiming = AnnouncementTiming.IMMEDIATE,
@@ -53,13 +54,15 @@ data class UserSettings(
     val defaultMode: AnnouncementMode = AnnouncementMode.SMART,
     val allowRepeatAnnouncements: Boolean = false,
     val minimumPlaybackSeconds: Int = 0,
+    val albumMode: AnnouncementMode = AnnouncementMode.ALBUM,
+    val playlistMode: AnnouncementMode = AnnouncementMode.PLAYLIST,
     val voiceLanguage: VoiceLanguage = VoiceLanguage.AUTO,
     val voiceName: String? = null,
     val genderFilter: GenderFilter = GenderFilter.ANY,
     val speechRate: Float = 1f,
     val pitch: Float = 1f,
     val volume: Float = 1f,
-    val raiseDeviceVolume: Boolean = true,
+    val raiseDeviceVolume: Boolean = false,
     val deviceVolumePercent: Int = 90,
 )
 
@@ -78,6 +81,8 @@ data class AppSettings(
     val readTitle: Boolean = true,
     val readArtist: Boolean = true,
     val readTrackNumber: Boolean = true,
+    val readAlbum: Boolean = true,
+    val readCollection: Boolean = true,
     val timing: AnnouncementTiming? = null,
     val alwaysExclude: Boolean = false,
 )

@@ -5,8 +5,8 @@ import com.trackvoice.announcement.AnnouncementPolicy
 import com.trackvoice.announcement.AudioFocusManager
 import com.trackvoice.announcement.AudioOutputDetector
 import com.trackvoice.announcement.DuplicateSuppressor
-import com.trackvoice.announcement.DeviceVolumeManager
 import com.trackvoice.announcement.AudioDeviceMonitor
+import com.trackvoice.announcement.AnnouncementPlaybackPlanner
 import com.trackvoice.announcement.ConnectedAudioDevice
 import com.trackvoice.announcement.InstalledVoice
 import com.trackvoice.announcement.TtsEngine
@@ -15,8 +15,6 @@ import com.trackvoice.data.AnnouncementMode
 import com.trackvoice.data.AppSettings
 import com.trackvoice.data.DataStoreRepository
 import com.trackvoice.data.UserSettings
-import com.trackvoice.data.MusicTreatment
-import com.trackvoice.data.TrackStartBehavior
 import com.trackvoice.data.AudioDeviceSettings
 import com.trackvoice.monetization.PremiumState
 import com.trackvoice.monetization.forPremiumEntitlement
@@ -30,6 +28,8 @@ import com.trackvoice.media.MediaSessionMonitor
 import com.trackvoice.media.PlaybackPauseToken
 import com.trackvoice.media.PlaybackEvent
 import com.trackvoice.media.TrackFingerprint
+import com.trackvoice.media.PlaybackCollection
+import com.trackvoice.media.PlaybackCollectionResolver
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -48,6 +48,7 @@ data class MediaUiState(
     val currentEvent: PlaybackEvent? = null,
     val effectiveEnabled: Boolean = true,
     val currentMode: AnnouncementMode = AnnouncementMode.SMART,
+    val currentCollection: PlaybackCollection = PlaybackCollection.UNKNOWN,
     val lastDetectedAt: Long? = null,
 )
 
@@ -72,7 +73,6 @@ class TrackVoiceController(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val ttsEngine = TtsEngine(appContext)
     private val audioFocusManager = AudioFocusManager(appContext)
-    private val deviceVolumeManager = DeviceVolumeManager(appContext)
     private val outputDetector = AudioOutputDetector(appContext)
     private val audioDeviceMonitor = AudioDeviceMonitor(appContext, ::handleAudioDevices)
     private val duplicateSuppressor = DuplicateSuppressor()
@@ -80,6 +80,7 @@ class TrackVoiceController(
     private var pendingJob: Job? = null
     private var monitor: MediaSessionMonitor? = null
     private var pausedPlayback: PlaybackPauseToken? = null
+    private var speechGeneration = 0L
     private var screenAutoActivated = false
     private var deviceAutoActivated = false
 
@@ -203,14 +204,21 @@ class TrackVoiceController(
     }
 
     fun speak(text: String) {
+        val generation = ++speechGeneration
         val settings = effectiveSettings()
-        val shouldPause = settings.musicTreatment == MusicTreatment.PAUSE ||
-            settings.trackStartBehavior == TrackStartBehavior.ANNOUNCE_THEN_PLAY
-        if (pausedPlayback == null && shouldPause) {
+        val plan = AnnouncementPlaybackPlanner.plan(settings)
+        if (!plan.pauseBeforeAnnouncement) {
+            // If a previous "announce then play" batch was interrupted, do not
+            // carry its pause token into a new "play immediately" announcement.
+            resumePausedPlayback()
+        }
+        // A new batch owns the focus lifecycle. This also releases an old
+        // focus request when TTS replaces speech with QUEUE_FLUSH.
+        audioFocusManager.abandon()
+        if (pausedPlayback == null && plan.pauseBeforeAnnouncement) {
             pausedPlayback = monitor?.pauseSelectedIfPlaying()
         }
-        val needsFocus = settings.musicTreatment != MusicTreatment.KEEP
-        if (needsFocus && !audioFocusManager.request(settings.musicTreatment == MusicTreatment.DUCK)) {
+        if (plan.requestAudioFocus && !audioFocusManager.request(plan.shouldDuckMusic)) {
             resumePausedPlayback()
             _diagnostics.value = _diagnostics.value.copy(
                 lastAnnouncementAt = System.currentTimeMillis(),
@@ -219,18 +227,16 @@ class TrackVoiceController(
             )
             return
         }
-        if (settings.raiseDeviceVolume) {
-            deviceVolumeManager.raiseTo(settings.deviceVolumePercent)
-        }
         ttsEngine.speak(text, settings) { success, message ->
-            if (needsFocus) audioFocusManager.abandon()
-            deviceVolumeManager.restore()
-            resumePausedPlayback()
-            _diagnostics.value = _diagnostics.value.copy(
-                lastAnnouncementAt = System.currentTimeMillis(),
-                lastAnnouncementSucceeded = success,
-                lastAnnouncementMessage = message,
-            )
+            if (generation == speechGeneration) {
+                if (plan.requestAudioFocus) audioFocusManager.abandon()
+                resumePausedPlayback()
+                _diagnostics.value = _diagnostics.value.copy(
+                    lastAnnouncementAt = System.currentTimeMillis(),
+                    lastAnnouncementSucceeded = success,
+                    lastAnnouncementMessage = message,
+                )
+            }
         }
     }
 
@@ -246,6 +252,7 @@ class TrackVoiceController(
     }
 
     fun close() {
+        speechGeneration += 1
         pendingJob?.cancel()
         resumePausedPlayback()
         monitor?.stop()
@@ -253,7 +260,6 @@ class TrackVoiceController(
         audioDeviceMonitor.stop()
         ttsEngine.shutdown()
         audioFocusManager.abandon()
-        deviceVolumeManager.restore()
         scope.coroutineContext.cancel()
     }
 
@@ -336,12 +342,20 @@ class TrackVoiceController(
     private fun handleMediaUpdate(update: MediaMonitorUpdate) {
         val event = update.selected?.event
         val settings = effectiveSettings()
-        val mode = event?.let { appSettings.value[it.sourcePackageName]?.mode ?: settings.defaultMode }
-            ?: settings.defaultMode
+        val collection = event?.let(PlaybackCollectionResolver::resolve) ?: PlaybackCollection.UNKNOWN
+        val app = event?.let { appSettings.value[it.sourcePackageName]?.forPremiumEntitlement(premiumState.value.isPremium) }
+        val configuredMode = app?.mode ?: settings.defaultMode
+        val mode = when {
+            configuredMode != AnnouncementMode.SMART -> configuredMode
+            collection == PlaybackCollection.ALBUM -> settings.albumMode
+            collection == PlaybackCollection.PLAYLIST -> settings.playlistMode
+            else -> AnnouncementMode.TITLE_AND_ARTIST
+        }
         _mediaState.value = _mediaState.value.copy(
             currentEvent = event,
             effectiveEnabled = settings.enabled || screenAutoActivated || deviceAutoActivated,
             currentMode = mode,
+            currentCollection = collection,
             lastDetectedAt = update.observedAt.takeIf { event != null },
         )
         _diagnostics.value = _diagnostics.value.copy(
@@ -369,6 +383,7 @@ class TrackVoiceController(
     private fun scheduleAnnouncement(event: PlaybackEvent) {
         val settings = effectiveSettings()
         val app = appSettings.value[event.sourcePackageName]
+            ?.forPremiumEntitlement(premiumState.value.isPremium)
         val connectedDevices = _connectedAudioDevices.value
         if (connectedDevices.isNotEmpty() && connectedDevices.none { device ->
                 audioDeviceSettings.value[device.key]?.enabled != false

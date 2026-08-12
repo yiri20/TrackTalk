@@ -110,7 +110,7 @@ Android 설정 또는 알림 패널의 Quick Settings 편집 화면에서 `Track
 gradlew.bat --offline :app:testDebugUnitTest
 ```
 
-formatter 5개, 정책 4개, 중복 억제 5개, 혼합 언어 구간 3개, TTS 언어 fallback 1개, 활성 세션 선택 5개, 앱 카테고리 6개, Plus entitlement 2개, 프로모션 코드 3개로 총 34개 테스트가 통과합니다.
+formatter 7개, 정책 5개, 중복 억제 5개, 혼합 언어 구간 3개, TTS 언어 fallback 1개, 활성 세션 선택 5개, 앱 카테고리 6개, Plus entitlement 3개, 프로모션 코드 3개, 재생 계획 2개, 앨범·재생목록 판별 3개로 총 43개 테스트가 통과합니다.
 
 실제 Android 환경을 사용하는 MediaSession 매핑 테스트는 다음 명령으로 실행합니다.
 
@@ -118,7 +118,7 @@ formatter 5개, 정책 4개, 중복 억제 5개, 혼합 언어 구간 3개, TTS 
 gradlew.bat :app:connectedDebugAndroidTest
 ```
 
-fake MediaSession의 metadata/playback/queue 매핑, 빈 metadata, active queue fallback을 검증하는 3개 테스트가 Android 에뮬레이터와 Samsung SM-G996N에서 각각 통과했습니다(총 6건).
+fake MediaSession의 metadata/playback/queue 매핑, 빈 metadata, active queue fallback, queue 제목·현재 위치 매핑을 검증하는 4개 테스트가 Android 에뮬레이터에서 통과했습니다.
 
 Android 13 이상에서는 앱을 처음 열 때 알림 권한 창을 자동으로 띄우지 않습니다. 홈 화면의 `알림 허용` 카드를 눌렀을 때만 상태 알림 권한을 요청하며, 음악 감지에 필요한 `알림 접근` 권한과는 별개입니다.
 

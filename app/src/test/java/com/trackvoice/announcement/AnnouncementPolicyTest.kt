@@ -37,9 +37,26 @@ class AnnouncementPolicyTest {
             null,
             externalAudioOutput = true,
         )
-        assertEquals("트랙 3번, Glass Eyes.", smart.text)
+        assertEquals("앨범 A Moon Shaped Pool, 트랙 3번, Glass Eyes, Radiohead.", smart.text)
         assertEquals("Glass Eyes, Radiohead.", noAlbum.text)
     }
+
+    @Test
+    fun smartUsesPlaylistModeWhenQueueTitleIdentifiesPlaylist() {
+        val decision = AnnouncementPolicy.decide(
+            event().copy(queueTitle = "출근길 재생목록", queue = listOf(queueItem(), queueItem("Second"))),
+            UserSettings(suppressDuringSpeakerPlayback = false),
+            null,
+            externalAudioOutput = true,
+        )
+        assertEquals("재생목록 출근길 재생목록, Glass Eyes, Radiohead.", decision.text)
+    }
+
+    private fun queueItem(title: String = "Glass Eyes") = com.trackvoice.media.QueueItemSnapshot(
+        mediaId = title,
+        title = title,
+        artist = "Radiohead",
+    )
 
     @Test
     fun speakerCanBeSuppressedWithoutTouchingPlayback() {
@@ -84,5 +101,6 @@ class AnnouncementPolicyTest {
         playbackState = PlaybackStatus.PLAYING,
         playbackPosition = 2_000L,
         observedAt = 1L,
+        queue = emptyList(),
     )
 }
