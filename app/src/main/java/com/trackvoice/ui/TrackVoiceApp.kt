@@ -1,6 +1,7 @@
 package com.trackvoice.ui
 
 import android.Manifest
+import android.app.Activity
 import android.content.pm.PackageManager
 import android.content.Intent
 import android.os.Build
@@ -32,10 +33,12 @@ import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.MusicNote
@@ -44,6 +47,7 @@ import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -99,6 +103,7 @@ import com.trackvoice.data.AudioDeviceSettings
 import com.trackvoice.announcement.ConnectedAudioDevice
 import com.trackvoice.media.PlaybackEvent
 import com.trackvoice.media.PlaybackStatus
+import com.trackvoice.monetization.PremiumState
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -115,7 +120,7 @@ private val TrackVoiceCardShape = RoundedCornerShape(14.dp)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TrackVoiceApp(viewModel: TrackVoiceViewModel) {
+fun TrackVoiceApp(viewModel: TrackVoiceViewModel, activity: Activity) {
     val settings by viewModel.userSettings.collectAsStateWithLifecycle()
     val appSettings by viewModel.appSettings.collectAsStateWithLifecycle()
     val mediaState by viewModel.mediaState.collectAsStateWithLifecycle()
@@ -123,7 +128,9 @@ fun TrackVoiceApp(viewModel: TrackVoiceViewModel) {
     val voices by viewModel.installedVoices.collectAsStateWithLifecycle()
     val connectedDevices by viewModel.connectedAudioDevices.collectAsStateWithLifecycle()
     val deviceSettings by viewModel.audioDeviceSettings.collectAsStateWithLifecycle()
+    val premiumState by viewModel.premiumState.collectAsStateWithLifecycle()
     var selectedSectionName by rememberSaveable { mutableStateOf(AppSection.HOME.name) }
+    var showPremiumDialog by rememberSaveable { mutableStateOf(false) }
     val selectedSection = AppSection.valueOf(selectedSectionName)
     val context = LocalContext.current
     var notificationPermissionGranted by remember {
@@ -145,6 +152,13 @@ fun TrackVoiceApp(viewModel: TrackVoiceViewModel) {
             TopAppBar(
                 title = { Text(selectedSection.title) },
                 actions = {
+                    if (!premiumState.isPremium) {
+                        TextButton(onClick = { showPremiumDialog = true }) {
+                            Icon(Icons.Default.Star, contentDescription = null)
+                            Spacer(Modifier.width(4.dp))
+                            Text("Plus")
+                        }
+                    }
                     StatusBadge(
                         enabled = mediaState.effectiveEnabled,
                         notificationAccess = diagnostics.notificationListenerConnected,
@@ -172,6 +186,7 @@ fun TrackVoiceApp(viewModel: TrackVoiceViewModel) {
                     effectiveEnabled = mediaState.effectiveEnabled,
                     notificationAccess = diagnostics.notificationListenerConnected,
                     notificationPermissionGranted = notificationPermissionGranted,
+                    premiumState = premiumState,
                     onToggle = viewModel.controller::setEnabled,
                     onTest = viewModel.controller::speakTest,
                     onTogglePlayback = { viewModel.controller.togglePlayback() },
@@ -184,14 +199,17 @@ fun TrackVoiceApp(viewModel: TrackVoiceViewModel) {
                         }
                     },
                     onOpenGeneral = { selectedSectionName = AppSection.GENERAL.name },
+                    onOpenPremium = { showPremiumDialog = true },
                 )
 
                 AppSection.GENERAL -> GeneralSettingsScreen(
                     settings = settings,
                     connectedDevices = connectedDevices,
                     deviceSettings = deviceSettings,
+                    isPremium = premiumState.isPremium,
                     onUpdate = viewModel.controller::updateUserSettings,
                     onUpdateDevice = viewModel.controller::updateAudioDeviceSettings,
+                    onOpenPremium = { showPremiumDialog = true },
                 )
 
                 AppSection.APPS -> AppSettingsScreen(
@@ -204,13 +222,23 @@ fun TrackVoiceApp(viewModel: TrackVoiceViewModel) {
                     settings = settings,
                     voices = voices,
                     ttsStatus = diagnostics.ttsState,
+                    isPremium = premiumState.isPremium,
                     onUpdate = viewModel.controller::updateUserSettings,
                     onTest = viewModel.controller::speakTest,
+                    onOpenPremium = { showPremiumDialog = true },
                 )
 
                 AppSection.DIAGNOSTICS -> DiagnosticsScreen(diagnostics, mediaState.currentEvent)
             }
         }
+    }
+    if (showPremiumDialog) {
+        PremiumDialog(
+            state = premiumState,
+            onDismiss = { showPremiumDialog = false },
+            onPurchase = { viewModel.purchasePremium(activity) },
+            onRestore = viewModel::restorePremium,
+        )
     }
 }
 
@@ -248,12 +276,14 @@ private fun HomeScreen(
     effectiveEnabled: Boolean,
     notificationAccess: Boolean,
     notificationPermissionGranted: Boolean,
+    premiumState: PremiumState,
     onToggle: (Boolean) -> Unit,
     onTest: () -> Unit,
     onTogglePlayback: () -> Unit,
     onOpenPermission: () -> Unit,
     onRequestNotificationPermission: () -> Unit,
     onOpenGeneral: () -> Unit,
+    onOpenPremium: () -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -279,6 +309,9 @@ private fun HomeScreen(
         }
         item {
             CurrentTrackCard(mediaEvent, currentMode, lastDetectedAt, onTogglePlayback)
+        }
+        item {
+            PremiumCard(premiumState, onOpenPremium)
         }
         item {
             Card(
@@ -316,6 +349,118 @@ private fun HomeScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun PremiumCard(state: PremiumState, onOpenPremium: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = TrackVoiceCardShape,
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (state.isPremium) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.tertiaryContainer
+            },
+        ),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Icon(Icons.Default.Star, contentDescription = null, modifier = Modifier.size(28.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("TrackTalk Plus", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    if (state.isPremium) {
+                        "Plus가 활성화되어 모든 고급 기능을 사용할 수 있습니다."
+                    } else {
+                        "음성 세밀 조절과 기기별 자동화를 한 번 결제로 잠금 해제합니다."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            if (!state.isPremium) {
+                TextButton(onClick = onOpenPremium) { Text("보기") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PremiumDialog(
+    state: PremiumState,
+    onDismiss: () -> Unit,
+    onPurchase: () -> Unit,
+    onRestore: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Default.Star, contentDescription = null) },
+        title = { Text("TrackTalk Plus") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("기본 곡 감지와 안내는 계속 무료로 제공합니다.")
+                PremiumBenefit("속도·높이·음량 등 음성 세밀 조절")
+                PremiumBenefit("연결 기기별 안내와 자동 활성화")
+                PremiumBenefit("향후 추가될 고급 음성·자동화 기능")
+                when {
+                    state.isPremium -> Text(
+                        "Plus가 활성화되어 있습니다.",
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    state.price != null -> Text("한 번 결제 · ${state.price}")
+                    else -> Text(
+                        "${state.message ?: "Play Console 상품을 준비 중입니다."}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (!state.isPremium && state.message != null && state.price != null) {
+                    Text(
+                        state.message.orEmpty(),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            if (state.isPremium) {
+                TextButton(onClick = onDismiss) { Text("닫기") }
+            } else {
+                Button(
+                    onClick = onPurchase,
+                    enabled = state.productAvailable && !state.isLoading,
+                ) {
+                    Text(if (state.isLoading) "확인 중..." else "Plus 구매")
+                }
+            }
+        },
+        dismissButton = {
+            if (!state.isPremium) {
+                TextButton(onClick = onRestore, enabled = !state.isLoading) { Text("구매 복원") }
+            }
+        },
+    )
+}
+
+@Composable
+private fun PremiumBenefit(text: String) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            Icons.Default.CheckCircle,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(18.dp),
+        )
+        Text(text, style = MaterialTheme.typography.bodySmall)
     }
 }
 
@@ -446,8 +591,10 @@ private fun GeneralSettingsScreen(
     settings: UserSettings,
     connectedDevices: List<ConnectedAudioDevice>,
     deviceSettings: Map<String, AudioDeviceSettings>,
+    isPremium: Boolean,
     onUpdate: ((UserSettings) -> UserSettings) -> Unit,
     onUpdateDevice: (AudioDeviceSettings) -> Unit,
+    onOpenPremium: () -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -472,21 +619,29 @@ private fun GeneralSettingsScreen(
         }
         item {
             SettingCard("연결 기기") {
-                Text("기기별로 안내 사용과 자동 켜짐을 정할 수 있습니다.", style = MaterialTheme.typography.bodySmall)
-                if (connectedDevices.isEmpty()) {
-                    Text("연결된 이어폰이나 Bluetooth 기기가 없습니다.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                connectedDevices.forEach { device ->
-                    val saved = deviceSettings[device.key] ?: AudioDeviceSettings(device.key, device.name)
-                    Text(device.name, fontWeight = FontWeight.SemiBold)
-                    Text(device.typeLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    SettingSwitchRow("이 기기에서 사용", "연결 중인 이 기기에 안내합니다.", saved.enabled) {
-                        onUpdateDevice(saved.copy(enabled = it))
+                if (isPremium) {
+                    Text("기기별로 안내 사용과 자동 켜짐을 정할 수 있습니다.", style = MaterialTheme.typography.bodySmall)
+                    if (connectedDevices.isEmpty()) {
+                        Text("연결된 이어폰이나 Bluetooth 기기가 없습니다.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    SettingSwitchRow("연결하면 자동 켜기", "이 기기가 연결되면 안내를 켭니다.", saved.autoEnable) {
-                        onUpdateDevice(saved.copy(autoEnable = it))
+                    connectedDevices.forEach { device ->
+                        val saved = deviceSettings[device.key] ?: AudioDeviceSettings(device.key, device.name)
+                        Text(device.name, fontWeight = FontWeight.SemiBold)
+                        Text(device.typeLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        SettingSwitchRow("이 기기에서 사용", "연결 중인 이 기기에 안내합니다.", saved.enabled) {
+                            onUpdateDevice(saved.copy(enabled = it))
+                        }
+                        SettingSwitchRow("연결하면 자동 켜기", "이 기기가 연결되면 안내를 켭니다.", saved.autoEnable) {
+                            onUpdateDevice(saved.copy(autoEnable = it))
+                        }
+                        HorizontalDivider()
                     }
-                    HorizontalDivider()
+                } else {
+                    PremiumLockedContent(
+                        title = "기기별 자동화는 Plus 기능입니다.",
+                        summary = "Bluetooth·USB·HDMI 기기별로 안내 여부와 자동 켜짐을 설정할 수 있습니다.",
+                        onOpenPremium = onOpenPremium,
+                    )
                 }
             }
         }
@@ -520,18 +675,26 @@ private fun GeneralSettingsScreen(
         }
         item {
             SettingCard("자동 켜기") {
-                SettingSwitchRow("화면이 꺼지면 켜기", "화면을 끄면 안내를 시작합니다.", settings.autoEnableOnScreenOff) { enabled ->
-                    onUpdate { it.copy(autoEnableOnScreenOff = enabled) }
-                }
-                SettingSwitchRow("화면을 켜면 원래대로", "화면을 켜면 자동 상태를 해제합니다.", settings.restoreEnabledWhenScreenOn) { enabled ->
-                    onUpdate { it.copy(restoreEnabledWhenScreenOn = enabled) }
-                }
-                SettingSwitchRow(
-                    "화면 꺼짐은 Bluetooth에서만",
-                    "화면이 꺼질 때 Bluetooth 오디오가 연결된 경우에만 자동 켭니다.",
-                    settings.bluetoothOnlyForAutoEnable,
-                ) { enabled ->
-                    onUpdate { it.copy(bluetoothOnlyForAutoEnable = enabled) }
+                if (isPremium) {
+                    SettingSwitchRow("화면이 꺼지면 켜기", "화면을 끄면 안내를 시작합니다.", settings.autoEnableOnScreenOff) { enabled ->
+                        onUpdate { it.copy(autoEnableOnScreenOff = enabled) }
+                    }
+                    SettingSwitchRow("화면을 켜면 원래대로", "화면을 켜면 자동 상태를 해제합니다.", settings.restoreEnabledWhenScreenOn) { enabled ->
+                        onUpdate { it.copy(restoreEnabledWhenScreenOn = enabled) }
+                    }
+                    SettingSwitchRow(
+                        "화면 꺼짐은 Bluetooth에서만",
+                        "화면이 꺼질 때 Bluetooth 오디오가 연결된 경우에만 자동 켭니다.",
+                        settings.bluetoothOnlyForAutoEnable,
+                    ) { enabled ->
+                        onUpdate { it.copy(bluetoothOnlyForAutoEnable = enabled) }
+                    }
+                } else {
+                    PremiumLockedContent(
+                        title = "화면 꺼짐 자동 활성화는 Plus 기능입니다.",
+                        summary = "화면을 끈 뒤에도 음악 안내를 계속 유지할 수 있습니다.",
+                        onOpenPremium = onOpenPremium,
+                    )
                 }
             }
         }
@@ -749,8 +912,10 @@ private fun VoiceSettingsScreen(
     settings: UserSettings,
     voices: List<InstalledVoice>,
     ttsStatus: com.trackvoice.announcement.TtsState,
+    isPremium: Boolean,
     onUpdate: ((UserSettings) -> UserSettings) -> Unit,
     onTest: () -> Unit,
+    onOpenPremium: () -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -804,25 +969,33 @@ private fun VoiceSettingsScreen(
         }
         item {
             SettingCard("말하기 조절") {
-                SliderSetting("속도", settings.speechRate, 0.5f..2f, "${"%.1f".format(Locale.getDefault(), settings.speechRate)}x") { value ->
-                    onUpdate { current -> current.copy(speechRate = value) }
-                }
-                SliderSetting("높이", settings.pitch, 0.5f..2f, "${"%.1f".format(Locale.getDefault(), settings.pitch)}x") { value ->
-                    onUpdate { current -> current.copy(pitch = value) }
-                }
-                SliderSetting("음량", settings.volume, 0f..1f, "${(settings.volume * 100).toInt()}%") { value ->
-                    onUpdate { current -> current.copy(volume = value) }
-                }
-                SettingSwitchRow("기기 음량 올리기", "안내 중에만 미디어 음량을 올리고 복원합니다.", settings.raiseDeviceVolume) { enabled ->
-                    onUpdate { it.copy(raiseDeviceVolume = enabled) }
-                }
-                if (settings.raiseDeviceVolume) {
-                    SliderSetting(
-                        "안내 시 기기 음량",
-                        settings.deviceVolumePercent.toFloat(),
-                        50f..100f,
-                        "${settings.deviceVolumePercent}%",
-                    ) { value -> onUpdate { it.copy(deviceVolumePercent = value.toInt()) } }
+                if (isPremium) {
+                    SliderSetting("속도", settings.speechRate, 0.5f..2f, "${"%.1f".format(Locale.getDefault(), settings.speechRate)}x") { value ->
+                        onUpdate { current -> current.copy(speechRate = value) }
+                    }
+                    SliderSetting("높이", settings.pitch, 0.5f..2f, "${"%.1f".format(Locale.getDefault(), settings.pitch)}x") { value ->
+                        onUpdate { current -> current.copy(pitch = value) }
+                    }
+                    SliderSetting("음량", settings.volume, 0f..1f, "${(settings.volume * 100).toInt()}%") { value ->
+                        onUpdate { current -> current.copy(volume = value) }
+                    }
+                    SettingSwitchRow("기기 음량 올리기", "안내 중에만 미디어 음량을 올리고 복원합니다.", settings.raiseDeviceVolume) { enabled ->
+                        onUpdate { it.copy(raiseDeviceVolume = enabled) }
+                    }
+                    if (settings.raiseDeviceVolume) {
+                        SliderSetting(
+                            "안내 시 기기 음량",
+                            settings.deviceVolumePercent.toFloat(),
+                            50f..100f,
+                            "${settings.deviceVolumePercent}%",
+                        ) { value -> onUpdate { it.copy(deviceVolumePercent = value.toInt()) } }
+                    }
+                } else {
+                    PremiumLockedContent(
+                        title = "음성 세밀 조절은 Plus 기능입니다.",
+                        summary = "말하기 속도·높이·음량과 안내 중 기기 음량을 직접 조절할 수 있습니다.",
+                        onOpenPremium = onOpenPremium,
+                    )
                 }
                 Button(onClick = onTest) {
                     Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = null)
@@ -900,6 +1073,30 @@ private fun SettingCard(title: String, content: @Composable ColumnScope.() -> Un
                 content()
             },
         )
+    }
+}
+
+@Composable
+private fun PremiumLockedContent(
+    title: String,
+    summary: String,
+    onOpenPremium: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Icon(Icons.Default.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(title, fontWeight = FontWeight.SemiBold)
+            Text(
+                summary,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        TextButton(onClick = onOpenPremium) { Text("Plus 보기") }
     }
 }
 

@@ -14,7 +14,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             TrackVoiceTheme {
-                TrackVoiceApp(viewModel)
+                TrackVoiceApp(viewModel, this@MainActivity)
             }
         }
     }
@@ -22,5 +22,6 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         viewModel.refreshNotificationAccess(this)
+        viewModel.refreshBilling()
     }
 }

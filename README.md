@@ -22,6 +22,17 @@ TrackTalk은 다른 음악 앱이 Android MediaSession으로 제공하는 현재
 - Compose Material 3 홈/일반 설정/앱별 설정/음성 설정/진단 화면
 - Quick Settings 안내 ON/OFF 및 음악 재생/일시정지 타일
 - 일반 알림 내용은 읽거나 저장하지 않음
+- Google Play Billing 기반 TrackTalk Plus 구매·구매 복원·보류 결제 상태 처리
+
+## 수익화 초안
+
+TrackTalk은 음악 감상 중 광고가 끼어들면 핵심 경험을 해치므로 광고보다 무료 기본 기능 + 일회성 Plus 잠금 해제를 우선합니다.
+
+- 무료: 곡 감지, 기본 Smart 안내, 앱별 기본 활성화
+- Plus: 음성 속도·높이·음량 조절, 연결 기기별 자동화, 화면 꺼짐 자동 활성화, 향후 고급 음성 기능
+- Play Console 상품 ID: `tracktalk_plus_lifetime` (일회성 인앱 상품)
+
+실제 판매 전 Play Console에 상품을 만들고 내부 테스트 트랙에서 결제 흐름을 검증해야 합니다. 현재 클라이언트는 구매 확인과 구매 복원을 처리하며, 출시 단계에서는 구매 토큰을 보안 서버에서 검증하는 절차를 추가하는 것이 안전합니다.
 
 ## 설치
 
