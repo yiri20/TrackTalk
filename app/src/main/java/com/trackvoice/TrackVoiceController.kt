@@ -18,6 +18,8 @@ import com.trackvoice.data.UserSettings
 import com.trackvoice.data.MusicTreatment
 import com.trackvoice.data.TrackStartBehavior
 import com.trackvoice.data.AudioDeviceSettings
+import com.trackvoice.monetization.PremiumState
+import com.trackvoice.monetization.forPremiumEntitlement
 import android.content.Intent
 import android.service.media.MediaBrowserService
 import android.content.pm.PackageManager
@@ -64,6 +66,7 @@ data class DiagnosticsState(
 class TrackVoiceController(
     context: Context,
     val repository: DataStoreRepository,
+    private val premiumState: StateFlow<PremiumState>,
 ) {
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -107,9 +110,19 @@ class TrackVoiceController(
     init {
         scope.launch {
             userSettings.collectLatest { settings ->
+                val effectiveSettings = settings.forPremiumEntitlement(premiumState.value.isPremium)
+                _mediaState.value = _mediaState.value.copy(
+                    effectiveEnabled = effectiveSettings.enabled || screenAutoActivated || deviceAutoActivated,
+                )
+            }
+        }
+        scope.launch {
+            premiumState.collectLatest { state ->
+                val settings = userSettings.value.forPremiumEntitlement(state.isPremium)
                 _mediaState.value = _mediaState.value.copy(
                     effectiveEnabled = settings.enabled || screenAutoActivated || deviceAutoActivated,
                 )
+                evaluateDeviceAutoActivation(_connectedAudioDevices.value, audioDeviceSettings.value)
             }
         }
         discoverSupportedMediaApps()
@@ -157,7 +170,7 @@ class TrackVoiceController(
     fun setAutoActivated(value: Boolean) {
         screenAutoActivated = value
         _mediaState.value = _mediaState.value.copy(
-            effectiveEnabled = userSettings.value.enabled || screenAutoActivated || deviceAutoActivated,
+            effectiveEnabled = effectiveSettings().enabled || screenAutoActivated || deviceAutoActivated,
         )
     }
 
@@ -190,7 +203,7 @@ class TrackVoiceController(
     }
 
     fun speak(text: String) {
-        val settings = userSettings.value
+        val settings = effectiveSettings()
         val shouldPause = settings.musicTreatment == MusicTreatment.PAUSE ||
             settings.trackStartBehavior == TrackStartBehavior.ANNOUNCE_THEN_PLAY
         if (pausedPlayback == null && shouldPause) {
@@ -222,7 +235,7 @@ class TrackVoiceController(
     }
 
     fun onScreenOff() {
-        val settings = userSettings.value
+        val settings = effectiveSettings()
         if (!settings.autoEnableOnScreenOff) return
         if (settings.bluetoothOnlyForAutoEnable && !outputDetector.hasBluetoothOutput()) return
         setAutoActivated(true)
@@ -262,12 +275,12 @@ class TrackVoiceController(
         devices: List<ConnectedAudioDevice>,
         settings: Map<String, AudioDeviceSettings>,
     ) {
-        val shouldActivate = devices.any { device ->
+        val shouldActivate = premiumState.value.isPremium && devices.any { device ->
             settings[device.key]?.let { it.enabled && it.autoEnable } == true
         }
         deviceAutoActivated = shouldActivate
         _mediaState.value = _mediaState.value.copy(
-            effectiveEnabled = userSettings.value.enabled || screenAutoActivated || deviceAutoActivated,
+            effectiveEnabled = effectiveSettings().enabled || screenAutoActivated || deviceAutoActivated,
         )
     }
 
@@ -322,11 +335,12 @@ class TrackVoiceController(
 
     private fun handleMediaUpdate(update: MediaMonitorUpdate) {
         val event = update.selected?.event
-        val mode = event?.let { appSettings.value[it.sourcePackageName]?.mode ?: userSettings.value.defaultMode }
-            ?: userSettings.value.defaultMode
+        val settings = effectiveSettings()
+        val mode = event?.let { appSettings.value[it.sourcePackageName]?.mode ?: settings.defaultMode }
+            ?: settings.defaultMode
         _mediaState.value = _mediaState.value.copy(
             currentEvent = event,
-            effectiveEnabled = userSettings.value.enabled || screenAutoActivated || deviceAutoActivated,
+            effectiveEnabled = settings.enabled || screenAutoActivated || deviceAutoActivated,
             currentMode = mode,
             lastDetectedAt = update.observedAt.takeIf { event != null },
         )
@@ -353,7 +367,7 @@ class TrackVoiceController(
     }
 
     private fun scheduleAnnouncement(event: PlaybackEvent) {
-        val settings = userSettings.value
+        val settings = effectiveSettings()
         val app = appSettings.value[event.sourcePackageName]
         val connectedDevices = _connectedAudioDevices.value
         if (connectedDevices.isNotEmpty() && connectedDevices.none { device ->
@@ -389,4 +403,7 @@ class TrackVoiceController(
             }
         }
     }
+
+    private fun effectiveSettings(): UserSettings =
+        userSettings.value.forPremiumEntitlement(premiumState.value.isPremium)
 }

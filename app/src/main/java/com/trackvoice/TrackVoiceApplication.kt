@@ -15,8 +15,8 @@ class TrackVoiceApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         repository = DataStoreRepository(this)
-        controller = TrackVoiceController(this, repository)
         billingManager = PlayBillingManager(this)
+        controller = TrackVoiceController(this, repository, billingManager.state)
         billingManager.connect()
     }
 }
