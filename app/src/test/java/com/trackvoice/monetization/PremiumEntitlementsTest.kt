@@ -53,6 +53,7 @@ class PremiumEntitlementsTest {
         val effective = AppSettings(
             packageName = "com.example.player",
             appName = "Player",
+            useCustomGuideSettings = true,
             mode = AnnouncementMode.TITLE_ONLY,
             readArtist = false,
             readAlbum = false,
@@ -66,6 +67,7 @@ class PremiumEntitlementsTest {
         assertTrue(effective.readAlbum)
         assertTrue(effective.readCollection)
         assertEquals(null, effective.timing)
+        assertFalse(effective.useCustomGuideSettings)
         assertFalse(effective.alwaysExclude)
     }
 }

@@ -8,6 +8,7 @@ import com.trackvoice.announcement.DuplicateSuppressor
 import com.trackvoice.announcement.AudioDeviceMonitor
 import com.trackvoice.announcement.AnnouncementPlaybackPlanner
 import com.trackvoice.announcement.ConnectedAudioDevice
+import com.trackvoice.announcement.MusicVolumeManager
 import com.trackvoice.announcement.InstalledVoice
 import com.trackvoice.announcement.TtsEngine
 import com.trackvoice.announcement.TtsState
@@ -73,6 +74,7 @@ class TrackVoiceController(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val ttsEngine = TtsEngine(appContext)
     private val audioFocusManager = AudioFocusManager(appContext)
+    private val musicVolumeManager = MusicVolumeManager(appContext)
     private val outputDetector = AudioOutputDetector(appContext)
     private val audioDeviceMonitor = AudioDeviceMonitor(appContext, ::handleAudioDevices)
     private val duplicateSuppressor = DuplicateSuppressor()
@@ -208,6 +210,7 @@ class TrackVoiceController(
         val generation = ++speechGeneration
         val settings = effectiveSettings()
         val plan = AnnouncementPlaybackPlanner.plan(settings)
+        musicVolumeManager.restore()
         if (!plan.pauseBeforeAnnouncement) {
             // If a previous "announce then play" batch was interrupted, do not
             // carry its pause token into a new "play immediately" announcement.
@@ -219,7 +222,9 @@ class TrackVoiceController(
         if (pausedPlayback == null && plan.pauseBeforeAnnouncement) {
             pausedPlayback = monitor?.pauseSelectedIfPlaying()
         }
+        if (plan.shouldDuckMusic) musicVolumeManager.duckTo(settings.musicDuckPercent)
         if (plan.requestAudioFocus && !audioFocusManager.request(plan.shouldDuckMusic)) {
+            musicVolumeManager.restore()
             resumePausedPlayback()
             _diagnostics.value = _diagnostics.value.copy(
                 lastAnnouncementAt = System.currentTimeMillis(),
@@ -231,6 +236,7 @@ class TrackVoiceController(
         ttsEngine.speak(text, settings) { success, message ->
             if (generation == speechGeneration) {
                 if (plan.requestAudioFocus) audioFocusManager.abandon()
+                musicVolumeManager.restore()
                 resumePausedPlayback()
                 _diagnostics.value = _diagnostics.value.copy(
                     lastAnnouncementAt = System.currentTimeMillis(),
@@ -256,6 +262,7 @@ class TrackVoiceController(
         speechGeneration += 1
         pendingJob?.cancel()
         resumePausedPlayback()
+        musicVolumeManager.restore()
         monitor?.stop()
         monitor = null
         audioDeviceMonitor.stop()
@@ -345,7 +352,8 @@ class TrackVoiceController(
         val settings = effectiveSettings()
         val collection = event?.let(PlaybackCollectionResolver::resolve) ?: PlaybackCollection.UNKNOWN
         val app = event?.let { appSettings.value[it.sourcePackageName]?.forPremiumEntitlement(premiumState.value.isPremium) }
-        val configuredMode = app?.mode ?: settings.defaultMode
+        val appGuideSettings = app?.takeIf { it.useCustomGuideSettings }
+        val configuredMode = appGuideSettings?.mode ?: settings.defaultMode
         val mode = when {
             configuredMode != AnnouncementMode.SMART -> configuredMode
             collection == PlaybackCollection.ALBUM -> settings.albumMode

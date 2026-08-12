@@ -1,6 +1,9 @@
 package com.trackvoice.data
 
 const val DEFAULT_TTS_VOLUME = 0.65f
+const val DEFAULT_MUSIC_DUCK_PERCENT = 35
+const val MIN_MUSIC_DUCK_PERCENT = 10
+const val MAX_MUSIC_DUCK_PERCENT = 80
 
 enum class AnnouncementMode(val label: String) {
     SMART("Smart"),
@@ -67,6 +70,7 @@ data class UserSettings(
     val bluetoothOnlyForAutoEnable: Boolean = false,
     val suppressDuringSpeakerPlayback: Boolean = true,
     val musicTreatment: MusicTreatment = MusicTreatment.DUCK,
+    val musicDuckPercent: Int = DEFAULT_MUSIC_DUCK_PERCENT,
     val trackStartBehavior: TrackStartBehavior = TrackStartBehavior.PLAY_IMMEDIATELY,
     val showStatusNotification: Boolean = true,
     val timing: AnnouncementTiming = AnnouncementTiming.IMMEDIATE,
@@ -97,6 +101,7 @@ data class AppSettings(
     val packageName: String,
     val appName: String,
     val enabled: Boolean = true,
+    val useCustomGuideSettings: Boolean = false,
     val mode: AnnouncementMode = AnnouncementMode.SMART,
     val readTitle: Boolean = true,
     val readArtist: Boolean = true,

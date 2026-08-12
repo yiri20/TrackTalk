@@ -116,6 +116,7 @@ class DataStoreRepository(private val context: Context) {
             preferences[Keys.knownPackages] = packages
             preferences.remove(AppKeys.name(packageName))
             preferences.remove(AppKeys.enabled(packageName))
+            preferences.remove(AppKeys.useCustomGuideSettings(packageName))
             preferences.remove(AppKeys.mode(packageName))
             preferences.remove(AppKeys.readTitle(packageName))
             preferences.remove(AppKeys.readArtist(packageName))
@@ -137,6 +138,7 @@ class DataStoreRepository(private val context: Context) {
         val suppressDuringSpeakerPlayback = booleanPreferencesKey("suppress_speaker")
         val pauseMusicDuringAnnouncement = booleanPreferencesKey("pause_music_during_announcement")
         val musicTreatment = stringPreferencesKey("music_treatment")
+        val musicDuckPercent = intPreferencesKey("music_duck_percent")
         val trackStartBehavior = stringPreferencesKey("track_start_behavior")
         val showStatusNotification = booleanPreferencesKey("show_status_notification")
         val timing = stringPreferencesKey("timing")
@@ -162,6 +164,7 @@ class DataStoreRepository(private val context: Context) {
     private object AppKeys {
         fun name(packageName: String) = appKey(packageName, "name")
         fun enabled(packageName: String) = appBooleanKey(packageName, "enabled")
+        fun useCustomGuideSettings(packageName: String) = appBooleanKey(packageName, "custom_guide_settings")
         fun mode(packageName: String) = appKey(packageName, "mode")
         fun readTitle(packageName: String) = appBooleanKey(packageName, "read_title")
         fun readArtist(packageName: String) = appBooleanKey(packageName, "read_artist")
@@ -182,6 +185,8 @@ class DataStoreRepository(private val context: Context) {
         suppressDuringSpeakerPlayback = this[Keys.suppressDuringSpeakerPlayback] ?: true,
         musicTreatment = this[Keys.musicTreatment]?.let { enumOrDefault(it, MusicTreatment.DUCK) }
             ?: if (this[Keys.pauseMusicDuringAnnouncement] ?: false) MusicTreatment.PAUSE else MusicTreatment.DUCK,
+        musicDuckPercent = (this[Keys.musicDuckPercent] ?: DEFAULT_MUSIC_DUCK_PERCENT)
+            .coerceIn(MIN_MUSIC_DUCK_PERCENT, MAX_MUSIC_DUCK_PERCENT),
         trackStartBehavior = enumOrDefault(this[Keys.trackStartBehavior], TrackStartBehavior.PLAY_IMMEDIATELY),
         showStatusNotification = this[Keys.showStatusNotification] ?: true,
         timing = enumOrDefault(this[Keys.timing], AnnouncementTiming.IMMEDIATE),
@@ -214,17 +219,33 @@ class DataStoreRepository(private val context: Context) {
     private fun Preferences.toAppSettings(): Map<String, AppSettings> = this[Keys.knownPackages]
         .orEmpty()
         .associateWith { packageName ->
+            val mode = enumOrDefault(this[AppKeys.mode(packageName)], AnnouncementMode.SMART)
+            val readTitle = this[AppKeys.readTitle(packageName)] ?: true
+            val readArtist = this[AppKeys.readArtist(packageName)] ?: true
+            val readTrackNumber = this[AppKeys.readTrackNumber(packageName)] ?: true
+            val readAlbum = this[AppKeys.readAlbum(packageName)] ?: true
+            val readCollection = this[AppKeys.readCollection(packageName)] ?: true
+            val timing = nullableEnum<AnnouncementTiming>(this[AppKeys.timing(packageName)])
             AppSettings(
                 packageName = packageName,
                 appName = this[AppKeys.name(packageName)] ?: packageName,
                 enabled = this[AppKeys.enabled(packageName)] ?: true,
-                mode = enumOrDefault(this[AppKeys.mode(packageName)], AnnouncementMode.SMART),
-                readTitle = this[AppKeys.readTitle(packageName)] ?: true,
-                readArtist = this[AppKeys.readArtist(packageName)] ?: true,
-                readTrackNumber = this[AppKeys.readTrackNumber(packageName)] ?: true,
-                readAlbum = this[AppKeys.readAlbum(packageName)] ?: true,
-                readCollection = this[AppKeys.readCollection(packageName)] ?: true,
-                timing = nullableEnum<AnnouncementTiming>(this[AppKeys.timing(packageName)]),
+                useCustomGuideSettings = this[AppKeys.useCustomGuideSettings(packageName)] ?: (
+                    mode != AnnouncementMode.SMART ||
+                        !readTitle ||
+                        !readArtist ||
+                        !readTrackNumber ||
+                        !readAlbum ||
+                        !readCollection ||
+                        timing != null
+                    ),
+                mode = mode,
+                readTitle = readTitle,
+                readArtist = readArtist,
+                readTrackNumber = readTrackNumber,
+                readAlbum = readAlbum,
+                readCollection = readCollection,
+                timing = timing,
                 alwaysExclude = this[AppKeys.alwaysExclude(packageName)] ?: false,
             )
         }
@@ -238,6 +259,7 @@ class DataStoreRepository(private val context: Context) {
         this[Keys.bluetoothOnlyForAutoEnable] = settings.bluetoothOnlyForAutoEnable
         this[Keys.suppressDuringSpeakerPlayback] = settings.suppressDuringSpeakerPlayback
         this[Keys.musicTreatment] = settings.musicTreatment.name
+        this[Keys.musicDuckPercent] = settings.musicDuckPercent.coerceIn(MIN_MUSIC_DUCK_PERCENT, MAX_MUSIC_DUCK_PERCENT)
         this[Keys.trackStartBehavior] = settings.trackStartBehavior.name
         this[Keys.showStatusNotification] = settings.showStatusNotification
         this[Keys.timing] = settings.timing.name
@@ -260,6 +282,7 @@ class DataStoreRepository(private val context: Context) {
     private fun MutablePreferences.writeAppSettings(settings: AppSettings) {
         this[AppKeys.name(settings.packageName)] = settings.appName
         this[AppKeys.enabled(settings.packageName)] = settings.enabled
+        this[AppKeys.useCustomGuideSettings(settings.packageName)] = settings.useCustomGuideSettings
         this[AppKeys.mode(settings.packageName)] = settings.mode.name
         this[AppKeys.readTitle(settings.packageName)] = settings.readTitle
         this[AppKeys.readArtist(settings.packageName)] = settings.readArtist

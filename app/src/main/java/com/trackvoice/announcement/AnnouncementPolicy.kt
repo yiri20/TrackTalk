@@ -33,7 +33,8 @@ object AnnouncementPolicy {
         effectiveEnabled: Boolean = userSettings.enabled,
         externalAudioOutput: Boolean = true,
     ): AnnouncementDecision {
-        val configuredMode = appSettings?.mode ?: userSettings.defaultMode
+        val appGuideSettings = appSettings?.takeIf { it.useCustomGuideSettings }
+        val configuredMode = appGuideSettings?.mode ?: userSettings.defaultMode
         val mode = if (configuredMode == AnnouncementMode.SMART) {
             when (PlaybackCollectionResolver.resolve(event)) {
                 PlaybackCollection.ALBUM -> userSettings.albumMode
@@ -45,7 +46,7 @@ object AnnouncementPolicy {
         }
         val configuredDelayMs = if (userSettings.trackStartBehavior == com.trackvoice.data.TrackStartBehavior.ANNOUNCE_THEN_PLAY) {
             0L
-        } else (appSettings?.timing ?: userSettings.timing).let {
+        } else (appGuideSettings?.timing ?: userSettings.timing).let {
             when (it) {
                 com.trackvoice.data.AnnouncementTiming.IMMEDIATE -> 0L
                 com.trackvoice.data.AnnouncementTiming.DELAYED,
@@ -73,11 +74,11 @@ object AnnouncementPolicy {
             event = event,
             mode = mode,
             options = AnnouncementFormatOptions(
-                readTitle = appSettings?.readTitle ?: true,
-                readArtist = appSettings?.readArtist ?: true,
-                readTrackNumber = appSettings?.readTrackNumber ?: true,
-                readAlbum = appSettings?.readAlbum ?: true,
-                readCollection = appSettings?.readCollection ?: true,
+                readTitle = appGuideSettings?.readTitle ?: true,
+                readArtist = appGuideSettings?.readArtist ?: true,
+                readTrackNumber = appGuideSettings?.readTrackNumber ?: true,
+                readAlbum = appGuideSettings?.readAlbum ?: true,
+                readCollection = appGuideSettings?.readCollection ?: true,
             ),
             collection = PlaybackCollectionResolver.resolve(event),
         )

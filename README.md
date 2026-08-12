@@ -11,8 +11,8 @@ TrackTalk은 다른 음악 앱이 Android MediaSession으로 제공하는 현재
 - Smart, Album, 제목+아티스트, 제목만 안내 모드
 - Media ID·제목·아티스트·앨범·source package 기반 fingerprint와 중복 억제
 - 일시정지 후 재생/앨범 아트만 변경된 이벤트의 재안내 방지
-- 지연 안내, 최소 재생 시간 이후 안내, 앱별 안내 사용 여부·모드·필드·제외 설정
-- 안내 중 음악 유지·줄이기·일시정지, 곡명 안내 후 재생 옵션
+- 지연 안내, 최소 재생 시간 이후 안내, 안내 탭의 전체 기본값과 앱별 예외 설정
+- 안내 중 음악 유지·줄이기·일시정지, Plus의 음악 음량 감쇠 비율 조절, 곡명 안내 후 재생 옵션
 - 제목의 한글/영문 자동 감지와 언어별 TTS voice 필터, 성별 표식 기반 음성 선택
 - TTS 속도·높낮이·음량, 안내 중 기기 미디어 음량 임시 상승·복원
 - 화면 꺼짐 및 연결 오디오 기기별 자동 활성화, 기기별 안내 사용 설정
@@ -111,7 +111,7 @@ Android 설정 또는 알림 패널의 Quick Settings 편집 화면에서 `Track
 gradlew.bat --offline :app:testDebugUnitTest
 ```
 
-formatter 7개, 정책 5개, 중복 억제 5개, 혼합 언어 구간 3개, TTS 언어 fallback 1개, 활성 세션 선택 5개, 앱 카테고리 6개, Plus entitlement 3개, 프로모션 코드 3개, 재생 계획 2개, 앨범·재생목록 판별 3개, 성별 음성 선택 4개, 앱 언어 설정 5개로 총 52개 테스트가 통과합니다.
+formatter 7개, 정책 6개, 중복 억제 5개, 혼합 언어 구간 3개, TTS 언어 fallback 1개, 활성 세션 선택 5개, 앱 카테고리 6개, Plus entitlement 3개, 프로모션 코드 3개, 재생 계획 2개, 앨범·재생목록 판별 3개, 성별 음성 선택 4개, 앱 언어 설정 5개, 음악 음량 계산 2개로 총 55개 테스트가 통과합니다.
 
 실제 Android 환경을 사용하는 MediaSession 매핑 테스트는 다음 명령으로 실행합니다.
 
@@ -119,7 +119,7 @@ formatter 7개, 정책 5개, 중복 억제 5개, 혼합 언어 구간 3개, TTS 
 gradlew.bat :app:connectedDebugAndroidTest
 ```
 
-fake MediaSession의 metadata/playback/queue 매핑, 빈 metadata, active queue fallback, queue 제목·현재 위치 매핑을 검증하는 4개 테스트가 Android 에뮬레이터에서 통과했습니다.
+fake MediaSession의 metadata/playback/queue 매핑, 빈 metadata, active queue fallback, queue 제목·현재 위치 매핑과 실제 미디어 음량 덕킹·복구를 검증하는 5개 테스트가 Android 에뮬레이터에서 통과했습니다.
 
 Android 13 이상에서는 앱을 처음 열 때 알림 권한 창을 자동으로 띄우지 않습니다. 홈 화면의 `알림 허용` 카드를 눌렀을 때만 상태 알림 권한을 요청하며, 음악 감지에 필요한 `알림 접근` 권한과는 별개입니다.
 

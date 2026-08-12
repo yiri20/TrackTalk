@@ -16,11 +16,32 @@ class AnnouncementPolicyTest {
         val decision = AnnouncementPolicy.decide(
             event = event(),
             userSettings = UserSettings(defaultMode = AnnouncementMode.TITLE_ONLY, suppressDuringSpeakerPlayback = false),
-            appSettings = AppSettings("com.youtube.music", "YouTube Music", mode = AnnouncementMode.TITLE_AND_ARTIST),
+            appSettings = AppSettings(
+                "com.youtube.music",
+                "YouTube Music",
+                useCustomGuideSettings = true,
+                mode = AnnouncementMode.TITLE_AND_ARTIST,
+            ),
             externalAudioOutput = true,
         )
         assertTrue(decision.shouldAnnounce)
         assertEquals("Glass Eyes, Radiohead.", decision.text)
+    }
+
+    @Test
+    fun appUsesGlobalModeUntilCustomGuideSettingsAreEnabled() {
+        val decision = AnnouncementPolicy.decide(
+            event = event(),
+            userSettings = UserSettings(defaultMode = AnnouncementMode.TITLE_ONLY, suppressDuringSpeakerPlayback = false),
+            appSettings = AppSettings(
+                "com.youtube.music",
+                "YouTube Music",
+                mode = AnnouncementMode.TITLE_AND_ARTIST,
+            ),
+            externalAudioOutput = true,
+        )
+
+        assertEquals("Glass Eyes.", decision.text)
     }
 
     @Test

@@ -145,10 +145,16 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     val useOnThisDeviceSummary: String get() = t("연결 중인 이 기기에 안내합니다.", "Announce through this connected device.")
     val autoEnableOnConnect: String get() = t("연결하면 자동 켜기", "Enable when connected")
     val autoEnableOnConnectSummary: String get() = t("이 기기가 연결되면 안내를 켭니다.", "Enable announcements when this device connects.")
-    val trackGuide: String get() = t("곡 안내", "Track announcements")
+    val trackGuide: String get() = t("기본 안내", "Guide defaults")
     val trackStart: String get() = t("재생 시작", "Playback start")
     val musicDuringGuide: String get() = t("안내 중 음악", "Music during guide")
-    val musicVolumeSummary: String get() = t("음성 음량은 음성 탭에서 따로 조절하고, 음악은 그대로·줄이기·일시정지로 제어합니다.", "Adjust voice volume separately in Voice; keep, duck, or pause music during announcements.")
+    val musicVolumeSummary: String get() = t("음성 음량은 음성 탭에서 따로 조절합니다. 음량 줄이기를 선택하면 아래에서 안내 중 음악 음량을 정합니다.", "Adjust voice volume separately in Voice. When you lower music, choose its volume during announcements below.")
+    val musicDuckAmount: String get() = t("안내 중 음악 음량", "Music volume during guide")
+    fun musicDuckPercent(percent: Int): String = t("현재 미디어 음량의 ${percent}%", "${percent}% of current media volume")
+    fun freeMusicDuckSummary(percent: Int): String = t(
+        "무료 기본값: 안내 중 음악을 현재 미디어 음량의 ${percent}%로 재생합니다.",
+        "Free default: keep music at ${percent}% of current media volume during guides.",
+    )
     val announcementTiming: String get() = t("안내 시점", "Announcement timing")
     val readContent: String get() = t("읽을 내용", "Content to read")
     val announcementDelay: String get() = t("안내 지연", "Announcement delay")
@@ -197,7 +203,16 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     val collapseDetails: String get() = t("세부 설정 접기", "Hide details")
     val expandDetails: String get() = t("세부 설정", "Details")
     val appDetailsPlusTitle: String get() = t("앱별 세부 설정은 Plus 기능입니다.", "Per-app details are a Plus feature.")
-    val appDetailsFreeSummary: String get() = t("무료 버전은 기본 Smart 안내를 사용합니다.", "The free version uses Smart announcements.")
+    val appDetailsFreeSummary: String get() = t("무료 버전은 안내 탭의 기본 설정을 사용합니다.", "The free version uses the Guide defaults.")
+    val appCustomGuideSettings: String get() = t("이 앱만 다르게 설정", "Customize this app")
+    fun appCustomGuideSummary(custom: Boolean): String = if (custom) {
+        t("안내 탭 기본값 대신 이 앱의 예외 설정을 적용합니다.", "Uses this app's overrides instead of the Guide defaults.")
+    } else {
+        t("안내 탭의 기본 설정을 사용합니다.", "Uses the defaults from Guide.")
+    }
+    val appOverrideDetails: String get() = t("앱별 안내 예외", "App-specific overrides")
+    val appReadMode: String get() = t("이 앱의 읽기 방식", "Reading mode for this app")
+    val appAnnouncementTiming: String get() = t("이 앱의 안내 시점", "Timing for this app")
     val appReadTitle: String get() = t("제목", "Title")
     val appReadArtist: String get() = t("아티스트", "Artist")
     val appReadTrackNumber: String get() = t("트랙 번호", "Track number")
@@ -221,7 +236,7 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     val speechRate: String get() = t("속도", "Speed")
     val pitch: String get() = t("높이", "Pitch")
     val voiceVolumeSeparate: String get() = t("음성 음량 · 음악과 별도", "Voice volume · separate from music")
-    val speechVolumeHint: String get() = t("음악 음량은 안내 중 음악 옵션에서 줄이기/그대로/일시정지를 선택합니다. Android의 공용 미디어 음량을 임의로 바꾸지 않습니다.", "Music behavior is selected in the guide settings. TrackTalk does not change Android's shared media volume.")
+    val speechVolumeHint: String get() = t("음악 음량은 안내 탭의 기본 설정에서 정합니다. 줄이기 선택 시 안내가 끝나면 원래 미디어 음량으로 복원합니다.", "Music behavior is set in Guide. When lowering music, the original media volume is restored after the announcement.")
     val testPlayback: String get() = t("테스트 재생", "Test playback")
     val testExample: String get() = t("예: 트랙 3번, Glass Eyes · Radiohead", "Example: track 3, Glass Eyes · Radiohead")
     val voiceControlsPlusTitle: String get() = t("음성 세밀 조절은 Plus 기능입니다.", "Detailed voice controls are a Plus feature.")

@@ -110,6 +110,8 @@ import com.trackvoice.data.MusicTreatment
 import com.trackvoice.data.TrackStartBehavior
 import com.trackvoice.data.AudioDeviceSettings
 import com.trackvoice.announcement.ConnectedAudioDevice
+import com.trackvoice.data.MAX_MUSIC_DUCK_PERCENT
+import com.trackvoice.data.MIN_MUSIC_DUCK_PERCENT
 import com.trackvoice.media.PlaybackEvent
 import com.trackvoice.media.PlaybackStatus
 import com.trackvoice.media.PlaybackCollection
@@ -727,6 +729,11 @@ private fun GeneralSettingsScreen(
         }
         item {
             SettingCard(strings.trackGuide) {
+                Text(
+                    strings.text("모든 앱에 적용되는 안내 기본값입니다.", "Defaults applied to all apps."),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 if (isPremium) {
                     OptionDropdown(strings.trackStart, settings.trackStartBehavior, TrackStartBehavior.values().toList(), strings::trackStartBehavior) { value ->
                         onUpdate { current ->
@@ -745,6 +752,23 @@ private fun GeneralSettingsScreen(
                     }
                     OptionDropdown(strings.musicDuringGuide, settings.musicTreatment, treatmentOptions, strings::musicTreatment) { value ->
                         onUpdate { it.copy(musicTreatment = value) }
+                    }
+                    if (settings.musicTreatment == MusicTreatment.DUCK) {
+                        SliderSetting(
+                            strings.musicDuckAmount,
+                            settings.musicDuckPercent.toFloat(),
+                            MIN_MUSIC_DUCK_PERCENT.toFloat()..MAX_MUSIC_DUCK_PERCENT.toFloat(),
+                            strings.musicDuckPercent(settings.musicDuckPercent),
+                        ) { value ->
+                            onUpdate {
+                                it.copy(
+                                    musicDuckPercent = value.toInt().coerceIn(
+                                        MIN_MUSIC_DUCK_PERCENT,
+                                        MAX_MUSIC_DUCK_PERCENT,
+                                    ),
+                                )
+                            }
+                        }
                     }
                     Text(
                         strings.musicVolumeSummary,
@@ -770,10 +794,10 @@ private fun GeneralSettingsScreen(
                         onUpdate { current -> current.copy(allowRepeatAnnouncements = enabled) }
                     }
                 } else {
-                    BasicPlaybackDefaults()
+                    BasicPlaybackDefaults(settings.musicDuckPercent)
                     PremiumLockedContent(
                         title = strings.text("안내 방식 세부 설정은 Plus 기능입니다.", "Detailed announcement modes are a Plus feature."),
-                        summary = strings.text("무료 버전은 새 트랙을 바로 안내하고 음악을 적당히 줄입니다.", "The free version announces new tracks immediately and lowers music volume."),
+                        summary = strings.text("무료 버전은 새 트랙을 바로 안내하고 음악을 기본 감쇠량으로 줄입니다.", "The free version announces new tracks immediately and uses the default music ducking."),
                         onOpenPremium = onOpenPremium,
                     )
                 }
@@ -1035,8 +1059,26 @@ private fun AppSettingsCard(
                 )
             }
             if (isPremium) {
-                TextButton(onClick = { expanded = !expanded }) {
-                    Text(if (expanded) strings.collapseDetails else strings.expandDetails)
+                SettingSwitchRow(
+                    strings.appCustomGuideSettings,
+                    strings.appCustomGuideSummary(app.useCustomGuideSettings),
+                    app.useCustomGuideSettings,
+                ) { custom ->
+                    expanded = custom
+                    onUpdate(app.copy(useCustomGuideSettings = custom))
+                }
+                CheckRow(strings.appAlwaysExclude, app.alwaysExclude) {
+                    onUpdate(
+                        app.copy(
+                            alwaysExclude = it,
+                            enabled = if (it) false else app.enabled,
+                        ),
+                    )
+                }
+                if (app.useCustomGuideSettings) {
+                    TextButton(onClick = { expanded = !expanded }) {
+                        Text(if (expanded) strings.collapseDetails else strings.expandDetails)
+                    }
                 }
             } else {
                 PremiumLockedContent(
@@ -1045,12 +1087,17 @@ private fun AppSettingsCard(
                     onOpenPremium = onOpenPremium,
                 )
             }
-            if (expanded && isPremium) {
-                OptionDropdown(strings.readContent, app.mode, AnnouncementMode.values().toList(), strings::announcementMode) {
+            if (expanded && isPremium && app.useCustomGuideSettings) {
+                Text(
+                    strings.appOverrideDetails,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                OptionDropdown(strings.appReadMode, app.mode, AnnouncementMode.values().toList(), strings::announcementMode) {
                     onUpdate(app.copy(mode = it))
                 }
                 OptionDropdown(
-                    strings.announcementTiming,
+                    strings.appAnnouncementTiming,
                     app.timing,
                     listOf(null) + AnnouncementTiming.values().toList(),
                     { it?.let(strings::announcementTiming) ?: strings.text("기본 설정 사용", "Use default") },
@@ -1061,14 +1108,6 @@ private fun AppSettingsCard(
                 CheckRow(strings.appReadTrackNumber, app.readTrackNumber) { onUpdate(app.copy(readTrackNumber = it)) }
                 CheckRow(strings.appReadAlbum, app.readAlbum) { onUpdate(app.copy(readAlbum = it)) }
                 CheckRow(strings.appReadCollection, app.readCollection) { onUpdate(app.copy(readCollection = it)) }
-                CheckRow(strings.appAlwaysExclude, app.alwaysExclude) {
-                    onUpdate(
-                        app.copy(
-                            alwaysExclude = it,
-                            enabled = if (it) false else app.enabled,
-                        ),
-                    )
-                }
             }
         }
     }
@@ -1291,12 +1330,12 @@ private fun PremiumLockedContent(
 }
 
 @Composable
-private fun BasicPlaybackDefaults() {
+private fun BasicPlaybackDefaults(musicDuckPercent: Int) {
     val strings = LocalTrackTalkStrings.current
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(strings.text("무료 기본값", "Free defaults"), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         Text(strings.text("새 트랙이 시작되면 음악과 함께 음성 안내", "Guide with music when a new track starts"))
-        Text(strings.text("안내 중에는 음악 음량을 자동으로 줄임", "Lower music volume during announcements"))
+        Text(strings.freeMusicDuckSummary(musicDuckPercent))
         Text(strings.text("음성 기본 음량 65%", "Default voice volume 65%"))
         Text(strings.text("음성 음량은 음악과 분리된 기본 음량으로 출력", "Voice volume is output separately from music"))
     }
