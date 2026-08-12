@@ -11,6 +11,7 @@ import com.trackvoice.data.VoiceLanguage
 import com.trackvoice.data.resolve
 import com.trackvoice.media.PlaybackCollection
 import com.trackvoice.media.PlaybackStatus
+import com.trackvoice.monetization.PremiumMessage
 import androidx.compose.runtime.staticCompositionLocalOf
 
 /** Small, local UI dictionary used by the Compose surface. */
@@ -94,25 +95,39 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     val premiumTitle: String get() = "TrackTalk Plus"
     val plusView: String get() = t("Plus 보기", "View Plus")
     val premiumEnabledSummary: String get() = t("Plus가 활성화되어 모든 고급 기능을 사용할 수 있습니다.", "Plus is active. All advanced features are available.")
-    val premiumLockedSummary: String get() = t("음성 세밀 조절과 기기별 자동화를 한 번 결제로 잠금 해제합니다.", "Unlock detailed voice controls and per-device automation with a one-time purchase.")
+    val premiumLockedSummary: String get() = t("음성 속도·높이·음량과 기기별 자동화 기능을 한 번의 결제로 이용할 수 있습니다.", "Unlock detailed voice controls and per-device automation with a one-time purchase.")
     val view: String get() = t("보기", "View")
-    val basicMusicDetection: String get() = t("기본 곡 감지와 안내는 계속 무료로 제공합니다.", "Basic track detection and announcements remain free.")
-    val premiumVoiceBenefit: String get() = t("속도·높이·음량 등 음성 세밀 조절", "Detailed voice controls: speed, pitch, and volume")
-    val premiumDeviceBenefit: String get() = t("연결 기기별 안내와 자동 활성화", "Per-device announcements and auto activation")
-    val premiumFutureBenefit: String get() = t("향후 추가될 고급 음성·자동화 기능", "Future advanced voice and automation features")
+    val basicMusicDetection: String get() = t("곡 감지와 기본 안내 기능은 계속 무료로 제공됩니다.", "Track detection and basic announcements remain free.")
+    val premiumVoiceBenefit: String get() = t("음성 속도·높이·음량 세부 조절", "Fine-tune voice speed, pitch, and volume")
+    val premiumDeviceBenefit: String get() = t("기기별 안내와 자동 활성화", "Per-device announcements and auto-enable")
+    val premiumFutureBenefit: String get() = t("추가 예정인 고급 음성·자동화 기능", "Future advanced voice and automation features")
     val premiumActive: String get() = t("Plus가 활성화되어 있습니다.", "Plus is active.")
-    fun oneTimePrice(price: String): String = t("한 번 결제 · $price", "One-time purchase · $price")
-    val playProductPreparing: String get() = t("Play Console 상품을 준비 중입니다.", "The Play Console product is being prepared.")
+    fun oneTimePrice(price: String): String = t("일회성 결제 · $price", "One-time purchase · $price")
+    val playProductPreparing: String get() = t("Plus 구매 기능을 준비 중입니다. 잠시 후 다시 시도해 주세요.", "Plus purchases aren't ready yet. Please try again later.")
+    fun premiumMessage(message: PremiumMessage): String = when (message) {
+        PremiumMessage.BILLING_UNAVAILABLE -> t("Google Play 결제를 사용할 수 없습니다.", "Google Play billing is unavailable.")
+        PremiumMessage.SERVICE_DISCONNECTED -> t("Google Play 연결이 끊겼습니다. 잠시 후 다시 시도해 주세요.", "The Google Play connection was lost. Please try again later.")
+        PremiumMessage.PRODUCT_UNAVAILABLE -> playProductPreparing
+        PremiumMessage.PRODUCT_LOAD_FAILED -> t("구매 상품을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.", "We couldn't load the purchase product. Please try again later.")
+        PremiumMessage.PURCHASE_UNAVAILABLE -> t("구매 상품을 아직 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.", "The purchase product isn't available yet. Please try again later.")
+        PremiumMessage.PURCHASE_FLOW_FAILED -> t("구매 화면을 열지 못했습니다. 잠시 후 다시 시도해 주세요.", "We couldn't open the purchase screen. Please try again later.")
+        PremiumMessage.PURCHASE_CANCELED -> t("구매를 취소했습니다.", "Purchase canceled.")
+        PremiumMessage.PURCHASE_FAILED -> t("구매를 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.", "The purchase couldn't be completed. Please try again later.")
+        PremiumMessage.RESTORE_FAILED -> t("구매 내역을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.", "We couldn't check your purchases. Please try again later.")
+        PremiumMessage.PENDING -> t("결제가 보류 중입니다. 결제가 완료되면 Plus가 활성화됩니다.", "Payment is pending. Plus will activate when payment is complete.")
+        PremiumMessage.LOCAL_CODE_APPLIED -> t("지인용 Plus 코드가 적용되었습니다.", "Friend Plus code applied.")
+        PremiumMessage.ACKNOWLEDGE_FAILED -> t("구매 확인을 완료하지 못했습니다. 앱을 다시 열어 확인해 주세요.", "We couldn't confirm the purchase. Reopen the app to check again.")
+    }
     val promoDescription: String
-        get() = t("지인용 얼리 액세스 코드는 이 기기에서 Plus를 바로 활성화합니다. Google Play 프로모션 코드는 아래 버튼으로 redeem합니다.", "The early-access code activates Plus on this device. Use Google Play promo codes with the button below.")
-    val promoCode: String get() = t("프로모션 코드", "Promo code")
-    val promoCodeFormatError: String get() = t("영문·숫자·하이픈으로 된 코드를 입력해 주세요.", "Enter a code using letters, numbers, and hyphens.")
+        get() = t("지인용 코드는 이 기기에서 Plus를 바로 활성화합니다. Google Play 프로모션 코드는 아래 버튼을 눌러 사용하세요.", "A friend code activates Plus on this device. Use a Google Play promo code with the button below.")
+    val promoCode: String get() = t("코드 입력", "Enter a code")
+    val promoCodeFormatError: String get() = t("영문, 숫자, 하이픈(-)만 입력할 수 있습니다.", "Use letters, numbers, and hyphens (-) only.")
     val applyFriendCode: String get() = t("지인용 코드 적용", "Apply friend code")
-    val useGooglePlayCode: String get() = t("Google Play에서 코드 사용", "Redeem on Google Play")
+    val useGooglePlayCode: String get() = t("Google Play 프로모션 코드 사용", "Redeem on Google Play")
     val close: String get() = t("닫기", "Close")
     val checking: String get() = t("확인 중...", "Checking...")
     val buyPlus: String get() = t("Plus 구매", "Buy Plus")
-    val restorePurchase: String get() = t("구매 복원", "Restore purchase")
+    val restorePurchase: String get() = t("구매 내역 복원", "Restore purchase")
 
     val basicOperation: String get() = t("기본 동작", "Basic behavior")
     val voiceGuide: String get() = t("음성 안내", "Voice guide")

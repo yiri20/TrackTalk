@@ -428,14 +428,14 @@ private fun PremiumDialog(
                     )
                     state.price != null -> Text(strings.oneTimePrice(state.price.orEmpty()))
                     else -> Text(
-                        state.message ?: strings.playProductPreparing,
+                        state.message?.let(strings::premiumMessage) ?: strings.playProductPreparing,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 if (!state.isPremium && state.message != null && state.price != null) {
                     Text(
-                        state.message.orEmpty(),
+                        strings.premiumMessage(state.message),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

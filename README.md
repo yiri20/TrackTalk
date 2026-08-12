@@ -111,7 +111,7 @@ Android 설정 또는 알림 패널의 Quick Settings 편집 화면에서 `Track
 gradlew.bat --offline :app:testDebugUnitTest
 ```
 
-formatter 7개, 정책 5개, 중복 억제 5개, 혼합 언어 구간 3개, TTS 언어 fallback 1개, 활성 세션 선택 5개, 앱 카테고리 6개, Plus entitlement 3개, 프로모션 코드 3개, 재생 계획 2개, 앨범·재생목록 판별 3개, 성별 음성 선택 4개, 앱 언어 설정 4개로 총 51개 테스트가 통과합니다.
+formatter 7개, 정책 5개, 중복 억제 5개, 혼합 언어 구간 3개, TTS 언어 fallback 1개, 활성 세션 선택 5개, 앱 카테고리 6개, Plus entitlement 3개, 프로모션 코드 3개, 재생 계획 2개, 앨범·재생목록 판별 3개, 성별 음성 선택 4개, 앱 언어 설정 5개로 총 52개 테스트가 통과합니다.
 
 실제 Android 환경을 사용하는 MediaSession 매핑 테스트는 다음 명령으로 실행합니다.
 

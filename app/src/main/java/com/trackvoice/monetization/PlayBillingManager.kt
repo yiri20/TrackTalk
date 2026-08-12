@@ -24,9 +24,24 @@ data class PremiumState(
     val productAvailable: Boolean = false,
     val price: String? = null,
     val isLoading: Boolean = false,
-    val message: String? = null,
+    val message: PremiumMessage? = null,
     val isLocalUnlock: Boolean = false,
 )
+
+enum class PremiumMessage {
+    BILLING_UNAVAILABLE,
+    SERVICE_DISCONNECTED,
+    PRODUCT_UNAVAILABLE,
+    PRODUCT_LOAD_FAILED,
+    PURCHASE_UNAVAILABLE,
+    PURCHASE_FLOW_FAILED,
+    PURCHASE_CANCELED,
+    PURCHASE_FAILED,
+    RESTORE_FAILED,
+    PENDING,
+    LOCAL_CODE_APPLIED,
+    ACKNOWLEDGE_FAILED,
+}
 
 class PlayBillingManager(context: Context) : PurchasesUpdatedListener {
     companion object {
@@ -81,7 +96,7 @@ class PlayBillingManager(context: Context) : PurchasesUpdatedListener {
                     _state.value = _state.value.copy(
                         billingReady = false,
                         isLoading = false,
-                        message = billingResult.debugMessage.ifBlank { "Google Play 결제를 사용할 수 없습니다." },
+                        message = PremiumMessage.BILLING_UNAVAILABLE,
                     )
                 }
             }
@@ -91,7 +106,7 @@ class PlayBillingManager(context: Context) : PurchasesUpdatedListener {
                 _state.value = _state.value.copy(
                     billingReady = false,
                     isLoading = false,
-                    message = "Google Play 연결이 끊겼습니다. 잠시 후 다시 시도해 주세요.",
+                    message = PremiumMessage.SERVICE_DISCONNECTED,
                 )
             }
         })
@@ -110,7 +125,7 @@ class PlayBillingManager(context: Context) : PurchasesUpdatedListener {
         val details = productDetails
         if (!billingClient.isReady || details == null) {
             _state.value = _state.value.copy(
-                message = "구매 상품을 아직 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.",
+                message = PremiumMessage.PURCHASE_UNAVAILABLE,
             )
             refresh()
             return
@@ -126,7 +141,7 @@ class PlayBillingManager(context: Context) : PurchasesUpdatedListener {
         )
         if (result.responseCode != BillingClient.BillingResponseCode.OK) {
             _state.value = _state.value.copy(
-                message = result.debugMessage.ifBlank { "구매 화면을 열지 못했습니다." },
+                message = PremiumMessage.PURCHASE_FLOW_FAILED,
             )
         }
     }
@@ -150,7 +165,7 @@ class PlayBillingManager(context: Context) : PurchasesUpdatedListener {
             isPremium = true,
             isLocalUnlock = true,
             isLoading = false,
-            message = "지인용 Plus 코드가 적용되었습니다.",
+            message = PremiumMessage.LOCAL_CODE_APPLIED,
         )
         return true
     }
@@ -162,13 +177,13 @@ class PlayBillingManager(context: Context) : PurchasesUpdatedListener {
             }
 
             billingResult.responseCode == BillingClient.BillingResponseCode.USER_CANCELED -> {
-                _state.value = _state.value.copy(isLoading = false, message = "구매를 취소했습니다.")
+                _state.value = _state.value.copy(isLoading = false, message = PremiumMessage.PURCHASE_CANCELED)
             }
 
             else -> {
                 _state.value = _state.value.copy(
                     isLoading = false,
-                    message = billingResult.debugMessage.ifBlank { "구매를 완료하지 못했습니다." },
+                    message = PremiumMessage.PURCHASE_FAILED,
                 )
             }
         }
@@ -192,7 +207,7 @@ class PlayBillingManager(context: Context) : PurchasesUpdatedListener {
                     productAvailable = productDetails != null,
                     price = productDetails?.oneTimePurchaseOfferDetails?.formattedPrice,
                     message = if (productDetails == null) {
-                        "Play Console에 $PREMIUM_PRODUCT_ID 상품을 등록하면 구매할 수 있습니다."
+                        PremiumMessage.PRODUCT_UNAVAILABLE
                     } else {
                         null
                     },
@@ -201,7 +216,7 @@ class PlayBillingManager(context: Context) : PurchasesUpdatedListener {
                 _state.value = _state.value.copy(
                     productAvailable = false,
                     price = null,
-                    message = billingResult.debugMessage.ifBlank { "구매 상품을 불러오지 못했습니다." },
+                    message = PremiumMessage.PRODUCT_LOAD_FAILED,
                 )
             }
         }
@@ -217,7 +232,7 @@ class PlayBillingManager(context: Context) : PurchasesUpdatedListener {
             } else {
                 _state.value = _state.value.copy(
                     isLoading = false,
-                    message = billingResult.debugMessage.ifBlank { "구매 내역을 확인하지 못했습니다." },
+                    message = PremiumMessage.RESTORE_FAILED,
                 )
             }
         }
@@ -233,7 +248,7 @@ class PlayBillingManager(context: Context) : PurchasesUpdatedListener {
             isLocalUnlock = localPlusUnlocked,
             isLoading = false,
             message = when {
-                pending && !purchased && !localPlusUnlocked -> "결제가 보류 중입니다. 결제가 완료되면 Plus가 활성화됩니다."
+                pending && !purchased && !localPlusUnlocked -> PremiumMessage.PENDING
                 purchased || localPlusUnlocked -> null
                 else -> _state.value.message
             },
@@ -251,7 +266,7 @@ class PlayBillingManager(context: Context) : PurchasesUpdatedListener {
         billingClient.acknowledgePurchase(params) { result ->
             if (result.responseCode != BillingClient.BillingResponseCode.OK) {
                 _state.value = _state.value.copy(
-                    message = "구매 확인을 완료하지 못했습니다. 앱을 다시 열어 확인해 주세요.",
+                    message = PremiumMessage.ACKNOWLEDGE_FAILED,
                 )
             }
         }
