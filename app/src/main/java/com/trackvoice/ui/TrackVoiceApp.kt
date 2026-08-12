@@ -98,6 +98,7 @@ import com.trackvoice.TrackVoiceViewModel
 import com.trackvoice.announcement.InstalledVoice
 import com.trackvoice.announcement.TtsStatus
 import com.trackvoice.data.AnnouncementMode
+import com.trackvoice.data.AnnouncementReadField
 import com.trackvoice.data.AnnouncementTiming
 import com.trackvoice.data.AppSettings
 import com.trackvoice.data.AppCategory
@@ -109,6 +110,9 @@ import com.trackvoice.data.VoiceLanguage
 import com.trackvoice.data.MusicTreatment
 import com.trackvoice.data.TrackStartBehavior
 import com.trackvoice.data.AudioDeviceSettings
+import com.trackvoice.data.DEFAULT_ALBUM_READ_FIELDS
+import com.trackvoice.data.DEFAULT_ALGORITHMIC_READ_FIELDS
+import com.trackvoice.data.DEFAULT_PLAYLIST_READ_FIELDS
 import com.trackvoice.announcement.ConnectedAudioDevice
 import com.trackvoice.data.MAX_MUSIC_DUCK_PERCENT
 import com.trackvoice.data.MIN_MUSIC_DUCK_PERCENT
@@ -812,14 +816,41 @@ private fun GeneralSettingsScreen(
                 )
                 if (isPremium) {
                     OptionDropdown(strings.albumPlayback, settings.albumMode, AnnouncementMode.values().toList(), strings::announcementMode) { mode ->
-                        onUpdate { it.copy(albumMode = mode) }
+                        onUpdate { it.copy(albumMode = mode, albumReadFields = mode.toReadFields(DEFAULT_ALBUM_READ_FIELDS)) }
                     }
+                    ContentReadChecklist(
+                        title = strings.albumReadItems,
+                        availableFields = listOf(
+                            AnnouncementReadField.ALBUM,
+                            AnnouncementReadField.TRACK_NUMBER,
+                            AnnouncementReadField.TITLE,
+                            AnnouncementReadField.ARTIST,
+                        ),
+                        selectedFields = settings.albumReadFields,
+                    ) { fields -> onUpdate { it.copy(albumMode = AnnouncementMode.ALBUM, albumReadFields = fields) } }
                     OptionDropdown(strings.playlistPlayback, settings.playlistMode, AnnouncementMode.values().toList(), strings::announcementMode) { mode ->
-                        onUpdate { it.copy(playlistMode = mode) }
+                        onUpdate { it.copy(playlistMode = mode, playlistReadFields = mode.toReadFields(DEFAULT_PLAYLIST_READ_FIELDS)) }
                     }
+                    ContentReadChecklist(
+                        title = strings.playlistReadItems,
+                        availableFields = listOf(
+                            AnnouncementReadField.COLLECTION,
+                            AnnouncementReadField.TITLE,
+                            AnnouncementReadField.ARTIST,
+                        ),
+                        selectedFields = settings.playlistReadFields,
+                    ) { fields -> onUpdate { it.copy(playlistMode = AnnouncementMode.PLAYLIST, playlistReadFields = fields) } }
                     OptionDropdown(strings.algorithmPlayback, settings.algorithmMode, AnnouncementMode.values().toList(), strings::announcementMode) { mode ->
-                        onUpdate { it.copy(algorithmMode = mode) }
+                        onUpdate { it.copy(algorithmMode = mode, algorithmReadFields = mode.toReadFields(DEFAULT_ALGORITHMIC_READ_FIELDS)) }
                     }
+                    ContentReadChecklist(
+                        title = strings.algorithmReadItems,
+                        availableFields = listOf(
+                            AnnouncementReadField.TITLE,
+                            AnnouncementReadField.ARTIST,
+                        ),
+                        selectedFields = settings.algorithmReadFields,
+                    ) { fields -> onUpdate { it.copy(algorithmMode = AnnouncementMode.TITLE_AND_ARTIST, algorithmReadFields = fields) } }
                 } else {
                     Text(strings.freeAlbumPlaylistDefaults)
                     PremiumLockedContent(
@@ -1342,6 +1373,49 @@ private fun BasicPlaybackDefaults(musicDuckPercent: Int) {
         Text(strings.text("음성 기본 음량 65%", "Default voice volume 65%"))
         Text(strings.text("음성 음량은 음악과 분리된 기본 음량으로 출력", "Voice volume is output separately from music"))
     }
+}
+
+@Composable
+private fun ContentReadChecklist(
+    title: String,
+    availableFields: List<AnnouncementReadField>,
+    selectedFields: Set<AnnouncementReadField>,
+    onUpdate: (Set<AnnouncementReadField>) -> Unit,
+) {
+    val strings = LocalTrackTalkStrings.current
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        Text(
+            strings.contentReadChecklistHint,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        availableFields.forEach { field ->
+            CheckRow(strings.readField(field), field in selectedFields) { checked ->
+                onUpdate(if (checked) selectedFields + field else selectedFields - field)
+            }
+        }
+    }
+}
+
+private fun AnnouncementMode.toReadFields(defaultFields: Set<AnnouncementReadField>): Set<AnnouncementReadField> = when (this) {
+    AnnouncementMode.ALBUM -> setOf(
+        AnnouncementReadField.ALBUM,
+        AnnouncementReadField.TRACK_NUMBER,
+        AnnouncementReadField.TITLE,
+        AnnouncementReadField.ARTIST,
+    )
+    AnnouncementMode.PLAYLIST -> setOf(
+        AnnouncementReadField.COLLECTION,
+        AnnouncementReadField.TITLE,
+        AnnouncementReadField.ARTIST,
+    )
+    AnnouncementMode.TITLE_ONLY -> setOf(AnnouncementReadField.TITLE)
+    AnnouncementMode.TITLE_AND_ARTIST -> setOf(
+        AnnouncementReadField.TITLE,
+        AnnouncementReadField.ARTIST,
+    )
+    AnnouncementMode.SMART -> defaultFields
 }
 
 @Composable

@@ -1,6 +1,7 @@
 package com.trackvoice.ui
 
 import com.trackvoice.data.AnnouncementMode
+import com.trackvoice.data.AnnouncementReadField
 import com.trackvoice.data.AnnouncementTiming
 import com.trackvoice.data.AppCategory
 import com.trackvoice.data.AppLanguage
@@ -166,14 +167,18 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     val albumPlayback: String get() = t("앨범 재생", "Album playback")
     val playlistPlayback: String get() = t("재생목록 재생", "Playlist playback")
     val algorithmPlayback: String get() = t("알고리즘·랜덤 재생", "Algorithmic / shuffle playback")
+    val albumReadItems: String get() = t("앨범에서 읽을 항목", "Album fields to read")
+    val playlistReadItems: String get() = t("재생목록에서 읽을 항목", "Playlist fields to read")
+    val algorithmReadItems: String get() = t("알고리즘·랜덤 재생에서 읽을 항목", "Algorithmic / shuffle fields to read")
+    val contentReadChecklistHint: String get() = t("위 형식은 빠른 기본값이며, 아래에서 읽을 항목을 세부 조정합니다.", "The format above is a quick preset; fine-tune the fields below.")
     val freeAlbumPlaylistDefaults: String get() = t("무료 기본값: 앨범은 앨범·트랙·아티스트, 재생목록은 재생목록·곡·아티스트, 알고리즘·랜덤 재생은 곡·아티스트를 안내합니다.", "Free defaults: albums announce album, track, and artist; playlists announce playlist, track, and artist; algorithmic or shuffled playback announces track and artist.")
     val autoEnable: String get() = t("자동 켜기", "Auto enable")
     val screenOffEnable: String get() = t("화면이 꺼지면 켜기", "Enable when screen turns off")
     val screenOffEnableSummary: String get() = t("화면을 끄면 안내를 시작합니다.", "Start announcements when the screen turns off.")
     val screenOnRestore: String get() = t("화면을 켜면 원래대로", "Restore when screen turns on")
     val screenOnRestoreSummary: String get() = t("화면을 켜면 자동 상태를 해제합니다.", "Disable the automatic state when the screen turns on.")
-    val bluetoothOnly: String get() = t("화면 꺼짐은 Bluetooth에서만", "Screen-off enable on Bluetooth only")
-    val bluetoothOnlySummary: String get() = t("화면이 꺼질 때 Bluetooth 오디오가 연결된 경우에만 자동 켭니다.", "Enable only when Bluetooth audio is connected as the screen turns off.")
+    val bluetoothOnly: String get() = t("화면이 꺼지면 Bluetooth에서만 켜기", "Screen-off enable on Bluetooth only")
+    val bluetoothOnlySummary: String get() = t("화면이 꺼질 때 Bluetooth 오디오가 연결된 경우에만 안내를 자동으로 켭니다.", "Enable only when Bluetooth audio is connected as the screen turns off.")
 
     val appsIntro: String get() = t("기기에서 미디어 재생을 지원하는 앱과 감지된 앱입니다.", "Media-capable and detected apps on this device.")
     val refresh: String get() = t("새로 고침", "Refresh")
@@ -220,6 +225,14 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     val appReadAlbum: String get() = t("앨범", "Album")
     val appReadCollection: String get() = t("앨범·재생목록 이름", "Album · playlist name")
     val appAlwaysExclude: String get() = t("이 앱은 항상 제외", "Always exclude this app")
+
+    fun readField(field: AnnouncementReadField): String = when (field) {
+        AnnouncementReadField.TITLE -> appReadTitle
+        AnnouncementReadField.ARTIST -> appReadArtist
+        AnnouncementReadField.TRACK_NUMBER -> appReadTrackNumber
+        AnnouncementReadField.ALBUM -> appReadAlbum
+        AnnouncementReadField.COLLECTION -> t("재생목록 이름", "Playlist name")
+    }
 
     val voiceSelection: String get() = t("음성 선택", "Voice selection")
     val defaultVoiceLanguage: String get() = t("기본 언어", "Default language")

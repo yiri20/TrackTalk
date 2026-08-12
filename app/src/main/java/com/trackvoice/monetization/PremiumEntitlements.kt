@@ -3,6 +3,9 @@ package com.trackvoice.monetization
 import com.trackvoice.data.UserSettings
 import com.trackvoice.data.AppSettings
 import com.trackvoice.data.AnnouncementMode
+import com.trackvoice.data.DEFAULT_ALBUM_READ_FIELDS
+import com.trackvoice.data.DEFAULT_ALGORITHMIC_READ_FIELDS
+import com.trackvoice.data.DEFAULT_PLAYLIST_READ_FIELDS
 import com.trackvoice.data.DEFAULT_MUSIC_DUCK_PERCENT
 import com.trackvoice.data.DEFAULT_TTS_VOLUME
 
@@ -24,6 +27,9 @@ fun UserSettings.forPremiumEntitlement(isPremium: Boolean): UserSettings {
         pitch = 1f,
         volume = DEFAULT_TTS_VOLUME,
         algorithmMode = AnnouncementMode.TITLE_AND_ARTIST,
+        albumReadFields = DEFAULT_ALBUM_READ_FIELDS,
+        playlistReadFields = DEFAULT_PLAYLIST_READ_FIELDS,
+        algorithmReadFields = DEFAULT_ALGORITHMIC_READ_FIELDS,
         raiseDeviceVolume = false,
         deviceVolumePercent = 90,
     )

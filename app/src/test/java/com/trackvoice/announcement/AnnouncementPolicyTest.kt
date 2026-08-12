@@ -1,6 +1,7 @@
 package com.trackvoice.announcement
 
 import com.trackvoice.data.AnnouncementMode
+import com.trackvoice.data.AnnouncementReadField
 import com.trackvoice.data.AppSettings
 import com.trackvoice.data.UserSettings
 import com.trackvoice.media.PlaybackEvent
@@ -86,6 +87,25 @@ class AnnouncementPolicyTest {
         )
 
         assertEquals("Glass Eyes.", decision.text)
+    }
+
+    @Test
+    fun albumChecklistCanOmitTrackNumber() {
+        val decision = AnnouncementPolicy.decide(
+            event = event(),
+            userSettings = UserSettings(
+                suppressDuringSpeakerPlayback = false,
+                albumReadFields = setOf(
+                    AnnouncementReadField.ALBUM,
+                    AnnouncementReadField.TITLE,
+                    AnnouncementReadField.ARTIST,
+                ),
+            ),
+            appSettings = null,
+            externalAudioOutput = true,
+        )
+
+        assertEquals("앨범 A Moon Shaped Pool, Glass Eyes, Radiohead.", decision.text)
     }
 
     private fun queueItem(title: String = "Glass Eyes") = com.trackvoice.media.QueueItemSnapshot(

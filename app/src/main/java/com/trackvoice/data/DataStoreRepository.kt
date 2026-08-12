@@ -149,6 +149,9 @@ class DataStoreRepository(private val context: Context) {
         val albumMode = stringPreferencesKey("album_mode")
         val playlistMode = stringPreferencesKey("playlist_mode")
         val algorithmMode = stringPreferencesKey("algorithm_mode")
+        val albumReadFields = stringSetPreferencesKey("album_read_fields")
+        val playlistReadFields = stringSetPreferencesKey("playlist_read_fields")
+        val algorithmReadFields = stringSetPreferencesKey("algorithm_read_fields")
         val voiceLanguage = stringPreferencesKey("voice_language")
         val voiceName = stringPreferencesKey("voice_name")
         val genderFilter = stringPreferencesKey("gender_filter")
@@ -176,37 +179,48 @@ class DataStoreRepository(private val context: Context) {
         fun alwaysExclude(packageName: String) = appBooleanKey(packageName, "always_exclude")
     }
 
-    private fun Preferences.toUserSettings(): UserSettings = UserSettings(
-        appLanguage = enumOrDefault(this[Keys.appLanguage], AppLanguage.SYSTEM),
-        enabled = this[Keys.enabled] ?: true,
-        autoEnableOnScreenOff = this[Keys.autoEnableOnScreenOff] ?: false,
-        restoreEnabledWhenScreenOn = this[Keys.restoreEnabledWhenScreenOn] ?: true,
-        headphonesOnly = this[Keys.headphonesOnly] ?: false,
-        bluetoothOnlyForAutoEnable = this[Keys.bluetoothOnlyForAutoEnable] ?: false,
-        suppressDuringSpeakerPlayback = this[Keys.suppressDuringSpeakerPlayback] ?: true,
-        musicTreatment = this[Keys.musicTreatment]?.let { enumOrDefault(it, MusicTreatment.DUCK) }
-            ?: if (this[Keys.pauseMusicDuringAnnouncement] ?: false) MusicTreatment.PAUSE else MusicTreatment.DUCK,
-        musicDuckPercent = (this[Keys.musicDuckPercent] ?: DEFAULT_MUSIC_DUCK_PERCENT)
-            .coerceIn(MIN_MUSIC_DUCK_PERCENT, MAX_MUSIC_DUCK_PERCENT),
-        trackStartBehavior = enumOrDefault(this[Keys.trackStartBehavior], TrackStartBehavior.PLAY_IMMEDIATELY),
-        showStatusNotification = this[Keys.showStatusNotification] ?: true,
-        timing = enumOrDefault(this[Keys.timing], AnnouncementTiming.IMMEDIATE),
-        delaySeconds = (this[Keys.delaySeconds] ?: 0).coerceIn(0, 2),
-        defaultMode = enumOrDefault(this[Keys.defaultMode], AnnouncementMode.SMART),
-        allowRepeatAnnouncements = this[Keys.allowRepeatAnnouncements] ?: false,
-        minimumPlaybackSeconds = (this[Keys.minimumPlaybackSeconds] ?: 0).coerceIn(0, 120),
-        albumMode = enumOrDefault(this[Keys.albumMode], AnnouncementMode.ALBUM),
-        playlistMode = enumOrDefault(this[Keys.playlistMode], AnnouncementMode.PLAYLIST),
-        algorithmMode = enumOrDefault(this[Keys.algorithmMode], AnnouncementMode.TITLE_AND_ARTIST),
-        voiceLanguage = enumOrDefault(this[Keys.voiceLanguage], VoiceLanguage.AUTO),
-        voiceName = this[Keys.voiceName],
-        genderFilter = enumOrDefault(this[Keys.genderFilter], GenderFilter.ANY),
-        speechRate = (this[Keys.speechRate] ?: 1f).coerceIn(0.5f, 2f),
-        pitch = (this[Keys.pitch] ?: 1f).coerceIn(0.5f, 2f),
-        volume = (this[Keys.volume] ?: DEFAULT_TTS_VOLUME).coerceIn(0f, 1f),
-        raiseDeviceVolume = this[Keys.raiseDeviceVolume] ?: false,
-        deviceVolumePercent = (this[Keys.deviceVolumePercent] ?: 90).coerceIn(10, 100),
-    )
+    private fun Preferences.toUserSettings(): UserSettings {
+        val albumMode = enumOrDefault(this[Keys.albumMode], AnnouncementMode.ALBUM)
+        val playlistMode = enumOrDefault(this[Keys.playlistMode], AnnouncementMode.PLAYLIST)
+        val algorithmMode = enumOrDefault(this[Keys.algorithmMode], AnnouncementMode.TITLE_AND_ARTIST)
+        return UserSettings(
+            appLanguage = enumOrDefault(this[Keys.appLanguage], AppLanguage.SYSTEM),
+            enabled = this[Keys.enabled] ?: true,
+            autoEnableOnScreenOff = this[Keys.autoEnableOnScreenOff] ?: false,
+            restoreEnabledWhenScreenOn = this[Keys.restoreEnabledWhenScreenOn] ?: true,
+            headphonesOnly = this[Keys.headphonesOnly] ?: false,
+            bluetoothOnlyForAutoEnable = this[Keys.bluetoothOnlyForAutoEnable] ?: false,
+            suppressDuringSpeakerPlayback = this[Keys.suppressDuringSpeakerPlayback] ?: true,
+            musicTreatment = this[Keys.musicTreatment]?.let { enumOrDefault(it, MusicTreatment.DUCK) }
+                ?: if (this[Keys.pauseMusicDuringAnnouncement] ?: false) MusicTreatment.PAUSE else MusicTreatment.DUCK,
+            musicDuckPercent = (this[Keys.musicDuckPercent] ?: DEFAULT_MUSIC_DUCK_PERCENT)
+                .coerceIn(MIN_MUSIC_DUCK_PERCENT, MAX_MUSIC_DUCK_PERCENT),
+            trackStartBehavior = enumOrDefault(this[Keys.trackStartBehavior], TrackStartBehavior.PLAY_IMMEDIATELY),
+            showStatusNotification = this[Keys.showStatusNotification] ?: true,
+            timing = enumOrDefault(this[Keys.timing], AnnouncementTiming.IMMEDIATE),
+            delaySeconds = (this[Keys.delaySeconds] ?: 0).coerceIn(0, 2),
+            defaultMode = enumOrDefault(this[Keys.defaultMode], AnnouncementMode.SMART),
+            allowRepeatAnnouncements = this[Keys.allowRepeatAnnouncements] ?: false,
+            minimumPlaybackSeconds = (this[Keys.minimumPlaybackSeconds] ?: 0).coerceIn(0, 120),
+            albumMode = albumMode,
+            playlistMode = playlistMode,
+            algorithmMode = algorithmMode,
+            albumReadFields = this[Keys.albumReadFields]?.toReadFields()
+                ?: readFieldsForMode(albumMode, DEFAULT_ALBUM_READ_FIELDS),
+            playlistReadFields = this[Keys.playlistReadFields]?.toReadFields()
+                ?: readFieldsForMode(playlistMode, DEFAULT_PLAYLIST_READ_FIELDS),
+            algorithmReadFields = this[Keys.algorithmReadFields]?.toReadFields()
+                ?: readFieldsForMode(algorithmMode, DEFAULT_ALGORITHMIC_READ_FIELDS),
+            voiceLanguage = enumOrDefault(this[Keys.voiceLanguage], VoiceLanguage.AUTO),
+            voiceName = this[Keys.voiceName],
+            genderFilter = enumOrDefault(this[Keys.genderFilter], GenderFilter.ANY),
+            speechRate = (this[Keys.speechRate] ?: 1f).coerceIn(0.5f, 2f),
+            pitch = (this[Keys.pitch] ?: 1f).coerceIn(0.5f, 2f),
+            volume = (this[Keys.volume] ?: DEFAULT_TTS_VOLUME).coerceIn(0f, 1f),
+            raiseDeviceVolume = this[Keys.raiseDeviceVolume] ?: false,
+            deviceVolumePercent = (this[Keys.deviceVolumePercent] ?: 90).coerceIn(10, 100),
+        )
+    }
 
     private fun Preferences.toAudioDeviceSettings(): Map<String, AudioDeviceSettings> =
         this[Keys.knownDeviceKeys].orEmpty().associateWith { key ->
@@ -272,6 +286,9 @@ class DataStoreRepository(private val context: Context) {
         this[Keys.albumMode] = settings.albumMode.name
         this[Keys.playlistMode] = settings.playlistMode.name
         this[Keys.algorithmMode] = settings.algorithmMode.name
+        this[Keys.albumReadFields] = settings.albumReadFields.map(AnnouncementReadField::name).toSet()
+        this[Keys.playlistReadFields] = settings.playlistReadFields.map(AnnouncementReadField::name).toSet()
+        this[Keys.algorithmReadFields] = settings.algorithmReadFields.map(AnnouncementReadField::name).toSet()
         this[Keys.voiceLanguage] = settings.voiceLanguage.name
         if (settings.voiceName == null) remove(Keys.voiceName) else this[Keys.voiceName] = settings.voiceName
         this[Keys.genderFilter] = settings.genderFilter.name
@@ -302,6 +319,32 @@ class DataStoreRepository(private val context: Context) {
 
     private inline fun <reified T : Enum<T>> nullableEnum(value: String?): T? =
         value?.let { runCatching { enumValueOf<T>(it) }.getOrNull() }
+}
+
+private fun Set<String>.toReadFields(): Set<AnnouncementReadField> =
+    mapNotNull { runCatching { AnnouncementReadField.valueOf(it) }.getOrNull() }.toSet()
+
+private fun readFieldsForMode(
+    mode: AnnouncementMode,
+    defaultFields: Set<AnnouncementReadField>,
+): Set<AnnouncementReadField> = when (mode) {
+    AnnouncementMode.ALBUM -> setOf(
+        AnnouncementReadField.ALBUM,
+        AnnouncementReadField.TRACK_NUMBER,
+        AnnouncementReadField.TITLE,
+        AnnouncementReadField.ARTIST,
+    )
+    AnnouncementMode.PLAYLIST -> setOf(
+        AnnouncementReadField.COLLECTION,
+        AnnouncementReadField.TITLE,
+        AnnouncementReadField.ARTIST,
+    )
+    AnnouncementMode.TITLE_ONLY -> setOf(AnnouncementReadField.TITLE)
+    AnnouncementMode.TITLE_AND_ARTIST -> setOf(
+        AnnouncementReadField.TITLE,
+        AnnouncementReadField.ARTIST,
+    )
+    AnnouncementMode.SMART -> defaultFields
 }
 
 private fun appBooleanKey(packageName: String, suffix: String): Preferences.Key<Boolean> =

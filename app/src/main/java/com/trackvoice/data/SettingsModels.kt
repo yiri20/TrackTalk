@@ -13,6 +13,32 @@ enum class AnnouncementMode(val label: String) {
     TITLE_ONLY("제목만"),
 }
 
+enum class AnnouncementReadField {
+    TITLE,
+    ARTIST,
+    TRACK_NUMBER,
+    ALBUM,
+    COLLECTION,
+}
+
+val DEFAULT_ALBUM_READ_FIELDS = setOf(
+    AnnouncementReadField.ALBUM,
+    AnnouncementReadField.TRACK_NUMBER,
+    AnnouncementReadField.TITLE,
+    AnnouncementReadField.ARTIST,
+)
+
+val DEFAULT_PLAYLIST_READ_FIELDS = setOf(
+    AnnouncementReadField.COLLECTION,
+    AnnouncementReadField.TITLE,
+    AnnouncementReadField.ARTIST,
+)
+
+val DEFAULT_ALGORITHMIC_READ_FIELDS = setOf(
+    AnnouncementReadField.TITLE,
+    AnnouncementReadField.ARTIST,
+)
+
 enum class AnnouncementTiming(val label: String) {
     IMMEDIATE("즉시"),
     DELAYED("잠시 후"),
@@ -81,6 +107,9 @@ data class UserSettings(
     val albumMode: AnnouncementMode = AnnouncementMode.ALBUM,
     val playlistMode: AnnouncementMode = AnnouncementMode.PLAYLIST,
     val algorithmMode: AnnouncementMode = AnnouncementMode.TITLE_AND_ARTIST,
+    val albumReadFields: Set<AnnouncementReadField> = DEFAULT_ALBUM_READ_FIELDS,
+    val playlistReadFields: Set<AnnouncementReadField> = DEFAULT_PLAYLIST_READ_FIELDS,
+    val algorithmReadFields: Set<AnnouncementReadField> = DEFAULT_ALGORITHMIC_READ_FIELDS,
     val voiceLanguage: VoiceLanguage = VoiceLanguage.AUTO,
     val voiceName: String? = null,
     val genderFilter: GenderFilter = GenderFilter.ANY,

@@ -1,6 +1,7 @@
 package com.trackvoice.announcement
 
 import com.trackvoice.data.AnnouncementMode
+import com.trackvoice.data.AnnouncementReadField
 import com.trackvoice.data.AppSettings
 import com.trackvoice.data.UserSettings
 import com.trackvoice.media.PlaybackEvent
@@ -34,9 +35,10 @@ object AnnouncementPolicy {
         externalAudioOutput: Boolean = true,
     ): AnnouncementDecision {
         val appGuideSettings = appSettings?.takeIf { it.useCustomGuideSettings }
+        val collection = PlaybackCollectionResolver.resolve(event)
         val configuredMode = appGuideSettings?.mode ?: userSettings.defaultMode
         val mode = if (configuredMode == AnnouncementMode.SMART) {
-            when (PlaybackCollectionResolver.resolve(event)) {
+            when (collection) {
                 PlaybackCollection.ALBUM -> userSettings.albumMode
                 PlaybackCollection.PLAYLIST -> userSettings.playlistMode
                 PlaybackCollection.ALGORITHMIC -> userSettings.algorithmMode
@@ -71,17 +73,28 @@ object AnnouncementPolicy {
             return skipped(mode, delayMs, AnnouncementSkipReason.SPEAKER_OUTPUT)
         }
 
+        val formatOptions = if (appGuideSettings != null) {
+            AnnouncementFormatOptions(
+                readTitle = appGuideSettings.readTitle,
+                readArtist = appGuideSettings.readArtist,
+                readTrackNumber = appGuideSettings.readTrackNumber,
+                readAlbum = appGuideSettings.readAlbum,
+                readCollection = appGuideSettings.readCollection,
+            )
+        } else {
+            when (collection) {
+                PlaybackCollection.ALBUM -> userSettings.albumReadFields.toFormatOptions()
+                PlaybackCollection.PLAYLIST -> userSettings.playlistReadFields.toFormatOptions()
+                PlaybackCollection.ALGORITHMIC -> userSettings.algorithmReadFields.toFormatOptions()
+                PlaybackCollection.UNKNOWN -> AnnouncementFormatOptions()
+            }
+        }
+
         val text = AnnouncementFormatter.format(
             event = event,
             mode = mode,
-            options = AnnouncementFormatOptions(
-                readTitle = appGuideSettings?.readTitle ?: true,
-                readArtist = appGuideSettings?.readArtist ?: true,
-                readTrackNumber = appGuideSettings?.readTrackNumber ?: true,
-                readAlbum = appGuideSettings?.readAlbum ?: true,
-                readCollection = appGuideSettings?.readCollection ?: true,
-            ),
-            collection = PlaybackCollectionResolver.resolve(event),
+            options = formatOptions,
+            collection = collection,
         )
         return if (text == null) {
             skipped(mode, delayMs, AnnouncementSkipReason.NO_TEXT)
@@ -101,3 +114,11 @@ object AnnouncementPolicy {
         skipReason = reason,
     )
 }
+
+private fun Set<AnnouncementReadField>.toFormatOptions() = AnnouncementFormatOptions(
+    readTitle = AnnouncementReadField.TITLE in this,
+    readArtist = AnnouncementReadField.ARTIST in this,
+    readTrackNumber = AnnouncementReadField.TRACK_NUMBER in this,
+    readAlbum = AnnouncementReadField.ALBUM in this,
+    readCollection = AnnouncementReadField.COLLECTION in this,
+)
