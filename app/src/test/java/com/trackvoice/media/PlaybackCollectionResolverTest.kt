@@ -13,6 +13,16 @@ class PlaybackCollectionResolverTest {
     }
 
     @Test
+    fun albumMetadataWithQueuePositionIdentifiesAlbumWhenTrackMetadataIsMissing() {
+        assertEquals(
+            PlaybackCollection.ALBUM,
+            PlaybackCollectionResolver.resolve(
+                event(album = "Album", activeQueuePosition = 2, queueSize = 10),
+            ),
+        )
+    }
+
+    @Test
     fun playlistTitleWinsOverAlbumLikeTrackMetadata() {
         assertEquals(
             PlaybackCollection.PLAYLIST,
@@ -49,6 +59,8 @@ class PlaybackCollectionResolverTest {
         trackNumber: Int? = null,
         totalTracks: Int? = null,
         queueTitle: String? = null,
+        activeQueuePosition: Int? = null,
+        queueSize: Int = 0,
     ) = PlaybackEvent(
         sourcePackageName = "com.example.player",
         sourceAppName = "Player",
@@ -63,8 +75,9 @@ class PlaybackCollectionResolverTest {
         mediaId = "song-1",
         playbackState = PlaybackStatus.PLAYING,
         playbackPosition = 0L,
-        queue = emptyList(),
+        queue = List(queueSize) { QueueItemSnapshot("track-$it", "Song $it", "Artist") },
         observedAt = 1L,
         queueTitle = queueTitle,
+        activeQueuePosition = activeQueuePosition,
     )
 }

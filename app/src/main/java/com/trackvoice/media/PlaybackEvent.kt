@@ -82,7 +82,12 @@ object PlaybackCollectionResolver {
             queueTitle.containsAny("album", "앨범") -> return PlaybackCollection.ALBUM
         }
 
-        if (event.album != null && event.trackNumber != null && event.totalTracks != null) {
+        val hasAlbumMetadata = !event.album.isNullOrBlank()
+        val hasAlbumTrackContext = event.trackNumber != null ||
+            event.totalTracks != null ||
+            event.activeQueuePosition != null ||
+            event.queue.size > 1
+        if (hasAlbumMetadata && hasAlbumTrackContext) {
             return PlaybackCollection.ALBUM
         }
 

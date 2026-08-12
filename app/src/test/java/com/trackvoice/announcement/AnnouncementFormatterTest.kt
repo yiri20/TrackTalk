@@ -36,6 +36,20 @@ class AnnouncementFormatterTest {
     }
 
     @Test
+    fun albumModeUsesQueuePositionWhenTrackMetadataIsMissing() {
+        assertEquals(
+            "앨범 A Moon Shaped Pool, 트랙 3번, Glass Eyes, Radiohead.",
+            AnnouncementFormatter.format(
+                event(trackNumber = null).copy(
+                    activeQueuePosition = 2,
+                    queue = List(11) { com.trackvoice.media.QueueItemSnapshot("track-$it", "Song $it", "Artist") },
+                ),
+                AnnouncementMode.ALBUM,
+            ),
+        )
+    }
+
+    @Test
     fun playlistModeReadsCollectionTitleAndArtist() {
         assertEquals(
             "재생목록 출근길, Glass Eyes, Radiohead.",

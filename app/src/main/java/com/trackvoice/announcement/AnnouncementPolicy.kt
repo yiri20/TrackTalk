@@ -36,17 +36,7 @@ object AnnouncementPolicy {
     ): AnnouncementDecision {
         val appGuideSettings = appSettings?.takeIf { it.useCustomGuideSettings }
         val collection = PlaybackCollectionResolver.resolve(event)
-        val configuredMode = appGuideSettings?.mode ?: userSettings.defaultMode
-        val mode = if (configuredMode == AnnouncementMode.SMART || appGuideSettings != null) {
-            when (collection) {
-                PlaybackCollection.ALBUM -> userSettings.albumMode
-                PlaybackCollection.PLAYLIST -> userSettings.playlistMode
-                PlaybackCollection.ALGORITHMIC -> userSettings.algorithmMode
-                PlaybackCollection.UNKNOWN -> AnnouncementMode.TITLE_AND_ARTIST
-            }
-        } else {
-            configuredMode
-        }
+        val mode = resolveMode(collection, userSettings, appGuideSettings)
         val configuredDelayMs = if (userSettings.trackStartBehavior == com.trackvoice.data.TrackStartBehavior.ANNOUNCE_THEN_PLAY) {
             0L
         } else (appGuideSettings?.timing ?: userSettings.timing).let {
@@ -113,6 +103,38 @@ object AnnouncementPolicy {
         delayMs = delayMs,
         skipReason = reason,
     )
+
+    private fun resolveMode(
+        collection: PlaybackCollection,
+        userSettings: UserSettings,
+        appSettings: AppSettings?,
+    ): AnnouncementMode {
+        if (appSettings != null) {
+            return when (collection) {
+                PlaybackCollection.ALBUM -> if (appSettings.readAlbum || appSettings.readTrackNumber) {
+                    AnnouncementMode.ALBUM
+                } else {
+                    AnnouncementMode.TITLE_AND_ARTIST
+                }
+                PlaybackCollection.PLAYLIST -> if (appSettings.readCollection) {
+                    AnnouncementMode.PLAYLIST
+                } else {
+                    AnnouncementMode.TITLE_AND_ARTIST
+                }
+                PlaybackCollection.ALGORITHMIC,
+                PlaybackCollection.UNKNOWN,
+                -> AnnouncementMode.TITLE_AND_ARTIST
+            }
+        }
+
+        if (userSettings.defaultMode != AnnouncementMode.SMART) return userSettings.defaultMode
+        return when (collection) {
+            PlaybackCollection.ALBUM -> userSettings.albumMode
+            PlaybackCollection.PLAYLIST -> userSettings.playlistMode
+            PlaybackCollection.ALGORITHMIC -> userSettings.algorithmMode
+            PlaybackCollection.UNKNOWN -> AnnouncementMode.TITLE_AND_ARTIST
+        }
+    }
 }
 
 private fun Set<AnnouncementReadField>.toFormatOptions() = AnnouncementFormatOptions(

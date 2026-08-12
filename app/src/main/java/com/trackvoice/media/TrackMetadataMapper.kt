@@ -14,6 +14,7 @@ class TrackMetadataMapper(
         val state = controller.playbackState
         val rawQueue = controller.queue.orEmpty()
         val queue = rawQueue.map { it.toSnapshot() }
+        val metadataMediaId = metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID).clean()
         val activeQueueDescription = state?.activeQueueItemId
             ?.takeIf { it >= 0L }
             ?.let { queueId -> rawQueue.firstOrNull { it.queueId == queueId }?.description }
@@ -21,6 +22,9 @@ class TrackMetadataMapper(
             ?.takeIf { it >= 0L }
             ?.let { queueId -> rawQueue.indexOfFirst { it.queueId == queueId } }
             ?.takeIf { it >= 0 }
+            ?: metadataMediaId?.let { mediaId ->
+                rawQueue.indexOfFirst { it.description.mediaId == mediaId }
+            }?.takeIf { it >= 0 }
         return PlaybackEvent(
             sourcePackageName = controller.packageName,
             sourceAppName = appNameForPackage(controller.packageName),
@@ -34,7 +38,7 @@ class TrackMetadataMapper(
             totalTracks = metadata?.getLong(MediaMetadata.METADATA_KEY_NUM_TRACKS)?.safeInt(),
             discNumber = metadata?.getLong(MediaMetadata.METADATA_KEY_DISC_NUMBER)?.safeInt(),
             duration = metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION)?.takeIf { it > 0L },
-            mediaId = metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID).clean()
+            mediaId = metadataMediaId
                 ?: activeQueueDescription?.mediaId.clean(),
             playbackState = state.toPlaybackStatus(),
             playbackPosition = state?.position?.takeIf { it >= 0L },

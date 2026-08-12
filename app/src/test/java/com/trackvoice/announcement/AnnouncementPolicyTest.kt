@@ -110,6 +110,48 @@ class AnnouncementPolicyTest {
         assertEquals("앨범 A Moon Shaped Pool, Glass Eyes, Radiohead.", decision.text)
     }
 
+    @Test
+    fun appChecklistCanReadAlbumTrackEvenWhenLegacyModeWasTitleAndArtist() {
+        val decision = AnnouncementPolicy.decide(
+            event = event(),
+            userSettings = UserSettings(
+                suppressDuringSpeakerPlayback = false,
+                albumMode = AnnouncementMode.TITLE_AND_ARTIST,
+            ),
+            appSettings = AppSettings(
+                "com.youtube.music",
+                "YouTube Music",
+                useCustomGuideSettings = true,
+                mode = AnnouncementMode.SMART,
+                readTitle = true,
+                readArtist = false,
+                readTrackNumber = true,
+                readAlbum = false,
+                readCollection = false,
+            ),
+            externalAudioOutput = true,
+        )
+
+        assertEquals("트랙 3번, Glass Eyes.", decision.text)
+    }
+
+    @Test
+    fun albumChecklistUsesQueuePositionWhenTrackMetadataIsMissing() {
+        val decision = AnnouncementPolicy.decide(
+            event = event().copy(
+                trackNumber = null,
+                totalTracks = null,
+                activeQueuePosition = 2,
+                queue = List(11) { queueItem("Song $it") },
+            ),
+            userSettings = UserSettings(suppressDuringSpeakerPlayback = false),
+            appSettings = null,
+            externalAudioOutput = true,
+        )
+
+        assertEquals("앨범 A Moon Shaped Pool, 트랙 3번, Glass Eyes, Radiohead.", decision.text)
+    }
+
     private fun queueItem(title: String = "Glass Eyes") = com.trackvoice.media.QueueItemSnapshot(
         mediaId = title,
         title = title,

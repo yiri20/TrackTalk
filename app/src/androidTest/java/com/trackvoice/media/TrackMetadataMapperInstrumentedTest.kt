@@ -170,4 +170,36 @@ class TrackMetadataMapperInstrumentedTest {
         assertEquals("Morning playlist", event.queueTitle)
         assertEquals(1, event.activeQueuePosition)
     }
+
+    @Test
+    fun derivesActiveQueuePositionFromMetadataMediaIdWhenQueueItemIdIsMissing() {
+        session.setMetadata(
+            MediaMetadata.Builder()
+                .putString(MediaMetadata.METADATA_KEY_MEDIA_ID, "second")
+                .putString(MediaMetadata.METADATA_KEY_TITLE, "Second")
+                .build(),
+        )
+        session.setPlaybackState(
+            PlaybackState.Builder()
+                .setState(PlaybackState.STATE_PLAYING, 0L, 1f)
+                .build(),
+        )
+        session.setQueue(
+            listOf(
+                MediaSession.QueueItem(
+                    MediaDescription.Builder().setMediaId("first").setTitle("First").build(),
+                    1L,
+                ),
+                MediaSession.QueueItem(
+                    MediaDescription.Builder().setMediaId("second").setTitle("Second").build(),
+                    2L,
+                ),
+            ),
+        )
+
+        val controller = MediaController(context, session.sessionToken)
+        val event = TrackMetadataMapper { "Test Music" }.map(controller, observedAt = 1_111L)
+
+        assertEquals(1, event.activeQueuePosition)
+    }
 }

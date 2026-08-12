@@ -624,7 +624,13 @@ private fun CurrentTrackCard(
                 TrackField(strings.artistField, event.artist ?: strings.unknownArtist)
                 TrackField(strings.albumField, event.album ?: strings.unknownAlbum)
                 if (!event.queueTitle.isNullOrBlank()) TrackField(strings.playlistField, event.queueTitle.orEmpty())
-                if (event.trackNumber != null) TrackField(strings.trackNumberField, strings.trackNumber(event.trackNumber, event.totalTracks))
+                val visibleTrackNumber = event.trackNumber ?: event.activeQueuePosition?.plus(1)
+                if (visibleTrackNumber != null) {
+                    TrackField(
+                        strings.trackNumberField,
+                        strings.trackNumber(visibleTrackNumber, event.totalTracks ?: event.queue.size.takeIf { it > 1 }),
+                    )
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     AssistChip(onClick = {}, label = { Text(strings.collectionLabel(collection)) })
                     AssistChip(onClick = {}, label = { Text("${strings.announcementMode(mode)} · ${strings.playbackStatus(event.playbackState)}") })
