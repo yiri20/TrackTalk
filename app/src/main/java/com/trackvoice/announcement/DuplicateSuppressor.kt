@@ -8,7 +8,12 @@ class DuplicateSuppressor(
 ) {
     private val announcedTracks = linkedMapOf<String, AnnouncedTrack>()
 
-    fun shouldAnnounce(event: PlaybackEvent, allowRepeat: Boolean, now: Long): Boolean {
+    fun shouldAnnounce(
+        event: PlaybackEvent,
+        allowRepeat: Boolean,
+        now: Long,
+        announcementText: String? = null,
+    ): Boolean {
         if (!event.hasTitle && event.mediaId.isNullOrBlank()) return false
         val base = TrackFingerprint.announcementBase(event)
         val previous = announcedTracks.values
@@ -16,21 +21,27 @@ class DuplicateSuppressor(
             .filter { it.base == base }
             .filter { it.isCompatibleWith(event) }
             .maxByOrNull(AnnouncedTrack::announcedAt)
-            ?.announcedAt
         return when {
             previous == null -> true
+            previous.isMetadataEnrichedBy(event) &&
+                announcementText != null &&
+                previous.announcementText != null &&
+                previous.announcementText != announcementText -> true
             !allowRepeat -> false
-            now - previous >= repeatCooldownMs -> true
+            now - previous.announcedAt >= repeatCooldownMs -> true
             else -> false
         }
     }
 
-    fun markAnnounced(event: PlaybackEvent, now: Long) {
+    fun markAnnounced(event: PlaybackEvent, now: Long, announcementText: String? = null) {
         val fingerprint = TrackFingerprint.announcement(event)
         announcedTracks[fingerprint] = AnnouncedTrack(
             base = TrackFingerprint.announcementBase(event),
             trackNumber = event.trackNumber,
             discNumber = event.discNumber,
+            artistPresent = !event.artist.isNullOrBlank(),
+            albumPresent = !event.album.isNullOrBlank(),
+            announcementText = announcementText,
             announcedAt = now,
         )
         while (announcedTracks.size > 64) {
@@ -44,6 +55,9 @@ class DuplicateSuppressor(
         val base: String,
         val trackNumber: Int?,
         val discNumber: Int?,
+        val artistPresent: Boolean,
+        val albumPresent: Boolean,
+        val announcementText: String?,
         val announcedAt: Long,
     ) {
         /**
@@ -54,5 +68,10 @@ class DuplicateSuppressor(
         fun isCompatibleWith(event: PlaybackEvent): Boolean =
             (trackNumber == null || event.trackNumber == null || trackNumber == event.trackNumber) &&
                 (discNumber == null || event.discNumber == null || discNumber == event.discNumber)
+
+        fun isMetadataEnrichedBy(event: PlaybackEvent): Boolean =
+            (!artistPresent && !event.artist.isNullOrBlank()) ||
+                (!albumPresent && !event.album.isNullOrBlank()) ||
+                (trackNumber == null && event.trackNumberReliable && event.trackNumber != null)
     }
 }

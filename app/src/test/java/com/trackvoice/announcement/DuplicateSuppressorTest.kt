@@ -35,6 +35,26 @@ class DuplicateSuppressorTest {
     }
 
     @Test
+    fun metadataEnrichmentWithNewAnnouncementTextIsReadOnce() {
+        val suppressor = DuplicateSuppressor()
+        val early = event().copy(artist = null)
+        val enriched = event()
+
+        assertTrue(suppressor.shouldAnnounce(early, false, 1_000L, "Glass Eyes."))
+        suppressor.markAnnounced(early, 1_000L, "Glass Eyes.")
+        assertTrue(
+            suppressor.shouldAnnounce(
+                enriched,
+                false,
+                2_000L,
+                "Glass Eyes, Radiohead.",
+            ),
+        )
+        suppressor.markAnnounced(enriched, 2_000L, "Glass Eyes, Radiohead.")
+        assertFalse(suppressor.shouldAnnounce(enriched, false, 3_000L, "Glass Eyes, Radiohead."))
+    }
+
+    @Test
     fun sameTrackFromDifferentAppsIsASeparateEvent() {
         val suppressor = DuplicateSuppressor()
         val spotify = event("com.spotify.music")

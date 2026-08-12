@@ -425,7 +425,13 @@ class TrackVoiceController(
 
         val fingerprint = TrackFingerprint.announcement(event)
         if (fingerprint in pendingFingerprints) return
-        if (!duplicateSuppressor.shouldAnnounce(event, settings.allowRepeatAnnouncements, System.currentTimeMillis())) return
+        if (!duplicateSuppressor.shouldAnnounce(
+                event = event,
+                allowRepeat = settings.allowRepeatAnnouncements,
+                now = System.currentTimeMillis(),
+                announcementText = decision.text,
+            )
+        ) return
 
         pendingJob?.cancel()
         pendingFingerprints += fingerprint
@@ -435,7 +441,11 @@ class TrackVoiceController(
                 val current = _mediaState.value.currentEvent
                 if (current == null || !current.isPlaying || TrackFingerprint.announcement(current) != fingerprint) return@launch
 
-                duplicateSuppressor.markAnnounced(event, System.currentTimeMillis())
+                duplicateSuppressor.markAnnounced(
+                    event = event,
+                    now = System.currentTimeMillis(),
+                    announcementText = decision.text,
+                )
                 speak(decision.text)
             } finally {
                 pendingFingerprints -= fingerprint
