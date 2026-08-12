@@ -23,6 +23,7 @@ fun UserSettings.forPremiumEntitlement(isPremium: Boolean): UserSettings {
         speechRate = 1f,
         pitch = 1f,
         volume = DEFAULT_TTS_VOLUME,
+        algorithmMode = AnnouncementMode.TITLE_AND_ARTIST,
         raiseDeviceVolume = false,
         deviceVolumePercent = 90,
     )

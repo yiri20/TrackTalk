@@ -80,6 +80,7 @@ data class UserSettings(
     val minimumPlaybackSeconds: Int = 0,
     val albumMode: AnnouncementMode = AnnouncementMode.ALBUM,
     val playlistMode: AnnouncementMode = AnnouncementMode.PLAYLIST,
+    val algorithmMode: AnnouncementMode = AnnouncementMode.TITLE_AND_ARTIST,
     val voiceLanguage: VoiceLanguage = VoiceLanguage.AUTO,
     val voiceName: String? = null,
     val genderFilter: GenderFilter = GenderFilter.ANY,

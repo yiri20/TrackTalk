@@ -30,6 +30,7 @@ class PremiumEntitlementsTest {
         assertEquals(DEFAULT_TTS_VOLUME, effective.volume)
         assertEquals(MusicTreatment.DUCK, effective.musicTreatment)
         assertEquals(TrackStartBehavior.PLAY_IMMEDIATELY, effective.trackStartBehavior)
+        assertEquals(AnnouncementMode.TITLE_AND_ARTIST, effective.algorithmMode)
         assertFalse(effective.raiseDeviceVolume)
         assertEquals(90, effective.deviceVolumePercent)
     }

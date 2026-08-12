@@ -39,6 +39,7 @@ object AnnouncementPolicy {
             when (PlaybackCollectionResolver.resolve(event)) {
                 PlaybackCollection.ALBUM -> userSettings.albumMode
                 PlaybackCollection.PLAYLIST -> userSettings.playlistMode
+                PlaybackCollection.ALGORITHMIC -> userSettings.algorithmMode
                 PlaybackCollection.UNKNOWN -> AnnouncementMode.TITLE_AND_ARTIST
             }
         } else {

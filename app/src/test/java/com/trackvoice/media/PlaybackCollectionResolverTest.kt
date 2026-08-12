@@ -28,6 +28,18 @@ class PlaybackCollectionResolverTest {
     }
 
     @Test
+    fun algorithmicTitleIdentifiesMixAsAlgorithmicPlayback() {
+        assertEquals(
+            PlaybackCollection.ALGORITHMIC,
+            PlaybackCollectionResolver.resolve(event(queueTitle = "Daily Mix 1")),
+        )
+        assertEquals(
+            PlaybackCollection.ALGORITHMIC,
+            PlaybackCollectionResolver.resolve(event(queueTitle = "추천 라디오")),
+        )
+    }
+
+    @Test
     fun noCollectionSignalRemainsUnknown() {
         assertEquals(PlaybackCollection.UNKNOWN, PlaybackCollectionResolver.resolve(event()))
     }

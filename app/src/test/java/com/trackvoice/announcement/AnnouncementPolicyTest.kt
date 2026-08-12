@@ -73,6 +73,21 @@ class AnnouncementPolicyTest {
         assertEquals("재생목록 출근길 재생목록, Glass Eyes, Radiohead.", decision.text)
     }
 
+    @Test
+    fun smartUsesAlgorithmModeWhenQueueTitleIdentifiesAlgorithmicPlayback() {
+        val decision = AnnouncementPolicy.decide(
+            event().copy(queueTitle = "Daily Mix 1"),
+            UserSettings(
+                suppressDuringSpeakerPlayback = false,
+                algorithmMode = AnnouncementMode.TITLE_ONLY,
+            ),
+            null,
+            externalAudioOutput = true,
+        )
+
+        assertEquals("Glass Eyes.", decision.text)
+    }
+
     private fun queueItem(title: String = "Glass Eyes") = com.trackvoice.media.QueueItemSnapshot(
         mediaId = title,
         title = title,

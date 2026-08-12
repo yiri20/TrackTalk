@@ -42,6 +42,7 @@ data class PlaybackEvent(
 enum class PlaybackCollection {
     ALBUM,
     PLAYLIST,
+    ALGORITHMIC,
     UNKNOWN,
 }
 
@@ -49,7 +50,33 @@ object PlaybackCollectionResolver {
     fun resolve(event: PlaybackEvent): PlaybackCollection {
         val queueTitle = event.queueTitle.orEmpty().lowercase(Locale.ROOT)
         when {
-            queueTitle.containsAny("playlist", "재생목록", "믹스", "mix", "radio", "라디오", "queue") -> {
+            queueTitle.containsAny(
+                "algorithm",
+                "random",
+                "shuffle",
+                "autoplay",
+                "auto play",
+                "radio",
+                "mix",
+                "station",
+                "discover weekly",
+                "release radar",
+                "daily mix",
+                "recommend",
+                "알고리즘",
+                "랜덤",
+                "무작위",
+                "셔플",
+                "자동재생",
+                "자동 재생",
+                "라디오",
+                "믹스",
+                "스테이션",
+                "추천",
+            ) -> {
+                return PlaybackCollection.ALGORITHMIC
+            }
+            queueTitle.containsAny("playlist", "재생목록", "queue") -> {
                 return PlaybackCollection.PLAYLIST
             }
             queueTitle.containsAny("album", "앨범") -> return PlaybackCollection.ALBUM

@@ -817,11 +817,14 @@ private fun GeneralSettingsScreen(
                     OptionDropdown(strings.playlistPlayback, settings.playlistMode, AnnouncementMode.values().toList(), strings::announcementMode) { mode ->
                         onUpdate { it.copy(playlistMode = mode) }
                     }
+                    OptionDropdown(strings.algorithmPlayback, settings.algorithmMode, AnnouncementMode.values().toList(), strings::announcementMode) { mode ->
+                        onUpdate { it.copy(algorithmMode = mode) }
+                    }
                 } else {
                     Text(strings.freeAlbumPlaylistDefaults)
                     PremiumLockedContent(
                         title = strings.text("콘텐츠별 읽기 방식 변경은 Plus 기능입니다.", "Content-specific reading modes are a Plus feature."),
-                        summary = strings.text("앨범과 재생목록의 안내 문장을 각각 선택할 수 있습니다.", "Choose separate announcement formats for albums and playlists."),
+                        summary = strings.text("앨범, 재생목록, 알고리즘·랜덤 재생의 안내 문장을 각각 선택할 수 있습니다.", "Choose separate announcement formats for albums, playlists, and algorithmic or shuffled playback."),
                         onOpenPremium = onOpenPremium,
                     )
                 }
@@ -1491,6 +1494,7 @@ private fun PlaybackStatus.label(): String = when (this) {
 private fun PlaybackCollection.label(): String = when (this) {
     PlaybackCollection.ALBUM -> "앨범 재생"
     PlaybackCollection.PLAYLIST -> "재생목록 재생"
+    PlaybackCollection.ALGORITHMIC -> "알고리즘·랜덤 재생"
     PlaybackCollection.UNKNOWN -> "콘텐츠 유형 확인 중"
 }
 

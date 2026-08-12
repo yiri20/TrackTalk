@@ -161,11 +161,12 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     val minimumPlayback: String get() = t("최소 재생 시간", "Minimum playback time")
     val repeatTrack: String get() = t("같은 곡 다시 안내", "Repeat the same track")
     val repeatTrackSummary: String get() = t("기본값은 같은 곡을 한 번만 안내합니다.", "By default, each track is announced once.")
-    val albumPlaylistReading: String get() = t("앨범·재생목록 읽기", "Album and playlist reading")
-    val albumPlaylistSummary: String get() = t("MediaSession의 queue 제목과 트랙 metadata를 함께 분석해 콘텐츠 유형별로 다르게 읽습니다.", "Queue titles and track metadata are analyzed together for contextual announcements.")
+    val albumPlaylistReading: String get() = t("콘텐츠 유형별 읽기", "Content-type reading")
+    val albumPlaylistSummary: String get() = t("MediaSession의 queue 제목과 트랙 metadata를 분석해 앨범·재생목록·알고리즘/랜덤 재생을 다르게 읽습니다.", "MediaSession queue titles and track metadata identify albums, playlists, and algorithmic or shuffled playback.")
     val albumPlayback: String get() = t("앨범 재생", "Album playback")
     val playlistPlayback: String get() = t("재생목록 재생", "Playlist playback")
-    val freeAlbumPlaylistDefaults: String get() = t("무료 기본값: 앨범은 앨범·트랙·아티스트, 재생목록은 재생목록·곡·아티스트를 안내합니다.", "Free defaults: albums announce album, track, and artist; playlists announce playlist, track, and artist.")
+    val algorithmPlayback: String get() = t("알고리즘·랜덤 재생", "Algorithmic / shuffle playback")
+    val freeAlbumPlaylistDefaults: String get() = t("무료 기본값: 앨범은 앨범·트랙·아티스트, 재생목록은 재생목록·곡·아티스트, 알고리즘·랜덤 재생은 곡·아티스트를 안내합니다.", "Free defaults: albums announce album, track, and artist; playlists announce playlist, track, and artist; algorithmic or shuffled playback announces track and artist.")
     val autoEnable: String get() = t("자동 켜기", "Auto enable")
     val screenOffEnable: String get() = t("화면이 꺼지면 켜기", "Enable when screen turns off")
     val screenOffEnableSummary: String get() = t("화면을 끄면 안내를 시작합니다.", "Start announcements when the screen turns off.")
@@ -316,6 +317,7 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     fun collectionLabel(collection: PlaybackCollection): String = when (collection) {
         PlaybackCollection.ALBUM -> t("앨범 재생", "Album playback")
         PlaybackCollection.PLAYLIST -> t("재생목록 재생", "Playlist playback")
+        PlaybackCollection.ALGORITHMIC -> t("알고리즘·랜덤 재생", "Algorithmic / shuffle playback")
         PlaybackCollection.UNKNOWN -> t("콘텐츠 유형 확인 중", "Identifying content type")
     }
 

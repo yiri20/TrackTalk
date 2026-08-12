@@ -358,6 +358,7 @@ class TrackVoiceController(
             configuredMode != AnnouncementMode.SMART -> configuredMode
             collection == PlaybackCollection.ALBUM -> settings.albumMode
             collection == PlaybackCollection.PLAYLIST -> settings.playlistMode
+            collection == PlaybackCollection.ALGORITHMIC -> settings.algorithmMode
             else -> AnnouncementMode.TITLE_AND_ARTIST
         }
         _mediaState.value = _mediaState.value.copy(

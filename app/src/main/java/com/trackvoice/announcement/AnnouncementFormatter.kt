@@ -31,6 +31,7 @@ object AnnouncementFormatter {
             when (collection) {
                 PlaybackCollection.ALBUM -> AnnouncementMode.ALBUM
                 PlaybackCollection.PLAYLIST -> AnnouncementMode.PLAYLIST
+                PlaybackCollection.ALGORITHMIC -> AnnouncementMode.TITLE_AND_ARTIST
                 PlaybackCollection.UNKNOWN -> AnnouncementMode.TITLE_AND_ARTIST
             }
         } else {

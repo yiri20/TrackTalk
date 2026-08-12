@@ -148,6 +148,7 @@ class DataStoreRepository(private val context: Context) {
         val minimumPlaybackSeconds = intPreferencesKey("minimum_playback_seconds")
         val albumMode = stringPreferencesKey("album_mode")
         val playlistMode = stringPreferencesKey("playlist_mode")
+        val algorithmMode = stringPreferencesKey("algorithm_mode")
         val voiceLanguage = stringPreferencesKey("voice_language")
         val voiceName = stringPreferencesKey("voice_name")
         val genderFilter = stringPreferencesKey("gender_filter")
@@ -196,7 +197,8 @@ class DataStoreRepository(private val context: Context) {
         minimumPlaybackSeconds = (this[Keys.minimumPlaybackSeconds] ?: 0).coerceIn(0, 120),
         albumMode = enumOrDefault(this[Keys.albumMode], AnnouncementMode.ALBUM),
         playlistMode = enumOrDefault(this[Keys.playlistMode], AnnouncementMode.PLAYLIST),
-         voiceLanguage = enumOrDefault(this[Keys.voiceLanguage], VoiceLanguage.AUTO),
+        algorithmMode = enumOrDefault(this[Keys.algorithmMode], AnnouncementMode.TITLE_AND_ARTIST),
+        voiceLanguage = enumOrDefault(this[Keys.voiceLanguage], VoiceLanguage.AUTO),
         voiceName = this[Keys.voiceName],
         genderFilter = enumOrDefault(this[Keys.genderFilter], GenderFilter.ANY),
         speechRate = (this[Keys.speechRate] ?: 1f).coerceIn(0.5f, 2f),
@@ -269,6 +271,7 @@ class DataStoreRepository(private val context: Context) {
         this[Keys.minimumPlaybackSeconds] = settings.minimumPlaybackSeconds.coerceIn(0, 120)
         this[Keys.albumMode] = settings.albumMode.name
         this[Keys.playlistMode] = settings.playlistMode.name
+        this[Keys.algorithmMode] = settings.algorithmMode.name
         this[Keys.voiceLanguage] = settings.voiceLanguage.name
         if (settings.voiceName == null) remove(Keys.voiceName) else this[Keys.voiceName] = settings.voiceName
         this[Keys.genderFilter] = settings.genderFilter.name
