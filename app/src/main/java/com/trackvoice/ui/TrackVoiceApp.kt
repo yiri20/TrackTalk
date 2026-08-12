@@ -121,6 +121,7 @@ import com.trackvoice.media.PlaybackEvent
 import com.trackvoice.media.PlaybackStatus
 import com.trackvoice.media.PlaybackCollection
 import com.trackvoice.media.PlaybackCollectionResolver
+import com.trackvoice.media.AlbumTrackNumberResolver
 import com.trackvoice.monetization.PremiumState
 import com.trackvoice.monetization.forPremiumEntitlement
 import com.trackvoice.monetization.promoCodeRedeemUrl
@@ -632,9 +633,10 @@ private fun CurrentTrackCard(
                 ) {
                     TrackField(strings.playlistField, event.queueTitle.orEmpty())
                 }
-                val visibleTrackNumber = event.trackNumber ?: event.activeQueuePosition
-                    ?.plus(1)
-                    ?.takeIf { collection == PlaybackCollection.ALBUM }
+                val visibleTrackNumber = AlbumTrackNumberResolver.resolve(
+                    event = event,
+                    allowQueuePositionFallback = collection == PlaybackCollection.ALBUM || mode == AnnouncementMode.ALBUM,
+                )
                 if (visibleTrackNumber != null) {
                     TrackField(
                         strings.trackNumberField,

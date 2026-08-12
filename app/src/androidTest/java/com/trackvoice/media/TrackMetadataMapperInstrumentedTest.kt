@@ -210,6 +210,15 @@ class TrackMetadataMapperInstrumentedTest {
             putString(MediaMetadata.METADATA_KEY_ALBUM, "Queue Album")
             putLong(MediaMetadata.METADATA_KEY_TRACK_NUMBER, 4L)
         }
+        session.setMetadata(
+            MediaMetadata.Builder()
+                .putString(MediaMetadata.METADATA_KEY_MEDIA_ID, "queue-track-4")
+                .putString(MediaMetadata.METADATA_KEY_TITLE, "Queue Song")
+                // Some players expose the shuffled queue position here rather
+                // than the original album track number.
+                .putLong(MediaMetadata.METADATA_KEY_TRACK_NUMBER, 1L)
+                .build(),
+        )
         session.setPlaybackState(
             PlaybackState.Builder()
                 .setState(PlaybackState.STATE_PLAYING, 0L, 1f)
@@ -235,5 +244,72 @@ class TrackMetadataMapperInstrumentedTest {
 
         assertEquals("Queue Album", event.queue.single().album)
         assertEquals(4, event.queue.single().trackNumber)
+        assertEquals(4, event.trackNumber)
+        assertTrue(event.trackNumberReliable)
     }
+
+    @Test
+    fun keepsKnownAlbumTrackNumberWhenQueueOrderChanges() {
+        val mapper = TrackMetadataMapper { "Test Music" }
+        session.setQueueTitle("Album queue")
+        session.setMetadata(
+            MediaMetadata.Builder()
+                .putString(MediaMetadata.METADATA_KEY_MEDIA_ID, "target")
+                .putString(MediaMetadata.METADATA_KEY_TITLE, "Target")
+                .putString(MediaMetadata.METADATA_KEY_ALBUM, "Queue Album")
+                .putLong(MediaMetadata.METADATA_KEY_TRACK_NUMBER, 4L)
+                .putLong(MediaMetadata.METADATA_KEY_NUM_TRACKS, 11L)
+                .build(),
+        )
+        session.setQueue(
+            listOf(
+                queueItem("first", "First", 1L),
+                queueItem("target", "Target", 2L),
+                queueItem("third", "Third", 3L),
+            ),
+        )
+        session.setPlaybackState(
+            PlaybackState.Builder()
+                .setState(PlaybackState.STATE_PLAYING, 0L, 1f)
+                .setActiveQueueItemId(2L)
+                .build(),
+        )
+        assertEquals(4, mapper.map(MediaController(context, session.sessionToken)).trackNumber)
+
+        session.setQueue(
+            listOf(
+                queueItem("target", "Target", 2L),
+                queueItem("first", "First", 1L),
+                queueItem("third", "Third", 3L),
+            ),
+        )
+        session.setMetadata(
+            MediaMetadata.Builder()
+                .putString(MediaMetadata.METADATA_KEY_MEDIA_ID, "target")
+                .putString(MediaMetadata.METADATA_KEY_TITLE, "Target")
+                .putString(MediaMetadata.METADATA_KEY_ALBUM, "Queue Album")
+                .putLong(MediaMetadata.METADATA_KEY_TRACK_NUMBER, 1L)
+                .putLong(MediaMetadata.METADATA_KEY_NUM_TRACKS, 11L)
+                .build(),
+        )
+        session.setPlaybackState(
+            PlaybackState.Builder()
+                .setState(PlaybackState.STATE_PLAYING, 0L, 1f)
+                .setActiveQueueItemId(2L)
+                .build(),
+        )
+
+        val event = mapper.map(MediaController(context, session.sessionToken))
+        assertTrue(event.queueOrderChanged)
+        assertEquals(4, event.trackNumber)
+        assertTrue(event.trackNumberReliable)
+    }
+
+    private fun queueItem(mediaId: String, title: String, queueId: Long) = MediaSession.QueueItem(
+        MediaDescription.Builder()
+            .setMediaId(mediaId)
+            .setTitle(title)
+            .build(),
+        queueId,
+    )
 }

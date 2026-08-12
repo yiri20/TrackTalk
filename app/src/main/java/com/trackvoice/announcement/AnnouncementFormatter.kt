@@ -4,6 +4,7 @@ import com.trackvoice.data.AnnouncementMode
 import com.trackvoice.media.PlaybackEvent
 import com.trackvoice.media.PlaybackCollection
 import com.trackvoice.media.PlaybackCollectionResolver
+import com.trackvoice.media.AlbumTrackNumberResolver
 import com.trackvoice.data.VoiceLanguage
 import java.util.Locale
 
@@ -38,15 +39,11 @@ object AnnouncementFormatter {
         val artist = event.artist.cleanIf(options.readArtist)
         val album = event.album.cleanIf(options.readAlbum)
         val collectionTitle = event.queueTitle.cleanIf(options.readCollection)
-        val effectiveTotalTracks = event.totalTracks ?: event.queue.size.takeIf { it > 1 }
-        val queuePositionFallback = event.activeQueuePosition
-            ?.plus(1)
-            ?.takeIf { collection == PlaybackCollection.ALBUM || mode == AnnouncementMode.ALBUM }
         val track = if (options.readTrackNumber) {
-            listOfNotNull(
-                event.trackNumber,
-                queuePositionFallback,
-            ).firstOrNull { it.isValidTrack(effectiveTotalTracks) }
+            AlbumTrackNumberResolver.resolve(
+                event = event,
+                allowQueuePositionFallback = collection == PlaybackCollection.ALBUM || mode == AnnouncementMode.ALBUM,
+            )
         } else {
             null
         }
@@ -91,9 +88,6 @@ object AnnouncementFormatter {
 
     private fun String?.cleanIf(enabled: Boolean): String? =
         if (enabled) this?.trim()?.takeIf { it.isNotEmpty() } else null
-
-    private fun Int?.isValidTrack(totalTracks: Int?): Boolean =
-        this != null && this in 1..999 && (totalTracks == null || totalTracks >= this)
 
     private fun String.withSentenceEnding(): String {
         val clean = trim().trimEnd('.', '!', '?', '。')

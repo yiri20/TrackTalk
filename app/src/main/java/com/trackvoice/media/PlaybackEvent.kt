@@ -37,9 +37,41 @@ data class PlaybackEvent(
     val observedAt: Long,
     val queueTitle: String? = null,
     val activeQueuePosition: Int? = null,
+    val queueOrderChanged: Boolean = false,
+    val shuffleState: ShuffleState = ShuffleState.UNKNOWN,
+    val trackNumberReliable: Boolean = true,
 ) {
     val hasTitle: Boolean get() = !title.isNullOrBlank()
     val isPlaying: Boolean get() = playbackState == PlaybackStatus.PLAYING
+}
+
+enum class ShuffleState {
+    UNKNOWN,
+    OFF,
+    ON,
+}
+
+object AlbumTrackNumberResolver {
+    fun resolve(event: PlaybackEvent, allowQueuePositionFallback: Boolean): Int? {
+        val effectiveTotalTracks = event.totalTracks ?: event.queue.size.takeIf { it > 1 }
+        val directTrack = event.trackNumber
+            ?.takeIf { event.trackNumberReliable }
+            ?.takeIf { it.isValidTrack(effectiveTotalTracks) }
+        if (directTrack != null) return directTrack
+
+        // A queue position is not an album track number once the player has
+        // shuffled or reordered its queue. It is safer to omit the number than
+        // to announce a convincing but incorrect "track 1".
+        if (!allowQueuePositionFallback || event.queueOrderChanged || event.shuffleState == ShuffleState.ON) {
+            return null
+        }
+        return event.activeQueuePosition
+            ?.plus(1)
+            ?.takeIf { it.isValidTrack(effectiveTotalTracks) }
+    }
+
+    private fun Int.isValidTrack(totalTracks: Int?): Boolean =
+        this in 1..999 && (totalTracks == null || totalTracks >= this)
 }
 
 enum class PlaybackCollection {
@@ -206,7 +238,7 @@ object TrackFingerprint {
         event.title.orEmpty().trim(),
         event.artist.orEmpty().trim(),
         event.album.orEmpty().trim(),
-        event.trackNumber?.toString().orEmpty(),
+        event.trackNumber?.takeIf { event.trackNumberReliable }?.toString().orEmpty(),
         event.discNumber?.toString().orEmpty(),
     ).joinToString("|")
 
@@ -223,7 +255,7 @@ object TrackFingerprint {
     fun announcement(event: PlaybackEvent): String {
         return listOf(
             announcementBase(event),
-            event.trackNumber?.toString().orEmpty(),
+            event.trackNumber?.takeIf { event.trackNumberReliable }?.toString().orEmpty(),
             event.discNumber?.toString().orEmpty(),
         ).joinToString("|")
     }

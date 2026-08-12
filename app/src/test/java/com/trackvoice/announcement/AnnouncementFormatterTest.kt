@@ -6,6 +6,7 @@ import com.trackvoice.media.PlaybackCollection
 import com.trackvoice.media.PlaybackStatus
 import com.trackvoice.data.VoiceLanguage
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -67,6 +68,36 @@ class AnnouncementFormatterTest {
                 collection = PlaybackCollection.ALBUM,
             ),
         )
+    }
+
+    @Test
+    fun albumModeDoesNotUseQueuePositionAfterQueueOrderChanges() {
+        val announcement = AnnouncementFormatter.format(
+            event(trackNumber = null).copy(
+                activeQueuePosition = 0,
+                queue = List(11) { com.trackvoice.media.QueueItemSnapshot("track-$it", "Song $it", "Artist") },
+                queueOrderChanged = true,
+            ),
+            AnnouncementMode.ALBUM,
+            collection = PlaybackCollection.ALBUM,
+        )
+
+        assertFalse(announcement.orEmpty().contains("1"))
+    }
+
+    @Test
+    fun albumModeDoesNotReadUnreliableMetadataTrackAfterShuffle() {
+        val announcement = AnnouncementFormatter.format(
+            event(trackNumber = 1).copy(
+                activeQueuePosition = 0,
+                queueOrderChanged = true,
+                trackNumberReliable = false,
+            ),
+            AnnouncementMode.ALBUM,
+            collection = PlaybackCollection.ALBUM,
+        )
+
+        assertFalse(announcement.orEmpty().contains("1"))
     }
 
     @Test
