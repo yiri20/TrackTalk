@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import com.trackvoice.service.TrackVoiceNotificationListenerService
+import java.util.Locale
 
 class MediaSessionMonitor(
     context: Context,
@@ -25,6 +26,7 @@ class MediaSessionMonitor(
     private val sessions = linkedMapOf<String, TrackedSession>()
     private var started = false
     private var selectedSessionKey: String? = null
+    private var resumeRequestId = 0L
 
     val activeSessionCount: Int get() = sessions.size
 
@@ -47,6 +49,7 @@ class MediaSessionMonitor(
     }
 
     fun stop() {
+        resumeRequestId += 1
         if (!started) return
         started = false
         manager.removeOnActiveSessionsChangedListener(activeSessionsListener)
@@ -64,6 +67,9 @@ class MediaSessionMonitor(
     }
 
     fun pauseSelectedIfPlaying(): PlaybackPauseToken? {
+        // A new announcement owns the pause/resume lifecycle. Do not let a
+        // delayed retry from a previous announcement play the track again.
+        resumeRequestId += 1
         val tracked = selectedTrackedSession() ?: return null
         val event = mapper.map(tracked.controller)
         if (!event.isPlaying || !event.hasTitle) return null
@@ -74,6 +80,11 @@ class MediaSessionMonitor(
                 fingerprint = TrackFingerprint.announcement(event),
                 sourcePackageName = event.sourcePackageName,
                 mediaId = event.mediaId,
+                title = event.title,
+                artist = event.artist,
+                album = event.album,
+                trackNumber = event.trackNumber,
+                discNumber = event.discNumber,
             )
         } else {
             null
@@ -81,20 +92,17 @@ class MediaSessionMonitor(
     }
 
     fun resumePlayback(token: PlaybackPauseToken) {
-        val tracked = trackedSession(token) ?: return
-        val event = mapper.map(tracked.controller)
-        if (!matchesPausedTrack(event, token)) return
-
-        // pause() and the corresponding MediaSession callback are asynchronous.
-        // A short announcement can finish while the controller still reports
-        // PLAYING, so checking event.isPlaying here must not cancel the resume.
-        // Sending PLAY is harmless when it is already playing; the retries also
-        // cover players that publish the delayed PAUSED state after this call.
-        runCatching { tracked.controller.transportControls.play() }
-        retryResume(token, 180L, attemptsRemaining = 5)
+        val requestId = ++resumeRequestId
+        // Media apps commonly publish a short-lived metadata snapshot while
+        // handling pause/play. Wait for the same track to become identifiable
+        // again instead of abandoning auto-resume on the first mismatch.
+        retryResume(token, requestId, delayMs = 0L, attemptsRemaining = 6)
     }
 
     fun toggleSelectedPlayback(): Boolean? {
+        // A manual tap is an explicit user decision and cancels any automatic
+        // resume that may still be queued for an earlier announcement.
+        resumeRequestId += 1
         val tracked = selectedTrackedSession() ?: return null
         val event = mapper.map(tracked.controller)
         return when {
@@ -111,7 +119,13 @@ class MediaSessionMonitor(
                         fingerprint = TrackFingerprint.announcement(event),
                         sourcePackageName = event.sourcePackageName,
                         mediaId = event.mediaId,
+                        title = event.title,
+                        artist = event.artist,
+                        album = event.album,
+                        trackNumber = event.trackNumber,
+                        discNumber = event.discNumber,
                     ),
+                    resumeRequestId,
                     180L,
                     attemptsRemaining = 5,
                 )
@@ -233,23 +247,68 @@ class MediaSessionMonitor(
         sessions[token.sessionKey]
             ?: sessions.values.firstOrNull { it.controller.packageName == token.sourcePackageName }
 
-    private fun retryResume(token: PlaybackPauseToken, delayMs: Long, attemptsRemaining: Int) {
+    private fun retryResume(
+        token: PlaybackPauseToken,
+        requestId: Long,
+        delayMs: Long,
+        attemptsRemaining: Int,
+    ) {
         handler.postDelayed({
-            val tracked = trackedSession(token) ?: return@postDelayed
-            val event = mapper.map(tracked.controller)
-            if (!matchesPausedTrack(event, token)) return@postDelayed
-            if (!event.isPlaying) runCatching { tracked.controller.transportControls.play() }
+            if (!started || requestId != resumeRequestId) return@postDelayed
+            val tracked = trackedSession(token)
+            val event = tracked?.let { mapper.map(it.controller) }
+            if (tracked != null && event != null && matchesPausedTrack(event, token)) {
+                // Sending PLAY even when the state is still PLAYING is safe and
+                // covers players that publish the delayed PAUSED callback after
+                // this request. Keep a few retries for that asynchronous race.
+                if (!event.isPlaying || delayMs == 0L) {
+                    runCatching { tracked.controller.transportControls.play() }
+                }
+            }
             if (attemptsRemaining > 1) {
-                retryResume(token, (delayMs * 2).coerceAtMost(1_000L), attemptsRemaining - 1)
+                retryResume(
+                    token = token,
+                    requestId = requestId,
+                    delayMs = if (delayMs == 0L) 180L else (delayMs * 2).coerceAtMost(1_000L),
+                    attemptsRemaining = attemptsRemaining - 1,
+                )
             }
         }, delayMs)
     }
 
-    private fun matchesPausedTrack(event: PlaybackEvent, token: PlaybackPauseToken): Boolean =
-        TrackFingerprint.announcement(event) == token.fingerprint ||
-            (event.sourcePackageName == token.sourcePackageName &&
-                token.mediaId != null &&
-                event.mediaId == token.mediaId)
+    private fun matchesPausedTrack(event: PlaybackEvent, token: PlaybackPauseToken): Boolean {
+        if (token.sourcePackageName.isNotBlank() && event.sourcePackageName != token.sourcePackageName) {
+            return false
+        }
+
+        val tokenMediaId = token.mediaId?.trim()?.takeIf { it.isNotEmpty() }
+        val eventMediaId = event.mediaId?.trim()?.takeIf { it.isNotEmpty() }
+        // If both IDs are present, a different ID is a different track. This
+        // prevents a delayed retry from restarting a song the user selected.
+        if (tokenMediaId != null && eventMediaId != null) return tokenMediaId == eventMediaId
+        if (TrackFingerprint.announcement(event) == token.fingerprint) return true
+
+        // Some players temporarily clear the media ID while rebuilding their
+        // metadata. Fall back to the captured track fields only in that gap.
+        if (!sameText(token.title, event.title)) return false
+        if (!compatibleText(token.artist, event.artist)) return false
+        if (!compatibleText(token.album, event.album)) return false
+        if (token.trackNumber != null && event.trackNumber != null && token.trackNumber != event.trackNumber) {
+            return false
+        }
+        if (token.discNumber != null && event.discNumber != null && token.discNumber != event.discNumber) {
+            return false
+        }
+        return true
+    }
+
+    private fun sameText(expected: String?, actual: String?): Boolean =
+        !expected.isNullOrBlank() && !actual.isNullOrBlank() && normalize(expected) == normalize(actual)
+
+    private fun compatibleText(expected: String?, actual: String?): Boolean =
+        expected.isNullOrBlank() || actual.isNullOrBlank() || normalize(expected) == normalize(actual)
+
+    private fun normalize(value: String): String = value.trim().lowercase(Locale.ROOT).replace(Regex("\\s+"), " ")
 
     private fun resolveAppName(packageName: String): String = runCatching {
         appContext.packageManager.getApplicationLabel(
@@ -271,4 +330,9 @@ data class PlaybackPauseToken(
     val fingerprint: String,
     val sourcePackageName: String = "",
     val mediaId: String? = null,
+    val title: String? = null,
+    val artist: String? = null,
+    val album: String? = null,
+    val trackNumber: Int? = null,
+    val discNumber: Int? = null,
 )

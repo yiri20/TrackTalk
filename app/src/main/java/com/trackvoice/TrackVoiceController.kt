@@ -224,7 +224,14 @@ class TrackVoiceController(
             pausedPlayback = monitor?.pauseSelectedIfPlaying()
         }
         if (plan.shouldDuckMusic) musicVolumeManager.duckTo(settings.musicDuckPercent)
-        if (plan.requestAudioFocus && !audioFocusManager.request(plan.shouldDuckMusic)) {
+        // In pause-until-finished mode, a focus request can pause a media app
+        // even when its session was too transient to return a resume token.
+        // Do not make audio focus the only pause mechanism; without a token we
+        // let TTS play over the current state and avoid leaving music stopped.
+        val shouldRequestAudioFocus = plan.requestAudioFocus &&
+            (!plan.pauseBeforeAnnouncement || pausedPlayback != null)
+        if (shouldRequestAudioFocus && !audioFocusManager.request(plan.shouldDuckMusic)) {
+            audioFocusManager.abandon()
             musicVolumeManager.restore()
             resumePausedPlayback()
             _diagnostics.value = _diagnostics.value.copy(
@@ -236,7 +243,7 @@ class TrackVoiceController(
         }
         ttsEngine.speak(text, settings) { success, message ->
             if (generation == speechGeneration) {
-                if (plan.requestAudioFocus) audioFocusManager.abandon()
+                if (shouldRequestAudioFocus) audioFocusManager.abandon()
                 musicVolumeManager.restore()
                 resumePausedPlayback()
                 _diagnostics.value = _diagnostics.value.copy(

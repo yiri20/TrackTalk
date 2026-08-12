@@ -9,9 +9,13 @@ import kotlin.math.roundToInt
 object MusicVolumeCalculator {
     fun targetVolume(currentVolume: Int, maxVolume: Int, duckPercent: Int): Int {
         if (maxVolume <= 0) return 0
-        return (currentVolume * duckPercent.coerceIn(MIN_MUSIC_DUCK_PERCENT, MAX_MUSIC_DUCK_PERCENT) / 100f)
+        val calculated = (currentVolume * duckPercent.coerceIn(MIN_MUSIC_DUCK_PERCENT, MAX_MUSIC_DUCK_PERCENT) / 100f)
             .roundToInt()
             .coerceIn(0, maxVolume)
+        // A low but audible music volume must not become a hard mute while the
+        // voice guide is playing. restore() puts the exact original value back
+        // after the announcement.
+        return if (currentVolume > 0) calculated.coerceAtLeast(1) else calculated
     }
 }
 
@@ -27,6 +31,7 @@ class MusicVolumeManager(context: Context) {
         recoverInterruptedDuck()
     }
 
+    @Synchronized
     fun duckTo(percent: Int) {
         runCatching {
             val stream = AudioManager.STREAM_MUSIC
@@ -43,16 +48,19 @@ class MusicVolumeManager(context: Context) {
         }
     }
 
+    @Synchronized
     fun restore() {
         val original = originalVolume ?: return
-        runCatching {
+        val restored = runCatching {
             val stream = AudioManager.STREAM_MUSIC
             val current = audioManager.getStreamVolume(stream)
             // Respect a volume change made by the user while the announcement was playing.
             if (duckedVolume == null || current == duckedVolume) {
                 audioManager.setStreamVolume(stream, original, 0)
             }
-        }
+            true
+        }.getOrDefault(false)
+        if (!restored) return
         originalVolume = null
         duckedVolume = null
         clearSavedState()
@@ -63,14 +71,15 @@ class MusicVolumeManager(context: Context) {
         val storedDucked = preferences.getInt(KEY_DUCKED_VOLUME, NO_VOLUME)
         if (storedOriginal == NO_VOLUME) return
 
-        runCatching {
+        val recovered = runCatching {
             val current = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
             // Only undo the previous duck if the user did not change the volume meanwhile.
             if (storedDucked == NO_VOLUME || current == storedDucked) {
                 audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, storedOriginal, 0)
             }
-        }
-        clearSavedState()
+            true
+        }.getOrDefault(false)
+        if (recovered) clearSavedState()
     }
 
     private fun saveState(original: Int, ducked: Int) {

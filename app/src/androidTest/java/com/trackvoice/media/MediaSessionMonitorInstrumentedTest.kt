@@ -86,6 +86,34 @@ class MediaSessionMonitorInstrumentedTest {
         }
     }
 
+    @Test
+    fun resumesWhenMediaIdTemporarilyDisappearsDuringMetadataRefresh() {
+        val monitor = MediaSessionMonitor(context) {}
+        monitor.start()
+        try {
+            waitUntil { monitor.isSelectedPlaybackPlaying() == true }
+
+            val token = monitor.pauseSelectedIfPlaying()
+            assertNotNull("The active test session should be paused", token)
+            // Several real media apps clear MEDIA_ID for one callback while
+            // keeping the visible title/artist unchanged.
+            session.setMetadata(
+                MediaMetadata.Builder()
+                    .putString(MediaMetadata.METADATA_KEY_TITLE, "Delayed Resume Test")
+                    .putString(MediaMetadata.METADATA_KEY_ARTIST, "TrackTalk")
+                    .build(),
+            )
+            monitor.resumePlayback(token!!)
+
+            waitUntil(timeoutMs = 2_500L) {
+                MediaController(context, session.sessionToken).playbackState?.state == PlaybackState.STATE_PLAYING
+            }
+            assertTrue(monitor.isSelectedPlaybackPlaying() == true)
+        } finally {
+            monitor.stop()
+        }
+    }
+
     private fun setState(state: Int) {
         session.setPlaybackState(
             PlaybackState.Builder()
