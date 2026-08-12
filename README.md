@@ -53,6 +53,28 @@ gradlew.bat :app:assembleDebug
 
 생성되는 APK는 `app/build/outputs/apk/debug/app-debug.apk`입니다.
 
+## 원격/무선 ADB로 APK 설치
+
+개발자 PC에서 USB 또는 Android 무선 디버깅으로 연결된 기기에 Debug APK를 설치할 수 있습니다. 일반 앱이 Android 보안 확인을 우회해 몰래 APK를 설치하는 기능은 제공하지 않으며, 이 방식은 사용자가 개발자 옵션과 무선 디버깅을 직접 허용한 개발·테스트용 흐름입니다.
+
+기기에 무선 디버깅을 켜고 처음 한 번 페어링한 뒤 다음처럼 실행합니다.
+
+```powershell
+.\scripts\install-debug-apk.ps1 `
+  -PairingAddress "192.168.0.25:37123" `
+  -PairingCode "123456" `
+  -WirelessAddress "192.168.0.25:42517" `
+  -Launch
+```
+
+이미 페어링된 기기는 연결 주소만 지정하면 됩니다.
+
+```powershell
+.\scripts\install-debug-apk.ps1 -Device "192.168.0.25:42517" -Launch
+```
+
+USB/ADB 기기가 하나만 연결된 경우에는 `-Device`를 생략할 수 있습니다. APK가 없을 때 자동 빌드하려면 `-Build`를 추가합니다. 연결된 기기가 여러 대라면 `adb devices`로 serial을 확인한 뒤 `-Device`로 정확한 대상을 지정하세요.
+
 ## Notification Access 설정
 
 앱 홈 화면에서 `권한 설정`을 누르거나 Android 설정에서 `알림 접근`을 엽니다. TrackTalk을 켜야 Android가 현재 재생 중인 MediaSession을 제공할 수 있습니다. 이 권한은 현재 재생 곡의 제목과 아티스트를 확인하기 위해 필요하며, 일반 알림 내용은 저장하거나 음성으로 읽지 않습니다.
