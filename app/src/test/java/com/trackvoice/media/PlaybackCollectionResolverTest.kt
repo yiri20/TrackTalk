@@ -13,11 +13,26 @@ class PlaybackCollectionResolverTest {
     }
 
     @Test
-    fun albumMetadataWithQueuePositionIdentifiesAlbumWhenTrackMetadataIsMissing() {
+    fun albumMetadataWithOnlyQueuePositionRemainsUnknown() {
         assertEquals(
-            PlaybackCollection.ALBUM,
+            PlaybackCollection.UNKNOWN,
             PlaybackCollectionResolver.resolve(
                 event(album = "Album", activeQueuePosition = 2, queueSize = 10),
+            ),
+        )
+    }
+
+    @Test
+    fun queuePositionWithGenericNextTitleDoesNotPretendToBePlaylist() {
+        assertEquals(
+            PlaybackCollection.UNKNOWN,
+            PlaybackCollectionResolver.resolve(
+                event(
+                    album = "Album",
+                    queueTitle = "다음 트랙",
+                    activeQueuePosition = 2,
+                    queueSize = 10,
+                ),
             ),
         )
     }
@@ -35,6 +50,45 @@ class PlaybackCollectionResolverTest {
                 ),
             ),
         )
+    }
+
+    @Test
+    fun namedQueueDifferentFromAlbumIdentifiesPlaylist() {
+        assertEquals(
+            PlaybackCollection.PLAYLIST,
+            PlaybackCollectionResolver.resolve(
+                event(album = "Album", queueTitle = "출근길", queueSize = 10),
+            ),
+        )
+    }
+
+    @Test
+    fun queueItemsFromOneAlbumIdentifyAlbum() {
+        val event = event(album = "Album", queueTitle = "다음 트랙", queueSize = 3).copy(
+            queue = List(3) { index ->
+                QueueItemSnapshot(
+                    mediaId = "track-$index",
+                    title = "Song $index",
+                    artist = "Artist",
+                    album = "Album",
+                )
+            },
+        )
+
+        assertEquals(PlaybackCollection.ALBUM, PlaybackCollectionResolver.resolve(event))
+    }
+
+    @Test
+    fun queueItemsFromMultipleAlbumsIdentifyPlaylist() {
+        val event = event(album = "Album", queueTitle = "다음 트랙", queueSize = 3).copy(
+            queue = listOf(
+                QueueItemSnapshot("track-1", "Song 1", "Artist", album = "Album"),
+                QueueItemSnapshot("track-2", "Song 2", "Artist", album = "Other Album"),
+                QueueItemSnapshot("track-3", "Song 3", "Artist", album = "Album"),
+            ),
+        )
+
+        assertEquals(PlaybackCollection.PLAYLIST, PlaybackCollectionResolver.resolve(event))
     }
 
     @Test

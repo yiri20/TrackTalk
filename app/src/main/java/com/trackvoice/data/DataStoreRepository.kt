@@ -118,6 +118,7 @@ class DataStoreRepository(private val context: Context) {
             preferences.remove(AppKeys.enabled(packageName))
             preferences.remove(AppKeys.useCustomGuideSettings(packageName))
             preferences.remove(AppKeys.mode(packageName))
+            preferences.remove(AppKeys.collectionFallback(packageName))
             preferences.remove(AppKeys.readTitle(packageName))
             preferences.remove(AppKeys.readArtist(packageName))
             preferences.remove(AppKeys.readTrackNumber(packageName))
@@ -170,6 +171,7 @@ class DataStoreRepository(private val context: Context) {
         fun enabled(packageName: String) = appBooleanKey(packageName, "enabled")
         fun useCustomGuideSettings(packageName: String) = appBooleanKey(packageName, "custom_guide_settings")
         fun mode(packageName: String) = appKey(packageName, "mode")
+        fun collectionFallback(packageName: String) = appKey(packageName, "collection_fallback")
         fun readTitle(packageName: String) = appBooleanKey(packageName, "read_title")
         fun readArtist(packageName: String) = appBooleanKey(packageName, "read_artist")
         fun readTrackNumber(packageName: String) = appBooleanKey(packageName, "read_track_number")
@@ -244,6 +246,10 @@ class DataStoreRepository(private val context: Context) {
         .orEmpty()
         .associateWith { packageName ->
             val mode = enumOrDefault(this[AppKeys.mode(packageName)], AnnouncementMode.SMART)
+            val collectionFallback = enumOrDefault(
+                this[AppKeys.collectionFallback(packageName)],
+                CollectionFallback.AUTO,
+            )
             val readTitle = this[AppKeys.readTitle(packageName)] ?: true
             val readArtist = this[AppKeys.readArtist(packageName)] ?: true
             val readTrackNumber = this[AppKeys.readTrackNumber(packageName)] ?: true
@@ -262,8 +268,9 @@ class DataStoreRepository(private val context: Context) {
                         !readAlbum ||
                         !readCollection ||
                         timing != null
-                    ),
+                ),
                 mode = mode,
+                collectionFallback = collectionFallback,
                 readTitle = readTitle,
                 readArtist = readArtist,
                 readTrackNumber = readTrackNumber,
@@ -312,6 +319,7 @@ class DataStoreRepository(private val context: Context) {
         this[AppKeys.enabled(settings.packageName)] = settings.enabled
         this[AppKeys.useCustomGuideSettings(settings.packageName)] = settings.useCustomGuideSettings
         this[AppKeys.mode(settings.packageName)] = settings.mode.name
+        this[AppKeys.collectionFallback(settings.packageName)] = settings.collectionFallback.name
         this[AppKeys.readTitle(settings.packageName)] = settings.readTitle
         this[AppKeys.readArtist(settings.packageName)] = settings.readArtist
         this[AppKeys.readTrackNumber(settings.packageName)] = settings.readTrackNumber

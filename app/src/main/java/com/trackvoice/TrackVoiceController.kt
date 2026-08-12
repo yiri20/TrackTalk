@@ -350,9 +350,15 @@ class TrackVoiceController(
     private fun handleMediaUpdate(update: MediaMonitorUpdate) {
         val event = update.selected?.event
         val settings = effectiveSettings()
-        val collection = event?.let(PlaybackCollectionResolver::resolve) ?: PlaybackCollection.UNKNOWN
         val app = event?.let { appSettings.value[it.sourcePackageName]?.forPremiumEntitlement(premiumState.value.isPremium) }
         val appGuideSettings = app?.takeIf { it.useCustomGuideSettings }
+        val collection = event?.let {
+            PlaybackCollectionResolver.applyFallback(
+                detected = PlaybackCollectionResolver.resolve(it),
+                fallback = appGuideSettings?.collectionFallback
+                    ?: com.trackvoice.data.CollectionFallback.AUTO,
+            )
+        } ?: PlaybackCollection.UNKNOWN
         val configuredMode = appGuideSettings?.mode ?: settings.defaultMode
         val mode = when {
             configuredMode != AnnouncementMode.SMART -> configuredMode

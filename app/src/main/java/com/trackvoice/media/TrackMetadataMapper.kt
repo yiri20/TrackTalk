@@ -53,6 +53,8 @@ class TrackMetadataMapper(
         mediaId = description.mediaId,
         title = description.title?.toString().clean(),
         artist = description.subtitle?.toString().clean(),
+        album = description.extras?.getString(MediaMetadata.METADATA_KEY_ALBUM).clean(),
+        trackNumber = description.extras?.intMetadata(MediaMetadata.METADATA_KEY_TRACK_NUMBER),
     )
 
     private fun PlaybackState?.toPlaybackStatus(): PlaybackStatus = when (this?.state) {
@@ -65,4 +67,11 @@ class TrackMetadataMapper(
 
     private fun String?.clean(): String? = this?.trim()?.takeIf { it.isNotEmpty() }
     private fun Long.safeInt(): Int? = toInt().takeIf { it > 0 && it.toLong() == this }
+
+    private fun android.os.Bundle.intMetadata(key: String): Int? {
+        if (!containsKey(key)) return null
+        val longValue = getLong(key, Long.MIN_VALUE)
+        if (longValue != Long.MIN_VALUE) return longValue.safeInt()
+        return getInt(key, Int.MIN_VALUE).takeIf { it > 0 }
+    }
 }

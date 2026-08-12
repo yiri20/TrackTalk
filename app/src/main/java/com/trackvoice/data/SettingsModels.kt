@@ -13,6 +13,13 @@ enum class AnnouncementMode(val label: String) {
     TITLE_ONLY("제목만"),
 }
 
+enum class CollectionFallback {
+    AUTO,
+    ALBUM,
+    PLAYLIST,
+    ALGORITHMIC,
+}
+
 enum class AnnouncementReadField {
     TITLE,
     ARTIST,
@@ -133,6 +140,7 @@ data class AppSettings(
     val enabled: Boolean = true,
     val useCustomGuideSettings: Boolean = false,
     val mode: AnnouncementMode = AnnouncementMode.SMART,
+    val collectionFallback: CollectionFallback = CollectionFallback.AUTO,
     val readTitle: Boolean = true,
     val readArtist: Boolean = true,
     val readTrackNumber: Boolean = true,

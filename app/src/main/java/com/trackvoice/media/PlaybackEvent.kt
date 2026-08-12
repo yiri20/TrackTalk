@@ -1,5 +1,6 @@
 package com.trackvoice.media
 
+import com.trackvoice.data.CollectionFallback
 import java.util.Locale
 
 enum class PlaybackStatus {
@@ -14,6 +15,8 @@ data class QueueItemSnapshot(
     val mediaId: String?,
     val title: String?,
     val artist: String?,
+    val album: String? = null,
+    val trackNumber: Int? = null,
 )
 
 data class PlaybackEvent(
@@ -47,55 +50,121 @@ enum class PlaybackCollection {
 }
 
 object PlaybackCollectionResolver {
+    fun applyFallback(
+        detected: PlaybackCollection,
+        fallback: CollectionFallback,
+    ): PlaybackCollection = if (detected != PlaybackCollection.UNKNOWN) {
+        detected
+    } else {
+        when (fallback) {
+            CollectionFallback.AUTO -> PlaybackCollection.UNKNOWN
+            CollectionFallback.ALBUM -> PlaybackCollection.ALBUM
+            CollectionFallback.PLAYLIST -> PlaybackCollection.PLAYLIST
+            CollectionFallback.ALGORITHMIC -> PlaybackCollection.ALGORITHMIC
+        }
+    }
+
     fun resolve(event: PlaybackEvent): PlaybackCollection {
-        val queueTitle = event.queueTitle.orEmpty().lowercase(Locale.ROOT)
+        val queueTitle = event.queueTitle.normalized()
         when {
-            queueTitle.containsAny(
-                "algorithm",
-                "random",
-                "shuffle",
-                "autoplay",
-                "auto play",
-                "radio",
-                "mix",
-                "station",
-                "discover weekly",
-                "release radar",
-                "daily mix",
-                "recommend",
-                "알고리즘",
-                "랜덤",
-                "무작위",
-                "셔플",
-                "자동재생",
-                "자동 재생",
-                "라디오",
-                "믹스",
-                "스테이션",
-                "추천",
-            ) -> {
+            queueTitle.isAlgorithmicTitle() -> {
                 return PlaybackCollection.ALGORITHMIC
             }
-            queueTitle.containsAny("playlist", "재생목록", "queue") -> {
+            queueTitle.isExplicitPlaylistTitle() -> {
                 return PlaybackCollection.PLAYLIST
             }
-            queueTitle.containsAny("album", "앨범") -> return PlaybackCollection.ALBUM
+            queueTitle.isExplicitAlbumTitle() -> {
+                return PlaybackCollection.ALBUM
+            }
         }
 
-        val hasAlbumMetadata = !event.album.isNullOrBlank()
-        val hasAlbumTrackContext = event.trackNumber != null ||
-            event.totalTracks != null ||
-            event.activeQueuePosition != null ||
-            event.queue.size > 1
-        if (hasAlbumMetadata && hasAlbumTrackContext) {
+        val album = event.album.normalized().takeIf { it.isNotBlank() }
+        val hasMeaningfulQueueTitle = queueTitle.isNotBlank() && !queueTitle.isGenericTitle()
+        if (hasMeaningfulQueueTitle) {
+            if (album != null && queueTitle.matchesAlbum(album)) {
+                return PlaybackCollection.ALBUM
+            }
+            if (event.queue.size > 1) {
+                // A named, non-generic queue that is not the current album is
+                // the strongest playlist signal available from MediaSession.
+                return PlaybackCollection.PLAYLIST
+            }
+        }
+
+        val queueAlbums = event.queue.mapNotNull { it.album.normalized().takeIf(String::isNotBlank) }.distinct()
+        if (queueAlbums.size > 1) return PlaybackCollection.PLAYLIST
+        if (album != null && queueAlbums.singleOrNull() == album) {
             return PlaybackCollection.ALBUM
         }
 
-        val queueLooksLikeAlbum = event.totalTracks != null &&
-            event.queue.size in 2..(event.totalTracks + 1)
-        if (event.queue.size > 1 && !queueLooksLikeAlbum) return PlaybackCollection.PLAYLIST
+        val hasCompleteAlbumTrackMetadata = album != null &&
+            event.trackNumber != null &&
+            event.totalTracks != null
+        if (hasCompleteAlbumTrackMetadata && event.queue.size <= 1) {
+            return PlaybackCollection.ALBUM
+        }
+
+        // A queue position by itself only says that the player has a queue;
+        // it does not say that the queue is an album. Leave this ambiguous
+        // rather than applying album settings to a playlist track.
         return PlaybackCollection.UNKNOWN
     }
+
+    fun isGenericQueueTitle(queueTitle: String?): Boolean = queueTitle.normalized().isGenericTitle()
+
+    private fun String?.normalized(): String = this
+        ?.trim()
+        ?.lowercase(Locale.ROOT)
+        ?.replace(Regex("\\s+"), " ")
+        .orEmpty()
+
+    private fun String.isAlgorithmicTitle(): Boolean = containsAny(
+        "algorithm",
+        "random",
+        "shuffle",
+        "autoplay",
+        "auto play",
+        "radio",
+        "mix",
+        "station",
+        "discover weekly",
+        "release radar",
+        "daily mix",
+        "recommend",
+        "알고리즘",
+        "랜덤",
+        "무작위",
+        "셔플",
+        "자동재생",
+        "자동 재생",
+        "라디오",
+        "믹스",
+        "스테이션",
+        "추천",
+    )
+
+    private fun String.isExplicitPlaylistTitle(): Boolean = containsAny(
+        "playlist",
+        "재생목록",
+        "플레이리스트",
+    )
+
+    private fun String.isExplicitAlbumTitle(): Boolean = containsAny("album", "앨범")
+
+    private fun String.isGenericTitle(): Boolean = containsAny(
+        "다음 트랙",
+        "다음 곡",
+        "up next",
+        "next up",
+        "now playing",
+        "현재 재생",
+        "재생 대기열",
+        "대기열",
+        "queue",
+    )
+
+    private fun String.matchesAlbum(album: String): Boolean =
+        this == album || (length >= 3 && album.length >= 3 && (contains(album) || album.contains(this)))
 
     private fun String.containsAny(vararg candidates: String): Boolean =
         candidates.any(::contains)

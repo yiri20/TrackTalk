@@ -45,6 +45,7 @@ class AnnouncementFormatterTest {
                     queue = List(11) { com.trackvoice.media.QueueItemSnapshot("track-$it", "Song $it", "Artist") },
                 ),
                 AnnouncementMode.ALBUM,
+                collection = PlaybackCollection.ALBUM,
             ),
         )
     }

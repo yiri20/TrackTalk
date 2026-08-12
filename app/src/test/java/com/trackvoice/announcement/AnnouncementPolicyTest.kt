@@ -3,6 +3,7 @@ package com.trackvoice.announcement
 import com.trackvoice.data.AnnouncementMode
 import com.trackvoice.data.AnnouncementReadField
 import com.trackvoice.data.AppSettings
+import com.trackvoice.data.CollectionFallback
 import com.trackvoice.data.UserSettings
 import com.trackvoice.media.PlaybackEvent
 import com.trackvoice.media.PlaybackStatus
@@ -77,6 +78,28 @@ class AnnouncementPolicyTest {
     }
 
     @Test
+    fun appFallbackCanResolveAnAmbiguousQueue() {
+        val decision = AnnouncementPolicy.decide(
+            event = event().copy(
+                trackNumber = null,
+                totalTracks = null,
+                activeQueuePosition = 2,
+                queue = List(11) { queueItem("Song $it") },
+            ),
+            userSettings = UserSettings(suppressDuringSpeakerPlayback = false),
+            appSettings = AppSettings(
+                "com.youtube.music",
+                "YouTube Music",
+                useCustomGuideSettings = true,
+                collectionFallback = CollectionFallback.ALBUM,
+            ),
+            externalAudioOutput = true,
+        )
+
+        assertEquals("앨범 A Moon Shaped Pool, 트랙 3번, Glass Eyes, Radiohead.", decision.text)
+    }
+
+    @Test
     fun smartUsesAlgorithmModeWhenQueueTitleIdentifiesAlgorithmicPlayback() {
         val decision = AnnouncementPolicy.decide(
             event().copy(queueTitle = "Daily Mix 1"),
@@ -142,7 +165,7 @@ class AnnouncementPolicyTest {
                 trackNumber = null,
                 totalTracks = null,
                 activeQueuePosition = 2,
-                queue = List(11) { queueItem("Song $it") },
+                queue = List(11) { queueItem("Song $it", album = "A Moon Shaped Pool") },
             ),
             userSettings = UserSettings(suppressDuringSpeakerPlayback = false),
             appSettings = null,
@@ -152,10 +175,11 @@ class AnnouncementPolicyTest {
         assertEquals("앨범 A Moon Shaped Pool, 트랙 3번, Glass Eyes, Radiohead.", decision.text)
     }
 
-    private fun queueItem(title: String = "Glass Eyes") = com.trackvoice.media.QueueItemSnapshot(
+    private fun queueItem(title: String = "Glass Eyes", album: String? = null) = com.trackvoice.media.QueueItemSnapshot(
         mediaId = title,
         title = title,
         artist = "Radiohead",
+        album = album,
     )
 
     @Test

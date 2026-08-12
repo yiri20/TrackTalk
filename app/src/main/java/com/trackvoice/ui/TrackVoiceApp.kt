@@ -103,6 +103,7 @@ import com.trackvoice.data.AnnouncementTiming
 import com.trackvoice.data.AppSettings
 import com.trackvoice.data.AppCategory
 import com.trackvoice.data.AppLanguage
+import com.trackvoice.data.CollectionFallback
 import com.trackvoice.data.categorizeApp
 import com.trackvoice.data.GenderFilter
 import com.trackvoice.data.UserSettings
@@ -119,6 +120,7 @@ import com.trackvoice.data.MIN_MUSIC_DUCK_PERCENT
 import com.trackvoice.media.PlaybackEvent
 import com.trackvoice.media.PlaybackStatus
 import com.trackvoice.media.PlaybackCollection
+import com.trackvoice.media.PlaybackCollectionResolver
 import com.trackvoice.monetization.PremiumState
 import com.trackvoice.monetization.forPremiumEntitlement
 import com.trackvoice.monetization.promoCodeRedeemUrl
@@ -623,8 +625,16 @@ private fun CurrentTrackCard(
                 TrackField(strings.trackField, event.title ?: strings.unknownTitle)
                 TrackField(strings.artistField, event.artist ?: strings.unknownArtist)
                 TrackField(strings.albumField, event.album ?: strings.unknownAlbum)
-                if (!event.queueTitle.isNullOrBlank()) TrackField(strings.playlistField, event.queueTitle.orEmpty())
-                val visibleTrackNumber = event.trackNumber ?: event.activeQueuePosition?.plus(1)
+                if (
+                    collection == PlaybackCollection.PLAYLIST &&
+                    !PlaybackCollectionResolver.isGenericQueueTitle(event.queueTitle) &&
+                    !event.queueTitle.isNullOrBlank()
+                ) {
+                    TrackField(strings.playlistField, event.queueTitle.orEmpty())
+                }
+                val visibleTrackNumber = event.trackNumber ?: event.activeQueuePosition
+                    ?.plus(1)
+                    ?.takeIf { collection == PlaybackCollection.ALBUM }
                 if (visibleTrackNumber != null) {
                     TrackField(
                         strings.trackNumberField,
@@ -1148,6 +1158,17 @@ private fun AppSettingsCard(
                     strings.appOverrideDetails,
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
+                )
+                OptionDropdown(
+                    strings.appCollectionFallback,
+                    app.collectionFallback,
+                    CollectionFallback.values().toList(),
+                    strings::collectionFallback,
+                ) { fallback -> onUpdate(app.copy(collectionFallback = fallback)) }
+                Text(
+                    strings.appCollectionFallbackSummary,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 OptionDropdown(
                     strings.appAnnouncementTiming,

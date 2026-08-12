@@ -35,7 +35,12 @@ object AnnouncementPolicy {
         externalAudioOutput: Boolean = true,
     ): AnnouncementDecision {
         val appGuideSettings = appSettings?.takeIf { it.useCustomGuideSettings }
-        val collection = PlaybackCollectionResolver.resolve(event)
+        val detectedCollection = PlaybackCollectionResolver.resolve(event)
+        val collection = PlaybackCollectionResolver.applyFallback(
+            detected = detectedCollection,
+            fallback = appGuideSettings?.collectionFallback
+                ?: com.trackvoice.data.CollectionFallback.AUTO,
+        )
         val mode = resolveMode(collection, userSettings, appGuideSettings)
         val configuredDelayMs = if (userSettings.trackStartBehavior == com.trackvoice.data.TrackStartBehavior.ANNOUNCE_THEN_PLAY) {
             0L

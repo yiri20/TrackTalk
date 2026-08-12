@@ -3,6 +3,7 @@ package com.trackvoice.monetization
 import com.trackvoice.data.UserSettings
 import com.trackvoice.data.AppSettings
 import com.trackvoice.data.AnnouncementMode
+import com.trackvoice.data.CollectionFallback
 import com.trackvoice.data.DEFAULT_ALBUM_READ_FIELDS
 import com.trackvoice.data.DEFAULT_ALGORITHMIC_READ_FIELDS
 import com.trackvoice.data.DEFAULT_PLAYLIST_READ_FIELDS
@@ -40,6 +41,7 @@ fun AppSettings.forPremiumEntitlement(isPremium: Boolean): AppSettings {
     return copy(
         useCustomGuideSettings = false,
         mode = AnnouncementMode.SMART,
+        collectionFallback = CollectionFallback.AUTO,
         readTitle = true,
         readArtist = true,
         readTrackNumber = true,

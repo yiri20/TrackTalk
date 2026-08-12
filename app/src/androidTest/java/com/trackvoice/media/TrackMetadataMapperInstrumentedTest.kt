@@ -5,6 +5,7 @@ import android.media.MediaDescription
 import android.media.session.MediaController
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
+import android.os.Bundle
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.After
@@ -201,5 +202,38 @@ class TrackMetadataMapperInstrumentedTest {
         val event = TrackMetadataMapper { "Test Music" }.map(controller, observedAt = 1_111L)
 
         assertEquals(1, event.activeQueuePosition)
+    }
+
+    @Test
+    fun mapsAlbumAndTrackNumberFromQueueItemExtras() {
+        val extras = Bundle().apply {
+            putString(MediaMetadata.METADATA_KEY_ALBUM, "Queue Album")
+            putLong(MediaMetadata.METADATA_KEY_TRACK_NUMBER, 4L)
+        }
+        session.setPlaybackState(
+            PlaybackState.Builder()
+                .setState(PlaybackState.STATE_PLAYING, 0L, 1f)
+                .setActiveQueueItemId(4L)
+                .build(),
+        )
+        session.setQueue(
+            listOf(
+                MediaSession.QueueItem(
+                    MediaDescription.Builder()
+                        .setMediaId("queue-track-4")
+                        .setTitle("Queue Song")
+                        .setSubtitle("Queue Artist")
+                        .setExtras(extras)
+                        .build(),
+                    4L,
+                ),
+            ),
+        )
+
+        val controller = MediaController(context, session.sessionToken)
+        val event = TrackMetadataMapper { "Test Music" }.map(controller, observedAt = 1_212L)
+
+        assertEquals("Queue Album", event.queue.single().album)
+        assertEquals(4, event.queue.single().trackNumber)
     }
 }

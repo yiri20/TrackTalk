@@ -5,6 +5,7 @@ import com.trackvoice.data.AnnouncementReadField
 import com.trackvoice.data.AnnouncementTiming
 import com.trackvoice.data.AppCategory
 import com.trackvoice.data.AppLanguage
+import com.trackvoice.data.CollectionFallback
 import com.trackvoice.data.GenderFilter
 import com.trackvoice.data.MusicTreatment
 import com.trackvoice.data.TrackStartBehavior
@@ -177,7 +178,10 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     val repeatTrack: String get() = t("같은 곡 다시 안내", "Repeat the same track")
     val repeatTrackSummary: String get() = t("기본값은 같은 곡을 한 번만 안내합니다.", "By default, each track is announced once.")
     val albumPlaylistReading: String get() = t("콘텐츠 유형별 읽기", "Content-type reading")
-    val albumPlaylistSummary: String get() = t("MediaSession의 queue 제목과 트랙 metadata를 분석해 앨범·재생목록·알고리즘/랜덤 재생을 다르게 읽습니다.", "MediaSession queue titles and track metadata identify albums, playlists, and algorithmic or shuffled playback.")
+    val albumPlaylistSummary: String get() = t(
+        "MediaSession의 queue 제목과 트랙 metadata를 분석해 앨범·재생목록·알고리즘/랜덤 재생을 다르게 읽습니다. 정보가 없는 앱은 앱별 보정 옵션을 사용할 수 있습니다.",
+        "MediaSession queue titles and track metadata identify albums, playlists, and algorithmic or shuffled playback. Apps without that context can use an app-specific fallback.",
+    )
     val albumPlayback: String get() = t("앨범 재생", "Album playback")
     val playlistPlayback: String get() = t("재생목록 재생", "Playlist playback")
     val algorithmPlayback: String get() = t("알고리즘·랜덤 재생", "Algorithmic / shuffle playback")
@@ -231,6 +235,11 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
         t("안내 탭의 기본 설정을 사용합니다.", "Uses the defaults from Guide.")
     }
     val appOverrideDetails: String get() = t("앱별 안내 예외", "App-specific overrides")
+    val appCollectionFallback: String get() = t("판별 불확실 시 유형", "Fallback when type is unclear")
+    val appCollectionFallbackSummary: String get() = t(
+        "일부 앱은 앨범·재생목록 유형을 제공하지 않습니다. 자동 판별이 불확실할 때만 이 설정을 사용합니다.",
+        "Some apps do not expose album or playlist context. This applies only when automatic detection is uncertain.",
+    )
     val appAnnouncementTiming: String get() = t("이 앱의 안내 시점", "Timing for this app")
     val appReadItems: String get() = t("읽을 항목", "Items to read")
     val appReadItemsSummary: String get() = t(
@@ -350,6 +359,13 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
         PlaybackCollection.PLAYLIST -> t("재생목록 재생", "Playlist playback")
         PlaybackCollection.ALGORITHMIC -> t("알고리즘·랜덤 재생", "Algorithmic / shuffle playback")
         PlaybackCollection.UNKNOWN -> t("콘텐츠 유형 확인 중", "Identifying content type")
+    }
+
+    fun collectionFallback(fallback: CollectionFallback): String = when (fallback) {
+        CollectionFallback.AUTO -> t("자동(곡명·아티스트로 안내)", "Automatic (title + artist)")
+        CollectionFallback.ALBUM -> t("앨범으로 처리", "Treat as album")
+        CollectionFallback.PLAYLIST -> t("재생목록으로 처리", "Treat as playlist")
+        CollectionFallback.ALGORITHMIC -> t("알고리즘·랜덤으로 처리", "Treat as algorithmic / shuffle")
     }
 
     companion object {

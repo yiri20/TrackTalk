@@ -25,10 +25,13 @@ object AnnouncementFormatter {
         val album = event.album.cleanIf(options.readAlbum)
         val collectionTitle = event.queueTitle.cleanIf(options.readCollection)
         val effectiveTotalTracks = event.totalTracks ?: event.queue.size.takeIf { it > 1 }
+        val queuePositionFallback = event.activeQueuePosition
+            ?.plus(1)
+            ?.takeIf { collection == PlaybackCollection.ALBUM || mode == AnnouncementMode.ALBUM }
         val track = if (options.readTrackNumber) {
             listOfNotNull(
                 event.trackNumber,
-                event.activeQueuePosition?.plus(1),
+                queuePositionFallback,
             ).firstOrNull { it.isValidTrack(effectiveTotalTracks) }
         } else {
             null
