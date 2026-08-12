@@ -129,6 +129,7 @@ class DataStoreRepository(private val context: Context) {
 
     private object Keys {
         val enabled = booleanPreferencesKey("enabled")
+        val appLanguage = stringPreferencesKey("app_language")
         val autoEnableOnScreenOff = booleanPreferencesKey("auto_enable_screen_off")
         val restoreEnabledWhenScreenOn = booleanPreferencesKey("restore_on_screen_on")
         val headphonesOnly = booleanPreferencesKey("headphones_only")
@@ -172,6 +173,7 @@ class DataStoreRepository(private val context: Context) {
     }
 
     private fun Preferences.toUserSettings(): UserSettings = UserSettings(
+        appLanguage = enumOrDefault(this[Keys.appLanguage], AppLanguage.SYSTEM),
         enabled = this[Keys.enabled] ?: true,
         autoEnableOnScreenOff = this[Keys.autoEnableOnScreenOff] ?: false,
         restoreEnabledWhenScreenOn = this[Keys.restoreEnabledWhenScreenOn] ?: true,
@@ -228,6 +230,7 @@ class DataStoreRepository(private val context: Context) {
         }
 
     private fun MutablePreferences.writeUserSettings(settings: UserSettings) {
+        this[Keys.appLanguage] = settings.appLanguage.name
         this[Keys.enabled] = settings.enabled
         this[Keys.autoEnableOnScreenOff] = settings.autoEnableOnScreenOff
         this[Keys.restoreEnabledWhenScreenOn] = settings.restoreEnabledWhenScreenOn

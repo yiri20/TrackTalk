@@ -41,7 +41,25 @@ enum class GenderFilter(val label: String) {
     UNSPECIFIED("자동 선택"),
 }
 
+enum class AppLanguage {
+    SYSTEM,
+    KOREAN,
+    ENGLISH,
+}
+
+fun AppLanguage.resolve(systemLanguage: String): AppLanguage = when (this) {
+    AppLanguage.SYSTEM -> if (systemLanguage.startsWith("ko", ignoreCase = true)) {
+        AppLanguage.KOREAN
+    } else {
+        AppLanguage.ENGLISH
+    }
+    AppLanguage.KOREAN,
+    AppLanguage.ENGLISH,
+    -> this
+}
+
 data class UserSettings(
+    val appLanguage: AppLanguage = AppLanguage.SYSTEM,
     val enabled: Boolean = true,
     val autoEnableOnScreenOff: Boolean = false,
     val restoreEnabledWhenScreenOn: Boolean = true,

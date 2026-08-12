@@ -73,6 +73,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -100,6 +101,7 @@ import com.trackvoice.data.AnnouncementMode
 import com.trackvoice.data.AnnouncementTiming
 import com.trackvoice.data.AppSettings
 import com.trackvoice.data.AppCategory
+import com.trackvoice.data.AppLanguage
 import com.trackvoice.data.categorizeApp
 import com.trackvoice.data.GenderFilter
 import com.trackvoice.data.UserSettings
@@ -118,12 +120,12 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private enum class AppSection(val title: String, val navLabel: String) {
-    HOME("TrackTalk", "홈"),
-    GENERAL("안내 설정", "안내"),
-    APPS("앱 설정", "앱"),
-    VOICE("음성 설정", "음성"),
-    DIAGNOSTICS("진단", "진단"),
+enum class AppSection {
+    HOME,
+    GENERAL,
+    APPS,
+    VOICE,
+    DIAGNOSTICS,
 }
 
 private val TrackVoiceCardShape = RoundedCornerShape(14.dp)
@@ -140,6 +142,7 @@ fun TrackVoiceApp(viewModel: TrackVoiceViewModel, activity: Activity) {
     val deviceSettings by viewModel.audioDeviceSettings.collectAsStateWithLifecycle()
     val premiumState by viewModel.premiumState.collectAsStateWithLifecycle()
     val effectiveSettings = settings.forPremiumEntitlement(premiumState.isPremium)
+    val strings = TrackTalkStrings.forLanguage(settings.appLanguage, Locale.getDefault().language)
     var selectedSectionName by rememberSaveable { mutableStateOf(AppSection.HOME.name) }
     var showPremiumDialog by rememberSaveable { mutableStateOf(false) }
     val selectedSection = AppSection.valueOf(selectedSectionName)
@@ -157,38 +160,39 @@ fun TrackVoiceApp(viewModel: TrackVoiceViewModel, activity: Activity) {
         ActivityResultContracts.RequestPermission(),
     ) { granted -> notificationPermissionGranted = granted }
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            TopAppBar(
-                title = { Text(selectedSection.title) },
-                actions = {
-                    if (!premiumState.isPremium) {
-                        TextButton(onClick = { showPremiumDialog = true }) {
-                            Icon(Icons.Default.Star, contentDescription = null)
-                            Spacer(Modifier.width(4.dp))
-                            Text("Plus")
+    CompositionLocalProvider(LocalTrackTalkStrings provides strings) {
+        Scaffold(
+            containerColor = MaterialTheme.colorScheme.background,
+            topBar = {
+                TopAppBar(
+                    title = { Text(strings.sectionTitle(selectedSection)) },
+                    actions = {
+                        if (!premiumState.isPremium) {
+                            TextButton(onClick = { showPremiumDialog = true }) {
+                                Icon(Icons.Default.Star, contentDescription = null)
+                                Spacer(Modifier.width(4.dp))
+                                Text(strings.plus)
+                            }
                         }
-                    }
-                    StatusBadge(
-                        enabled = mediaState.effectiveEnabled,
-                        notificationAccess = diagnostics.notificationListenerConnected,
-                    )
-                },
-            )
-        },
-        bottomBar = {
-            NavigationBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) {
-                NavigationItem(AppSection.HOME, Icons.Default.Home, selectedSection) { selectedSectionName = it.name }
-                NavigationItem(AppSection.GENERAL, Icons.Default.Tune, selectedSection) { selectedSectionName = it.name }
-                NavigationItem(AppSection.APPS, Icons.Default.Apps, selectedSection) { selectedSectionName = it.name }
-                NavigationItem(AppSection.VOICE, Icons.Default.RecordVoiceOver, selectedSection) { selectedSectionName = it.name }
-                NavigationItem(AppSection.DIAGNOSTICS, Icons.Default.BugReport, selectedSection) { selectedSectionName = it.name }
-            }
-        },
-    ) { padding ->
-        SurfaceContent(padding) {
-            when (selectedSection) {
+                        StatusBadge(
+                            enabled = mediaState.effectiveEnabled,
+                            notificationAccess = diagnostics.notificationListenerConnected,
+                        )
+                    },
+                )
+            },
+            bottomBar = {
+                NavigationBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) {
+                    NavigationItem(AppSection.HOME, Icons.Default.Home, selectedSection) { selectedSectionName = it.name }
+                    NavigationItem(AppSection.GENERAL, Icons.Default.Tune, selectedSection) { selectedSectionName = it.name }
+                    NavigationItem(AppSection.APPS, Icons.Default.Apps, selectedSection) { selectedSectionName = it.name }
+                    NavigationItem(AppSection.VOICE, Icons.Default.RecordVoiceOver, selectedSection) { selectedSectionName = it.name }
+                    NavigationItem(AppSection.DIAGNOSTICS, Icons.Default.BugReport, selectedSection) { selectedSectionName = it.name }
+                }
+            },
+        ) { padding ->
+            SurfaceContent(padding) {
+                when (selectedSection) {
                 AppSection.HOME -> HomeScreen(
                     settings = effectiveSettings,
                     mediaEvent = mediaState.currentEvent,
@@ -242,20 +246,21 @@ fun TrackVoiceApp(viewModel: TrackVoiceViewModel, activity: Activity) {
                 )
 
                 AppSection.DIAGNOSTICS -> DiagnosticsScreen(diagnostics, mediaState.currentEvent)
+                }
             }
         }
-    }
-    if (showPremiumDialog) {
-        PremiumDialog(
-            state = premiumState,
-            onDismiss = { showPremiumDialog = false },
-            onPurchase = { viewModel.purchasePremium(activity) },
-            onRestore = viewModel::restorePremium,
-            onRedeemLocalCode = viewModel::redeemLocalPromoCode,
-            onOpenPromoCode = { url ->
-                context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
-            },
-        )
+        if (showPremiumDialog) {
+            PremiumDialog(
+                state = premiumState,
+                onDismiss = { showPremiumDialog = false },
+                onPurchase = { viewModel.purchasePremium(activity) },
+                onRestore = viewModel::restorePremium,
+                onRedeemLocalCode = viewModel::redeemLocalPromoCode,
+                onOpenPromoCode = { url ->
+                    context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
+                },
+            )
+        }
     }
 }
 
@@ -266,11 +271,12 @@ private fun RowScope.NavigationItem(
     selected: AppSection,
     onSelected: (AppSection) -> Unit,
 ) {
+    val strings = LocalTrackTalkStrings.current
     NavigationBarItem(
         selected = selected == section,
         onClick = { onSelected(section) },
-        icon = { Icon(icon, contentDescription = section.title) },
-        label = { Text(section.navLabel, maxLines = 1) },
+        icon = { Icon(icon, contentDescription = strings.sectionTitle(section)) },
+        label = { Text(strings.navLabel(section), maxLines = 1) },
     )
 }
 
@@ -302,6 +308,7 @@ private fun HomeScreen(
     onOpenGeneral: () -> Unit,
     onOpenPremium: () -> Unit,
 ) {
+    val strings = LocalTrackTalkStrings.current
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -338,9 +345,9 @@ private fun HomeScreen(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
             ) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("안내 설정", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text("${currentMode.label} · ${settings.delaySeconds}초 후 안내")
-                    TextButton(onClick = onOpenGeneral) { Text("설정 열기") }
+                    Text(strings.guideSettings, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(strings.guideSummary(currentMode, settings.delaySeconds))
+                    TextButton(onClick = onOpenGeneral) { Text(strings.openSettings) }
                 }
             }
         }
@@ -349,6 +356,7 @@ private fun HomeScreen(
 
 @Composable
 private fun PremiumCard(state: PremiumState, onOpenPremium: () -> Unit) {
+    val strings = LocalTrackTalkStrings.current
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = TrackVoiceCardShape,
@@ -370,18 +378,18 @@ private fun PremiumCard(state: PremiumState, onOpenPremium: () -> Unit) {
         ) {
             Icon(Icons.Default.Star, contentDescription = null, modifier = Modifier.size(28.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("TrackTalk Plus", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(strings.premiumTitle, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text(
                     if (state.isPremium) {
-                        "Plus가 활성화되어 모든 고급 기능을 사용할 수 있습니다."
+                        strings.premiumEnabledSummary
                     } else {
-                        "음성 세밀 조절과 기기별 자동화를 한 번 결제로 잠금 해제합니다."
+                        strings.premiumLockedSummary
                     },
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
             if (!state.isPremium) {
-                TextButton(onClick = onOpenPremium) { Text("보기") }
+                TextButton(onClick = onOpenPremium) { Text(strings.view) }
             }
         }
     }
@@ -396,30 +404,31 @@ private fun PremiumDialog(
     onRedeemLocalCode: (String) -> Boolean,
     onOpenPromoCode: (String) -> Unit,
 ) {
+    val strings = LocalTrackTalkStrings.current
     var promoCode by rememberSaveable { mutableStateOf("") }
     var promoCodeError by rememberSaveable { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Default.Star, contentDescription = null) },
-        title = { Text("TrackTalk Plus") },
+        title = { Text(strings.premiumTitle) },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Text("기본 곡 감지와 안내는 계속 무료로 제공합니다.")
-                PremiumBenefit("속도·높이·음량 등 음성 세밀 조절")
-                PremiumBenefit("연결 기기별 안내와 자동 활성화")
-                PremiumBenefit("향후 추가될 고급 음성·자동화 기능")
+                Text(strings.basicMusicDetection)
+                PremiumBenefit(strings.premiumVoiceBenefit)
+                PremiumBenefit(strings.premiumDeviceBenefit)
+                PremiumBenefit(strings.premiumFutureBenefit)
                 when {
                     state.isPremium -> Text(
-                        "Plus가 활성화되어 있습니다.",
+                        strings.premiumActive,
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.Bold,
                     )
-                    state.price != null -> Text("한 번 결제 · ${state.price}")
+                    state.price != null -> Text(strings.oneTimePrice(state.price.orEmpty()))
                     else -> Text(
-                        "${state.message ?: "Play Console 상품을 준비 중입니다."}",
+                        state.message ?: strings.playProductPreparing,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -434,7 +443,7 @@ private fun PremiumDialog(
                 if (!state.isPremium) {
                     HorizontalDivider()
                     Text(
-                        "지인용 얼리 액세스 코드는 이 기기에서 Plus를 바로 활성화합니다. Google Play 프로모션 코드는 아래 버튼으로 redeem합니다.",
+                        strings.promoDescription,
                         style = MaterialTheme.typography.bodySmall,
                     )
                     OutlinedTextField(
@@ -444,11 +453,11 @@ private fun PremiumDialog(
                             promoCodeError = false
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("프로모션 코드") },
+                        label = { Text(strings.promoCode) },
                         singleLine = true,
                         isError = promoCodeError,
                         supportingText = if (promoCodeError) {
-                            { Text("영문·숫자·하이픈으로 된 코드를 입력해 주세요.") }
+                            { Text(strings.promoCodeFormatError) }
                         } else {
                             null
                         },
@@ -465,7 +474,7 @@ private fun PremiumDialog(
                         enabled = promoCode.isNotBlank(),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text("지인용 코드 적용")
+                        Text(strings.applyFriendCode)
                     }
                     TextButton(
                         onClick = {
@@ -478,26 +487,26 @@ private fun PremiumDialog(
                         },
                         enabled = promoCode.isNotBlank(),
                     ) {
-                        Text("Google Play에서 코드 사용")
+                        Text(strings.useGooglePlayCode)
                     }
                 }
             }
         },
         confirmButton = {
             if (state.isPremium) {
-                TextButton(onClick = onDismiss) { Text("닫기") }
+                TextButton(onClick = onDismiss) { Text(strings.close) }
             } else {
                 Button(
                     onClick = onPurchase,
                     enabled = state.productAvailable && !state.isLoading,
                 ) {
-                    Text(if (state.isLoading) "확인 중..." else "Plus 구매")
+                    Text(if (state.isLoading) strings.checking else strings.buyPlus)
                 }
             }
         },
         dismissButton = {
             if (!state.isPremium) {
-                TextButton(onClick = onRestore, enabled = !state.isLoading) { Text("구매 복원") }
+                TextButton(onClick = onRestore, enabled = !state.isLoading) { Text(strings.restorePurchase) }
             }
         },
     )
@@ -518,6 +527,7 @@ private fun PremiumBenefit(text: String) {
 
 @Composable
 private fun NotificationPermissionCard(onRequestPermission: () -> Unit) {
+    val strings = LocalTrackTalkStrings.current
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = TrackVoiceCardShape,
@@ -525,18 +535,16 @@ private fun NotificationPermissionCard(onRequestPermission: () -> Unit) {
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("상태 알림 권한", fontWeight = FontWeight.Bold)
-            Text(
-                "상단바 바로가기 알림을 표시하려면 알림 권한이 필요합니다. 음악 감지 권한과는 별개입니다.",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            OutlinedButton(onClick = onRequestPermission) { Text("알림 허용") }
+            Text(strings.notificationPermissionTitle, fontWeight = FontWeight.Bold)
+            Text(strings.notificationPermissionSummary, style = MaterialTheme.typography.bodyMedium)
+            OutlinedButton(onClick = onRequestPermission) { Text(strings.allowNotifications) }
         }
     }
 }
 
 @Composable
 private fun StatusCard(enabled: Boolean, effectiveEnabled: Boolean, onToggle: (Boolean) -> Unit) {
+    val strings = LocalTrackTalkStrings.current
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = TrackVoiceCardShape,
@@ -554,14 +562,8 @@ private fun StatusCard(enabled: Boolean, effectiveEnabled: Boolean, onToggle: (B
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("음성 안내", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text(
-                    when {
-                        !effectiveEnabled -> "OFF · 음성 안내가 꺼져 있습니다."
-                        !enabled -> "자동 활성화 · 조건에 맞을 때 안내합니다."
-                        else -> "ON · 새 곡을 안내합니다."
-                    },
-                )
+                Text(strings.homeVoiceGuide, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(strings.statusSummary(effectiveEnabled, enabled))
             }
             Switch(checked = enabled, onCheckedChange = onToggle)
         }
@@ -570,6 +572,7 @@ private fun StatusCard(enabled: Boolean, effectiveEnabled: Boolean, onToggle: (B
 
 @Composable
 private fun PermissionCard(onOpenPermission: () -> Unit) {
+    val strings = LocalTrackTalkStrings.current
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = TrackVoiceCardShape,
@@ -580,13 +583,10 @@ private fun PermissionCard(onOpenPermission: () -> Unit) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.Warning, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
-                Text("권한이 필요합니다", fontWeight = FontWeight.Bold)
+                Text(strings.permissionRequired, fontWeight = FontWeight.Bold)
             }
-            Text(
-                "음악 정보를 읽으려면 알림 접근 권한을 허용해 주세요.",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Button(onClick = onOpenPermission) { Text("권한 설정") }
+            Text(strings.permissionSummary, style = MaterialTheme.typography.bodyMedium)
+            Button(onClick = onOpenPermission) { Text(strings.permissionSettings) }
         }
     }
 }
@@ -599,6 +599,7 @@ private fun CurrentTrackCard(
     lastDetectedAt: Long?,
     onTogglePlayback: () -> Unit,
 ) {
+    val strings = LocalTrackTalkStrings.current
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = TrackVoiceCardShape,
@@ -607,30 +608,35 @@ private fun CurrentTrackCard(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("현재 재생", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(strings.currentTrack, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             if (event == null) {
-                Text("재생 중인 음악이 없습니다.")
-                Text("음악 앱을 재생하면 여기에 표시됩니다.", style = MaterialTheme.typography.bodySmall)
+                Text(strings.noMusicPlaying)
+                Text(strings.playMusicHint, style = MaterialTheme.typography.bodySmall)
             } else {
-                TrackField("앱", event.sourceAppName)
-                TrackField("곡", event.title ?: "제목 없음")
-                TrackField("아티스트", event.artist ?: "아티스트 없음")
-                TrackField("앨범", event.album ?: "앨범 없음")
-                if (!event.queueTitle.isNullOrBlank()) TrackField("재생목록", event.queueTitle.orEmpty())
-                if (event.trackNumber != null) TrackField("트랙", "${event.trackNumber}번${event.totalTracks?.let { " / $it" } ?: ""}")
+                TrackField(strings.appField, event.sourceAppName)
+                TrackField(strings.trackField, event.title ?: strings.unknownTitle)
+                TrackField(strings.artistField, event.artist ?: strings.unknownArtist)
+                TrackField(strings.albumField, event.album ?: strings.unknownAlbum)
+                if (!event.queueTitle.isNullOrBlank()) TrackField(strings.playlistField, event.queueTitle.orEmpty())
+                if (event.trackNumber != null) TrackField(strings.trackNumberField, strings.trackNumber(event.trackNumber, event.totalTracks))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    AssistChip(onClick = {}, label = { Text(collection.label()) })
-                    AssistChip(onClick = {}, label = { Text("${mode.label} · ${event.playbackState.label()}") })
+                    AssistChip(onClick = {}, label = { Text(strings.collectionLabel(collection)) })
+                    AssistChip(onClick = {}, label = { Text("${strings.announcementMode(mode)} · ${strings.playbackStatus(event.playbackState)}") })
                 }
                 OutlinedButton(onClick = onTogglePlayback, modifier = Modifier.fillMaxWidth()) {
-                    Icon(
-                        if (event.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = null,
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(if (event.isPlaying) "음악 일시정지" else "음악 재생")
+                    Box(Modifier.fillMaxWidth()) {
+                        Icon(
+                            if (event.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            modifier = Modifier.align(Alignment.CenterStart),
+                        )
+                        Text(
+                            if (event.isPlaying) strings.pauseMusic else strings.playMusic,
+                            modifier = Modifier.align(Alignment.Center),
+                        )
+                    }
                 }
-                if (lastDetectedAt != null) Text("마지막 감지 ${formatTime(lastDetectedAt)}", style = MaterialTheme.typography.bodySmall)
+                if (lastDetectedAt != null) Text(strings.lastDetected(formatTime(lastDetectedAt)), style = MaterialTheme.typography.bodySmall)
             }
         }
     }
@@ -654,59 +660,75 @@ private fun GeneralSettingsScreen(
     onUpdateDevice: (AudioDeviceSettings) -> Unit,
     onOpenPremium: () -> Unit,
 ) {
+    val strings = LocalTrackTalkStrings.current
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            SettingCard("기본 동작") {
-                SettingSwitchRow("음성 안내", "상단바의 안내 타일과 동기화됩니다.", settings.enabled) { enabled ->
+            SettingCard(strings.appLanguageTitle) {
+                OptionDropdown(
+                    strings.appLanguageLabel,
+                    settings.appLanguage,
+                    AppLanguage.values().toList(),
+                    strings::appLanguageOption,
+                ) { language -> onUpdate { it.copy(appLanguage = language) } }
+                Text(
+                    strings.appLanguageDescription,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        item {
+            SettingCard(strings.basicOperation) {
+                SettingSwitchRow(strings.voiceGuide, strings.voiceGuideSummary, settings.enabled) { enabled ->
                     onUpdate { current -> current.copy(enabled = enabled) }
                 }
-                SettingSwitchRow("이어폰에서만 안내", "외부 오디오가 연결될 때만 안내합니다.", settings.headphonesOnly) { enabled ->
+                SettingSwitchRow(strings.headphonesOnly, strings.headphonesOnlySummary, settings.headphonesOnly) { enabled ->
                     onUpdate { current -> current.copy(headphonesOnly = enabled) }
                 }
-                SettingSwitchRow("스피커에서는 안내하지 않기", "스피커로 재생할 때 안내를 건너뜁니다.", settings.suppressDuringSpeakerPlayback) { enabled ->
+                SettingSwitchRow(strings.suppressSpeaker, strings.suppressSpeakerSummary, settings.suppressDuringSpeakerPlayback) { enabled ->
                     onUpdate { current -> current.copy(suppressDuringSpeakerPlayback = enabled) }
                 }
-                SettingSwitchRow("상단바 바로가기", "알림을 눌러 앱으로 바로 이동합니다.", settings.showStatusNotification) { enabled ->
+                SettingSwitchRow(strings.statusShortcut, strings.statusShortcutSummary, settings.showStatusNotification) { enabled ->
                     onUpdate { current -> current.copy(showStatusNotification = enabled) }
                 }
             }
         }
         item {
-            SettingCard("연결 기기") {
+            SettingCard(strings.connectedDevices) {
                 if (isPremium) {
-                    Text("기기별로 안내 사용과 자동 켜짐을 정할 수 있습니다.", style = MaterialTheme.typography.bodySmall)
+                    Text(strings.deviceAutomationSummary, style = MaterialTheme.typography.bodySmall)
                     if (connectedDevices.isEmpty()) {
-                        Text("연결된 이어폰이나 Bluetooth 기기가 없습니다.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(strings.noConnectedDevices, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     connectedDevices.forEach { device ->
                         val saved = deviceSettings[device.key] ?: AudioDeviceSettings(device.key, device.name)
                         Text(device.name, fontWeight = FontWeight.SemiBold)
                         Text(device.typeLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        SettingSwitchRow("이 기기에서 사용", "연결 중인 이 기기에 안내합니다.", saved.enabled) {
+                        SettingSwitchRow(strings.useOnThisDevice, strings.useOnThisDeviceSummary, saved.enabled) {
                             onUpdateDevice(saved.copy(enabled = it))
                         }
-                        SettingSwitchRow("연결하면 자동 켜기", "이 기기가 연결되면 안내를 켭니다.", saved.autoEnable) {
+                        SettingSwitchRow(strings.autoEnableOnConnect, strings.autoEnableOnConnectSummary, saved.autoEnable) {
                             onUpdateDevice(saved.copy(autoEnable = it))
                         }
                         HorizontalDivider()
                     }
                 } else {
                     PremiumLockedContent(
-                        title = "기기별 자동화는 Plus 기능입니다.",
-                        summary = "Bluetooth·USB·HDMI 기기별로 안내 여부와 자동 켜짐을 설정할 수 있습니다.",
+                        title = strings.text("기기별 자동화는 Plus 기능입니다.", "Per-device automation is a Plus feature."),
+                        summary = strings.text("Bluetooth·USB·HDMI 기기별로 안내 여부와 자동 켜짐을 설정할 수 있습니다.", "Configure announcements and auto-enable for Bluetooth, USB, and HDMI devices."),
                         onOpenPremium = onOpenPremium,
                     )
                 }
             }
         }
         item {
-            SettingCard("곡 안내") {
+            SettingCard(strings.trackGuide) {
                 if (isPremium) {
-                    OptionDropdown("재생 시작", settings.trackStartBehavior, TrackStartBehavior.values().toList(), { it.label }) { value ->
+                    OptionDropdown(strings.trackStart, settings.trackStartBehavior, TrackStartBehavior.values().toList(), strings::trackStartBehavior) { value ->
                         onUpdate { current ->
                             current.copy(
                                 trackStartBehavior = value,
@@ -721,86 +743,86 @@ private fun GeneralSettingsScreen(
                     } else {
                         MusicTreatment.values().toList()
                     }
-                    OptionDropdown("안내 중 음악", settings.musicTreatment, treatmentOptions, { it.label }) { value ->
+                    OptionDropdown(strings.musicDuringGuide, settings.musicTreatment, treatmentOptions, strings::musicTreatment) { value ->
                         onUpdate { it.copy(musicTreatment = value) }
                     }
                     Text(
-                        "음성 음량은 음성 탭에서 따로 조절하고, 음악은 그대로·줄이기·일시정지로 제어합니다.",
+                        strings.musicVolumeSummary,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    OptionDropdown("안내 시점", settings.timing, AnnouncementTiming.values().toList(), { it.label }) { selectedTiming ->
+                    OptionDropdown(strings.announcementTiming, settings.timing, AnnouncementTiming.values().toList(), strings::announcementTiming) { selectedTiming ->
                         onUpdate { current -> current.copy(timing = selectedTiming) }
                     }
-                    OptionDropdown("읽을 내용", settings.defaultMode, AnnouncementMode.values().toList(), { it.label }) { selectedMode ->
+                    OptionDropdown(strings.readContent, settings.defaultMode, AnnouncementMode.values().toList(), strings::announcementMode) { selectedMode ->
                         onUpdate { current -> current.copy(defaultMode = selectedMode) }
                     }
-                    SliderSetting("안내 지연", settings.delaySeconds.toFloat(), 0f..2f, "${settings.delaySeconds}초") { value ->
+                    SliderSetting(strings.announcementDelay, settings.delaySeconds.toFloat(), 0f..2f, strings.seconds(settings.delaySeconds)) { value ->
                         onUpdate { it.copy(delaySeconds = value.toInt()) }
                     }
                     SliderSetting(
-                        "최소 재생 시간",
+                        strings.minimumPlayback,
                         settings.minimumPlaybackSeconds.toFloat(),
                         0f..60f,
-                        "${settings.minimumPlaybackSeconds}초",
+                        strings.seconds(settings.minimumPlaybackSeconds),
                     ) { value -> onUpdate { it.copy(minimumPlaybackSeconds = value.toInt()) } }
-                    SettingSwitchRow("같은 곡 다시 안내", "기본값은 같은 곡을 한 번만 안내합니다.", settings.allowRepeatAnnouncements) { enabled ->
+                    SettingSwitchRow(strings.repeatTrack, strings.repeatTrackSummary, settings.allowRepeatAnnouncements) { enabled ->
                         onUpdate { current -> current.copy(allowRepeatAnnouncements = enabled) }
                     }
                 } else {
                     BasicPlaybackDefaults()
                     PremiumLockedContent(
-                        title = "안내 방식 세부 설정은 Plus 기능입니다.",
-                        summary = "무료 버전은 새 트랙을 바로 안내하고 음악을 적당히 줄입니다.",
+                        title = strings.text("안내 방식 세부 설정은 Plus 기능입니다.", "Detailed announcement modes are a Plus feature."),
+                        summary = strings.text("무료 버전은 새 트랙을 바로 안내하고 음악을 적당히 줄입니다.", "The free version announces new tracks immediately and lowers music volume."),
                         onOpenPremium = onOpenPremium,
                     )
                 }
             }
         }
         item {
-            SettingCard("앨범·재생목록 읽기") {
+            SettingCard(strings.albumPlaylistReading) {
                 Text(
-                    "MediaSession의 queue 제목과 트랙 metadata를 함께 분석해 콘텐츠 유형별로 다르게 읽습니다.",
+                    strings.albumPlaylistSummary,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (isPremium) {
-                    OptionDropdown("앨범 재생", settings.albumMode, AnnouncementMode.values().toList(), { it.label }) { mode ->
+                    OptionDropdown(strings.albumPlayback, settings.albumMode, AnnouncementMode.values().toList(), strings::announcementMode) { mode ->
                         onUpdate { it.copy(albumMode = mode) }
                     }
-                    OptionDropdown("재생목록 재생", settings.playlistMode, AnnouncementMode.values().toList(), { it.label }) { mode ->
+                    OptionDropdown(strings.playlistPlayback, settings.playlistMode, AnnouncementMode.values().toList(), strings::announcementMode) { mode ->
                         onUpdate { it.copy(playlistMode = mode) }
                     }
                 } else {
-                    Text("무료 기본값: 앨범은 앨범·트랙·아티스트, 재생목록은 재생목록·곡·아티스트를 안내합니다.")
+                    Text(strings.freeAlbumPlaylistDefaults)
                     PremiumLockedContent(
-                        title = "콘텐츠별 읽기 방식 변경은 Plus 기능입니다.",
-                        summary = "앨범과 재생목록의 안내 문장을 각각 선택할 수 있습니다.",
+                        title = strings.text("콘텐츠별 읽기 방식 변경은 Plus 기능입니다.", "Content-specific reading modes are a Plus feature."),
+                        summary = strings.text("앨범과 재생목록의 안내 문장을 각각 선택할 수 있습니다.", "Choose separate announcement formats for albums and playlists."),
                         onOpenPremium = onOpenPremium,
                     )
                 }
             }
         }
         item {
-            SettingCard("자동 켜기") {
+            SettingCard(strings.autoEnable) {
                 if (isPremium) {
-                    SettingSwitchRow("화면이 꺼지면 켜기", "화면을 끄면 안내를 시작합니다.", settings.autoEnableOnScreenOff) { enabled ->
+                    SettingSwitchRow(strings.screenOffEnable, strings.screenOffEnableSummary, settings.autoEnableOnScreenOff) { enabled ->
                         onUpdate { it.copy(autoEnableOnScreenOff = enabled) }
                     }
-                    SettingSwitchRow("화면을 켜면 원래대로", "화면을 켜면 자동 상태를 해제합니다.", settings.restoreEnabledWhenScreenOn) { enabled ->
+                    SettingSwitchRow(strings.screenOnRestore, strings.screenOnRestoreSummary, settings.restoreEnabledWhenScreenOn) { enabled ->
                         onUpdate { it.copy(restoreEnabledWhenScreenOn = enabled) }
                     }
                     SettingSwitchRow(
-                        "화면 꺼짐은 Bluetooth에서만",
-                        "화면이 꺼질 때 Bluetooth 오디오가 연결된 경우에만 자동 켭니다.",
+                        strings.bluetoothOnly,
+                        strings.bluetoothOnlySummary,
                         settings.bluetoothOnlyForAutoEnable,
                     ) { enabled ->
                         onUpdate { it.copy(bluetoothOnlyForAutoEnable = enabled) }
                     }
                 } else {
                     PremiumLockedContent(
-                        title = "화면 꺼짐 자동 활성화는 Plus 기능입니다.",
-                        summary = "화면을 끈 뒤에도 음악 안내를 계속 유지할 수 있습니다.",
+                        title = strings.text("화면 꺼짐 자동 활성화는 Plus 기능입니다.", "Screen-off auto enable is a Plus feature."),
+                        summary = strings.text("화면을 끈 뒤에도 음악 안내를 계속 유지할 수 있습니다.", "Keep music announcements active after turning off the screen."),
                         onOpenPremium = onOpenPremium,
                     )
                 }
@@ -817,6 +839,7 @@ private fun AppSettingsScreen(
     onRefresh: () -> Unit,
     onOpenPremium: () -> Unit,
 ) {
+    val strings = LocalTrackTalkStrings.current
     var selectedCategoryNames by rememberSaveable {
         mutableStateOf(AppCategory.values().map { it.name })
     }
@@ -847,10 +870,10 @@ private fun AppSettingsScreen(
                     Icon(Icons.Default.MusicNote, contentDescription = null)
                     Spacer(Modifier.width(12.dp))
                     Text(
-                        "기기에서 미디어 재생을 지원하는 앱과 감지된 앱입니다.",
+                        strings.appsIntro,
                         modifier = Modifier.weight(1f),
                     )
-                    TextButton(onClick = onRefresh) { Text("새로 고침") }
+                    TextButton(onClick = onRefresh) { Text(strings.refresh) }
                 }
             }
         }
@@ -858,7 +881,7 @@ private fun AppSettingsScreen(
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        "표시할 카테고리",
+                        strings.visibleCategories,
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                     )
@@ -879,7 +902,7 @@ private fun AppSettingsScreen(
                                         selectedCategoryNames + category.name
                                     }
                                 },
-                                label = { Text(category.title) },
+                                label = { Text(strings.categoryTitle(category)) },
                                 leadingIcon = if (selected) {
                                     { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
                                 } else null,
@@ -887,7 +910,7 @@ private fun AppSettingsScreen(
                         }
                     }
                     Text(
-                        "${visibleAppCount}개 앱 표시 · ${selectedCategoryNames.size}개 카테고리 선택",
+                        strings.appCountSummary(visibleAppCount, selectedCategoryNames.size),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -897,14 +920,14 @@ private fun AppSettingsScreen(
         if (apps.isEmpty()) {
             item {
                 Column(Modifier.padding(horizontal = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("지원되는 음악 앱을 찾지 못했습니다.")
-                    Text("앱이 미디어 세션을 만들면 자동으로 추가됩니다.", style = MaterialTheme.typography.bodySmall)
+                    Text(strings.noSupportedApps)
+                    Text(strings.appAutoAddSummary, style = MaterialTheme.typography.bodySmall)
                 }
             }
         } else if (visibleAppCount == 0) {
             item {
                 Text(
-                    "선택한 카테고리가 없습니다. 위에서 하나 이상 선택하세요.",
+                    strings.noCategorySelected,
                     modifier = Modifier.padding(horizontal = 8.dp),
                 )
             }
@@ -929,6 +952,7 @@ private fun AppSettingsScreen(
 
 @Composable
 private fun AppCategoryHeader(category: AppCategory, appCount: Int) {
+    val strings = LocalTrackTalkStrings.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -944,18 +968,18 @@ private fun AppCategoryHeader(category: AppCategory, appCount: Int) {
         )
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
             Text(
-                category.title,
+                strings.categoryTitle(category),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                category.description,
+                strings.categoryDescription(category),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         Text(
-            "${appCount}개",
+            strings.appCategoryCount(appCount),
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.primary,
         )
@@ -977,6 +1001,7 @@ private fun AppSettingsCard(
     onUpdate: (AppSettings) -> Unit,
     onOpenPremium: () -> Unit,
 ) {
+    val strings = LocalTrackTalkStrings.current
     var expanded by rememberSaveable(app.packageName) { mutableStateOf(false) }
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -996,9 +1021,9 @@ private fun AppSettingsCard(
                     Text(app.appName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text(
                         when {
-                            app.alwaysExclude -> "항상 제외"
-                            app.enabled -> "곡 안내 사용 중"
-                            else -> "곡 안내 꺼짐"
+                            app.alwaysExclude -> strings.alwaysExclude
+                            app.enabled -> strings.appGuideEnabled
+                            else -> strings.appGuideDisabled
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1011,32 +1036,32 @@ private fun AppSettingsCard(
             }
             if (isPremium) {
                 TextButton(onClick = { expanded = !expanded }) {
-                    Text(if (expanded) "세부 설정 접기" else "세부 설정")
+                    Text(if (expanded) strings.collapseDetails else strings.expandDetails)
                 }
             } else {
                 PremiumLockedContent(
-                    title = "앱별 세부 설정은 Plus 기능입니다.",
-                    summary = "무료 버전은 기본 Smart 안내를 사용합니다.",
+                    title = strings.appDetailsPlusTitle,
+                    summary = strings.appDetailsFreeSummary,
                     onOpenPremium = onOpenPremium,
                 )
             }
             if (expanded && isPremium) {
-                OptionDropdown("읽을 내용", app.mode, AnnouncementMode.values().toList(), { it.label }) {
+                OptionDropdown(strings.readContent, app.mode, AnnouncementMode.values().toList(), strings::announcementMode) {
                     onUpdate(app.copy(mode = it))
                 }
                 OptionDropdown(
-                    "안내 시점",
+                    strings.announcementTiming,
                     app.timing,
                     listOf(null) + AnnouncementTiming.values().toList(),
-                    { it?.label ?: "기본 설정 사용" },
+                    { it?.let(strings::announcementTiming) ?: strings.text("기본 설정 사용", "Use default") },
                 ) { onUpdate(app.copy(timing = it)) }
                 HorizontalDivider()
-                CheckRow("제목", app.readTitle) { onUpdate(app.copy(readTitle = it)) }
-                CheckRow("아티스트", app.readArtist) { onUpdate(app.copy(readArtist = it)) }
-                CheckRow("트랙 번호", app.readTrackNumber) { onUpdate(app.copy(readTrackNumber = it)) }
-                CheckRow("앨범", app.readAlbum) { onUpdate(app.copy(readAlbum = it)) }
-                CheckRow("앨범·재생목록 이름", app.readCollection) { onUpdate(app.copy(readCollection = it)) }
-                CheckRow("이 앱은 항상 제외", app.alwaysExclude) {
+                CheckRow(strings.appReadTitle, app.readTitle) { onUpdate(app.copy(readTitle = it)) }
+                CheckRow(strings.appReadArtist, app.readArtist) { onUpdate(app.copy(readArtist = it)) }
+                CheckRow(strings.appReadTrackNumber, app.readTrackNumber) { onUpdate(app.copy(readTrackNumber = it)) }
+                CheckRow(strings.appReadAlbum, app.readAlbum) { onUpdate(app.copy(readAlbum = it)) }
+                CheckRow(strings.appReadCollection, app.readCollection) { onUpdate(app.copy(readCollection = it)) }
+                CheckRow(strings.appAlwaysExclude, app.alwaysExclude) {
                     onUpdate(
                         app.copy(
                             alwaysExclude = it,
@@ -1085,24 +1110,25 @@ private fun VoiceSettingsScreen(
     onTest: () -> Unit,
     onOpenPremium: () -> Unit,
 ) {
+    val strings = LocalTrackTalkStrings.current
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            SettingCard("음성 선택") {
-                OptionDropdown("기본 언어", settings.voiceLanguage, VoiceLanguage.values().toList(), { it.label }) { selectedLanguage ->
+            SettingCard(strings.voiceSelection) {
+                OptionDropdown(strings.defaultVoiceLanguage, settings.voiceLanguage, VoiceLanguage.values().toList(), strings::voiceLanguage) { selectedLanguage ->
                     onUpdate { current -> current.copy(voiceLanguage = selectedLanguage, voiceName = null) }
                 }
                 Text(
-                    "한글·영문·일문·중문이 섞이면 구간별 음성으로 자동 전환합니다.",
+                    strings.voiceLanguageHint,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 val genderOptions = listOf(GenderFilter.ANY, GenderFilter.FEMALE, GenderFilter.MALE)
                 val visibleGender = settings.genderFilter.takeIf { it in genderOptions } ?: GenderFilter.ANY
-                OptionDropdown("성별", visibleGender, genderOptions, { it.label }) { selectedGender ->
+                OptionDropdown(strings.gender, visibleGender, genderOptions, strings::genderLabel) { selectedGender ->
                     onUpdate { current -> current.copy(genderFilter = selectedGender, voiceName = null) }
                 }
                 val languageCode = when (settings.voiceLanguage) {
@@ -1119,14 +1145,14 @@ private fun VoiceSettingsScreen(
                 }
                 val selectedVoice = filteredVoices.firstOrNull { it.name == settings.voiceName }
                 OptionDropdown(
-                    "목소리",
+                    strings.voice,
                     selectedVoice,
                     listOf(null) + filteredVoices,
-                    { voice -> voice?.label ?: "자동 선택" },
+                    { voice -> voice?.label ?: strings.autoSelect },
                 ) { voice -> onUpdate { it.copy(voiceName = voice?.name) } }
                 Text(
-                    if (filteredVoices.isEmpty()) "선택한 언어와 성별의 설치 음성이 없습니다."
-                    else "선택 가능한 ${visibleGender.label} ${filteredVoices.size}개",
+                    if (filteredVoices.isEmpty()) strings.noMatchingVoices
+                    else strings.availableVoices(visibleGender, filteredVoices.size),
                     style = MaterialTheme.typography.bodySmall,
                 )
                 Text(
@@ -1136,35 +1162,35 @@ private fun VoiceSettingsScreen(
             }
         }
         item {
-            SettingCard("말하기 조절") {
+            SettingCard(strings.speechControls) {
                 if (isPremium) {
-                    SliderSetting("속도", settings.speechRate, 0.5f..2f, "${"%.1f".format(Locale.getDefault(), settings.speechRate)}x") { value ->
+                    SliderSetting(strings.speechRate, settings.speechRate, 0.5f..2f, "${"%.1f".format(Locale.getDefault(), settings.speechRate)}x") { value ->
                         onUpdate { current -> current.copy(speechRate = value) }
                     }
-                    SliderSetting("높이", settings.pitch, 0.5f..2f, "${"%.1f".format(Locale.getDefault(), settings.pitch)}x") { value ->
+                    SliderSetting(strings.pitch, settings.pitch, 0.5f..2f, "${"%.1f".format(Locale.getDefault(), settings.pitch)}x") { value ->
                         onUpdate { current -> current.copy(pitch = value) }
                     }
-                    SliderSetting("음성 음량 · 음악과 별도", settings.volume, 0f..1f, "${(settings.volume * 100).toInt()}%") { value ->
+                    SliderSetting(strings.voiceVolumeSeparate, settings.volume, 0f..1f, "${(settings.volume * 100).toInt()}%") { value ->
                         onUpdate { current -> current.copy(volume = value) }
                     }
                     Text(
-                        "음악 음량은 안내 중 음악 옵션에서 줄이기/그대로/일시정지를 선택합니다. Android의 공용 미디어 음량을 임의로 바꾸지 않습니다.",
+                        strings.speechVolumeHint,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 } else {
                     PremiumLockedContent(
-                        title = "음성 세밀 조절은 Plus 기능입니다.",
-                        summary = "말하기 속도·높이·음량을 음악과 분리해 직접 조절할 수 있습니다.",
+                        title = strings.voiceControlsPlusTitle,
+                        summary = strings.voiceControlsFreeSummary,
                         onOpenPremium = onOpenPremium,
                     )
                 }
                 Button(onClick = onTest) {
                     Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
-                    Text("테스트 재생")
+                    Text(strings.testPlayback)
                 }
-                Text("예: 트랙 3번, Glass Eyes · Radiohead", style = MaterialTheme.typography.bodySmall)
+                Text(strings.testExample, style = MaterialTheme.typography.bodySmall)
             }
         }
     }
@@ -1175,25 +1201,26 @@ private fun DiagnosticsScreen(
     diagnostics: com.trackvoice.DiagnosticsState,
     event: PlaybackEvent?,
 ) {
+    val strings = LocalTrackTalkStrings.current
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            SettingCard("연결 상태") {
-                DiagnosticRow("알림 접근", if (diagnostics.notificationListenerConnected) "연결됨" else "연결되지 않음", diagnostics.notificationListenerConnected)
-                DiagnosticRow("활성 음악 세션", diagnostics.activeSessionCount.toString(), diagnostics.activeSessionCount > 0)
-                DiagnosticRow("선택한 앱", diagnostics.selectedSourcePackage ?: "없음", diagnostics.selectedSourcePackage != null)
-                DiagnosticRow("음성 엔진", diagnostics.ttsState.message, diagnostics.ttsState.status == TtsStatus.READY)
+            SettingCard(strings.connectionStatus) {
+                DiagnosticRow(strings.notificationAccess, if (diagnostics.notificationListenerConnected) strings.connected else strings.notConnected, diagnostics.notificationListenerConnected)
+                DiagnosticRow(strings.activeMediaSessions, diagnostics.activeSessionCount.toString(), diagnostics.activeSessionCount > 0)
+                DiagnosticRow(strings.selectedApp, diagnostics.selectedSourcePackage ?: strings.none, diagnostics.selectedSourcePackage != null)
+                DiagnosticRow(strings.voiceEngine, diagnostics.ttsState.message, diagnostics.ttsState.status == TtsStatus.READY)
             }
         }
         item {
-            SettingCard("최근 기록") {
-                DiagnosticRow("곡 정보 감지", formatTimeOrDash(diagnostics.lastMetadataEventAt), diagnostics.lastMetadataEventAt != null)
-                DiagnosticRow("재생 상태 감지", formatTimeOrDash(diagnostics.lastPlaybackStateEventAt), diagnostics.lastPlaybackStateEventAt != null)
-                DiagnosticRow("마지막 안내", diagnostics.lastAnnouncementMessage, diagnostics.lastAnnouncementSucceeded == true)
-                DiagnosticRow("안내 시각", formatTimeOrDash(diagnostics.lastAnnouncementAt), diagnostics.lastAnnouncementAt != null)
+            SettingCard(strings.recentLog) {
+                DiagnosticRow(strings.metadataDetected, formatTimeOrDash(diagnostics.lastMetadataEventAt, strings.none), diagnostics.lastMetadataEventAt != null)
+                DiagnosticRow(strings.playbackDetected, formatTimeOrDash(diagnostics.lastPlaybackStateEventAt, strings.none), diagnostics.lastPlaybackStateEventAt != null)
+                DiagnosticRow(strings.lastAnnouncement, diagnostics.lastAnnouncementMessage, diagnostics.lastAnnouncementSucceeded == true)
+                DiagnosticRow(strings.announcementTime, formatTimeOrDash(diagnostics.lastAnnouncementAt, strings.none), diagnostics.lastAnnouncementAt != null)
             }
         }
         item {
@@ -1204,15 +1231,15 @@ private fun DiagnosticsScreen(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
             ) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("개인정보", fontWeight = FontWeight.Bold)
-                    Text("곡 정보는 안내에만 사용하며 서버에 저장하지 않습니다.")
+                    Text(strings.privacy, fontWeight = FontWeight.Bold)
+                    Text(strings.privacySummary)
                 }
             }
         }
         if (event != null) {
             item {
-                Text("현재 곡 정보", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text("${event.sourcePackageName} · ${event.title ?: "제목 없음"} · ${event.artist ?: "아티스트 없음"}", style = MaterialTheme.typography.bodySmall)
+                Text(strings.currentTrackInfo, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text("${event.sourcePackageName} · ${event.title ?: strings.titleMissing} · ${event.artist ?: strings.artistMissing}", style = MaterialTheme.typography.bodySmall)
             }
         }
     }
@@ -1244,6 +1271,7 @@ private fun PremiumLockedContent(
     summary: String,
     onOpenPremium: () -> Unit,
 ) {
+    val strings = LocalTrackTalkStrings.current
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -1258,18 +1286,19 @@ private fun PremiumLockedContent(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        TextButton(onClick = onOpenPremium) { Text("Plus 보기") }
+        TextButton(onClick = onOpenPremium) { Text(strings.plusView) }
     }
 }
 
 @Composable
 private fun BasicPlaybackDefaults() {
+    val strings = LocalTrackTalkStrings.current
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("무료 기본값", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-        Text("새 트랙이 시작되면 음악과 함께 음성 안내")
-        Text("안내 중에는 음악 음량을 자동으로 줄임")
-        Text("음성 기본 음량 65%")
-        Text("음성 음량은 음악과 분리된 기본 음량으로 출력")
+        Text(strings.text("무료 기본값", "Free defaults"), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        Text(strings.text("새 트랙이 시작되면 음악과 함께 음성 안내", "Guide with music when a new track starts"))
+        Text(strings.text("안내 중에는 음악 음량을 자동으로 줄임", "Lower music volume during announcements"))
+        Text(strings.text("음성 기본 음량 65%", "Default voice volume 65%"))
+        Text(strings.text("음성 음량은 음악과 분리된 기본 음량으로 출력", "Voice volume is output separately from music"))
     }
 }
 
@@ -1374,6 +1403,7 @@ private fun DiagnosticRow(label: String, value: String, ok: Boolean) {
 
 @Composable
 private fun StatusBadge(enabled: Boolean, notificationAccess: Boolean) {
+    val strings = LocalTrackTalkStrings.current
     val color = when {
         !notificationAccess -> MaterialTheme.colorScheme.error
         enabled -> MaterialTheme.colorScheme.primary
@@ -1390,9 +1420,9 @@ private fun StatusBadge(enabled: Boolean, notificationAccess: Boolean) {
                 else -> Icons.Default.Settings
             },
             contentDescription = when {
-                !notificationAccess -> "권한 필요"
-                enabled -> "ON"
-                else -> "OFF"
+                !notificationAccess -> strings.permissionNeeded
+                enabled -> strings.on
+                else -> strings.off
             },
             tint = color,
             modifier = Modifier.size(18.dp),
@@ -1400,9 +1430,9 @@ private fun StatusBadge(enabled: Boolean, notificationAccess: Boolean) {
         Spacer(Modifier.width(4.dp))
         Text(
             when {
-                !notificationAccess -> "권한"
-                enabled -> "ON"
-                else -> "OFF"
+                !notificationAccess -> strings.permissionShort
+                enabled -> strings.on
+                else -> strings.off
             },
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.Bold,
@@ -1426,4 +1456,4 @@ private fun PlaybackCollection.label(): String = when (this) {
 }
 
 private fun formatTime(timestamp: Long): String = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(timestamp))
-private fun formatTimeOrDash(timestamp: Long?): String = timestamp?.let(::formatTime) ?: "없음"
+private fun formatTimeOrDash(timestamp: Long?, emptyLabel: String = "없음"): String = timestamp?.let(::formatTime) ?: emptyLabel

@@ -16,6 +16,7 @@ outputs/
 .externalNativeBuild/
 .cxx/
 captures/
+.codex-remote-attachments/
 
 # OS metadata
 .DS_Store
