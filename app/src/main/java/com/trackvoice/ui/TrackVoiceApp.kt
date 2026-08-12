@@ -61,6 +61,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
@@ -83,8 +84,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.core.graphics.drawable.toBitmap
 import androidx.core.content.ContextCompat
+import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.trackvoice.TrackVoiceViewModel
 import com.trackvoice.announcement.InstalledVoice
@@ -104,6 +108,7 @@ import com.trackvoice.announcement.ConnectedAudioDevice
 import com.trackvoice.media.PlaybackEvent
 import com.trackvoice.media.PlaybackStatus
 import com.trackvoice.monetization.PremiumState
+import com.trackvoice.monetization.promoCodeRedeemUrl
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -238,6 +243,9 @@ fun TrackVoiceApp(viewModel: TrackVoiceViewModel, activity: Activity) {
             onDismiss = { showPremiumDialog = false },
             onPurchase = { viewModel.purchasePremium(activity) },
             onRestore = viewModel::restorePremium,
+            onOpenPromoCode = { url ->
+                context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
+            },
         )
     }
 }
@@ -398,13 +406,19 @@ private fun PremiumDialog(
     onDismiss: () -> Unit,
     onPurchase: () -> Unit,
     onRestore: () -> Unit,
+    onOpenPromoCode: (String) -> Unit,
 ) {
+    var promoCode by rememberSaveable { mutableStateOf("") }
+    var promoCodeError by rememberSaveable { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Default.Star, contentDescription = null) },
         title = { Text("TrackTalk Plus") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 Text("기본 곡 감지와 안내는 계속 무료로 제공합니다.")
                 PremiumBenefit("속도·높이·음량 등 음성 세밀 조절")
                 PremiumBenefit("연결 기기별 안내와 자동 활성화")
@@ -428,6 +442,42 @@ private fun PremiumDialog(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                }
+                if (!state.isPremium) {
+                    HorizontalDivider()
+                    Text(
+                        "Play Console에서 받은 Plus 프로모션 코드를 입력하면 Google Play에서 무료로 활성화할 수 있습니다.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    OutlinedTextField(
+                        value = promoCode,
+                        onValueChange = {
+                            promoCode = it.take(64)
+                            promoCodeError = false
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("프로모션 코드") },
+                        singleLine = true,
+                        isError = promoCodeError,
+                        supportingText = if (promoCodeError) {
+                            { Text("영문·숫자·하이픈으로 된 코드를 입력해 주세요.") }
+                        } else {
+                            null
+                        },
+                    )
+                    TextButton(
+                        onClick = {
+                            val url = promoCodeRedeemUrl(promoCode)
+                            if (url == null) {
+                                promoCodeError = true
+                            } else {
+                                onOpenPromoCode(url)
+                            }
+                        },
+                        enabled = promoCode.isNotBlank(),
+                    ) {
+                        Text("Google Play에서 코드 사용")
+                    }
                 }
             }
         },

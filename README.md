@@ -34,6 +34,12 @@ TrackTalk은 음악 감상 중 광고가 끼어들면 핵심 경험을 해치므
 
 실제 판매 전 Play Console에 상품을 만들고 내부 테스트 트랙에서 결제 흐름을 검증해야 합니다. 현재 클라이언트는 구매 확인과 구매 복원을 처리하며, 출시 단계에서는 구매 토큰을 보안 서버에서 검증하는 절차를 추가하는 것이 안전합니다.
 
+### 지인용 프로모션 코드
+
+앱에 공통 비밀번호를 넣지 않고 Google Play의 일회용 프로모션 코드를 사용합니다. Play Console에서 `Monetize with Play > Promo codes`로 `tracktalk_plus_lifetime`의 코드를 만들고, 지인 한 명당 고유 코드 하나를 공유합니다. Plus 화면에 코드를 입력하면 Google Play의 공식 redeem 화면으로 이동하고, 사용 후 앱으로 돌아오면 구매 내역을 다시 조회해 Plus를 활성화합니다.
+
+일회성 상품은 재사용 가능한 custom code가 아니라 사용자별 일회용 코드를 사용해야 합니다. 실제 코드는 Play Console에서 생성해야 하며, 상품과 프로모션을 먼저 활성화한 뒤 내부 테스트 트랙에서 redemption과 구매 복원을 확인해야 합니다.
+
 ## 설치
 
 1. Android Studio에서 이 폴더를 엽니다.
@@ -80,7 +86,7 @@ Android 설정 또는 알림 패널의 Quick Settings 편집 화면에서 `Track
 gradlew.bat --offline :app:testDebugUnitTest
 ```
 
-formatter 5개, 정책 4개, 중복 억제 5개, 혼합 언어 구간 3개, TTS 언어 fallback 1개, 활성 세션 선택 5개, 앱 카테고리 6개, Plus entitlement 2개로 총 31개 테스트가 통과합니다.
+formatter 5개, 정책 4개, 중복 억제 5개, 혼합 언어 구간 3개, TTS 언어 fallback 1개, 활성 세션 선택 5개, 앱 카테고리 6개, Plus entitlement 2개, 프로모션 코드 2개로 총 33개 테스트가 통과합니다.
 
 실제 Android 환경을 사용하는 MediaSession 매핑 테스트는 다음 명령으로 실행합니다.
 
