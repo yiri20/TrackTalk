@@ -39,6 +39,9 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Podcasts
+import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -85,6 +88,8 @@ import com.trackvoice.announcement.TtsStatus
 import com.trackvoice.data.AnnouncementMode
 import com.trackvoice.data.AnnouncementTiming
 import com.trackvoice.data.AppSettings
+import com.trackvoice.data.AppCategory
+import com.trackvoice.data.categorizeApp
 import com.trackvoice.data.GenderFilter
 import com.trackvoice.data.UserSettings
 import com.trackvoice.data.VoiceLanguage
@@ -539,6 +544,9 @@ private fun AppSettingsScreen(
     onUpdate: (AppSettings) -> Unit,
     onRefresh: () -> Unit,
 ) {
+    val appsByCategory = remember(apps) {
+        apps.groupBy { app -> categorizeApp(app.packageName, app.appName) }
+    }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -567,6 +575,16 @@ private fun AppSettingsScreen(
                 }
             }
         }
+        if (apps.isNotEmpty()) {
+            item {
+                Text(
+                    "${apps.size}개 앱이 ${appsByCategory.size}개 카테고리로 정리되어 있습니다.",
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
         if (apps.isEmpty()) {
             item {
                 Column(Modifier.padding(horizontal = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -575,11 +593,65 @@ private fun AppSettingsScreen(
                 }
             }
         } else {
-            items(apps, key = { it.packageName }) { app ->
-                AppSettingsCard(app, onUpdate)
+            AppCategory.values().forEach { category ->
+                val categoryApps = appsByCategory[category].orEmpty()
+                if (categoryApps.isNotEmpty()) {
+                    item(key = "category-${category.name}") {
+                        AppCategoryHeader(category, categoryApps.size)
+                    }
+                    items(
+                        items = categoryApps,
+                        key = { app -> "app-${app.packageName}" },
+                    ) { app ->
+                        AppSettingsCard(app, onUpdate)
+                    }
+                }
             }
         }
     }
+}
+
+@Composable
+private fun AppCategoryHeader(category: AppCategory, appCount: Int) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Icon(
+            imageVector = category.icon(),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(24.dp),
+        )
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            Text(
+                category.title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                category.description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Text(
+            "${appCount}개",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary,
+        )
+    }
+}
+
+private fun AppCategory.icon() = when (this) {
+    AppCategory.MUSIC_STREAMING -> Icons.Default.MusicNote
+    AppCategory.MUSIC_VIDEO -> Icons.Default.VideoLibrary
+    AppCategory.LEARNING -> Icons.Default.School
+    AppCategory.PODCAST -> Icons.Default.Podcasts
+    AppCategory.OTHER -> Icons.Default.Apps
 }
 
 @Composable

@@ -17,6 +17,7 @@ TrackTalk은 다른 음악 앱이 Android MediaSession으로 제공하는 현재
 - TTS 속도·높낮이·음량, 안내 중 기기 미디어 음량 임시 상승·복원
 - 화면 꺼짐 및 연결 오디오 기기별 자동 활성화, 기기별 안내 사용 설정
 - MediaBrowserService/미디어 버튼 지원 앱 탐색과 MediaSession 감지 앱 병합, 앱 목록 새로고침
+- 앱별 설정을 음악 스트리밍, 음악·동영상, 학습·오디오북, 팟캐스트·라디오, 기타 미디어 카테고리로 자동 분류
 - 선택 가능한 상단바 바로가기 알림
 - Compose Material 3 홈/일반 설정/앱별 설정/음성 설정/진단 화면
 - Quick Settings 안내 ON/OFF 및 음악 재생/일시정지 타일
@@ -68,7 +69,7 @@ Android 설정 또는 알림 패널의 Quick Settings 편집 화면에서 `Track
 gradlew.bat --offline :app:testDebugUnitTest
 ```
 
-formatter 5개, 정책 4개, 중복 억제 5개, 혼합 언어 구간 3개, TTS 언어 fallback 1개, 활성 세션 선택 5개로 총 23개 테스트가 통과합니다.
+formatter 5개, 정책 4개, 중복 억제 5개, 혼합 언어 구간 3개, TTS 언어 fallback 1개, 활성 세션 선택 5개, 앱 카테고리 6개로 총 29개 테스트가 통과합니다.
 
 실제 Android 환경을 사용하는 MediaSession 매핑 테스트는 다음 명령으로 실행합니다.
 
