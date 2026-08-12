@@ -109,6 +109,7 @@ class TrackVoiceController(
     val installedVoices: StateFlow<List<InstalledVoice>> = ttsEngine.voices
 
     init {
+        scope.launch(Dispatchers.IO) { repository.migrateTtsVolumeDefault() }
         scope.launch {
             userSettings.collectLatest { settings ->
                 val effectiveSettings = settings.forPremiumEntitlement(premiumState.value.isPremium)

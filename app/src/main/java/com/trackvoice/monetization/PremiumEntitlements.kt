@@ -3,6 +3,7 @@ package com.trackvoice.monetization
 import com.trackvoice.data.UserSettings
 import com.trackvoice.data.AppSettings
 import com.trackvoice.data.AnnouncementMode
+import com.trackvoice.data.DEFAULT_TTS_VOLUME
 
 fun UserSettings.forPremiumEntitlement(isPremium: Boolean): UserSettings {
     if (isPremium) return this
@@ -19,7 +20,7 @@ fun UserSettings.forPremiumEntitlement(isPremium: Boolean): UserSettings {
         minimumPlaybackSeconds = 0,
         speechRate = 1f,
         pitch = 1f,
-        volume = 0.85f,
+        volume = DEFAULT_TTS_VOLUME,
         raiseDeviceVolume = false,
         deviceVolumePercent = 90,
     )

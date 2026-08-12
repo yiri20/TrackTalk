@@ -24,6 +24,8 @@ private val Context.trackVoiceDataStore: DataStore<Preferences> by preferencesDa
 private fun appKey(packageName: String, suffix: String): Preferences.Key<String> =
     stringPreferencesKey("app.$packageName.$suffix")
 
+private const val TTS_VOLUME_DEFAULT_VERSION = 1
+
 class DataStoreRepository(private val context: Context) {
     private val dataStore = context.trackVoiceDataStore
 
@@ -47,6 +49,19 @@ class DataStoreRepository(private val context: Context) {
 
     suspend fun currentUserSettings(): UserSettings = userSettings.first()
     suspend fun currentAppSettings(): Map<String, AppSettings> = appSettings.first()
+
+    suspend fun migrateTtsVolumeDefault() {
+        dataStore.edit { preferences ->
+            if ((preferences[Keys.ttsVolumeDefaultVersion] ?: 0) >= TTS_VOLUME_DEFAULT_VERSION) {
+                return@edit
+            }
+            val storedVolume = preferences[Keys.volume]
+            if (storedVolume == null || storedVolume == 1f || storedVolume == 0.85f) {
+                preferences[Keys.volume] = DEFAULT_TTS_VOLUME
+            }
+            preferences[Keys.ttsVolumeDefaultVersion] = TTS_VOLUME_DEFAULT_VERSION
+        }
+    }
 
     suspend fun setEnabled(enabled: Boolean) {
         dataStore.edit { it[Keys.enabled] = enabled }
@@ -136,6 +151,7 @@ class DataStoreRepository(private val context: Context) {
         val speechRate = floatPreferencesKey("speech_rate")
         val pitch = floatPreferencesKey("pitch")
         val volume = floatPreferencesKey("volume")
+        val ttsVolumeDefaultVersion = intPreferencesKey("tts_volume_default_version")
         val raiseDeviceVolume = booleanPreferencesKey("raise_device_volume")
         val deviceVolumePercent = intPreferencesKey("device_volume_percent")
         val knownPackages = stringSetPreferencesKey("known_app_packages")
@@ -178,7 +194,7 @@ class DataStoreRepository(private val context: Context) {
         genderFilter = enumOrDefault(this[Keys.genderFilter], GenderFilter.ANY),
         speechRate = (this[Keys.speechRate] ?: 1f).coerceIn(0.5f, 2f),
         pitch = (this[Keys.pitch] ?: 1f).coerceIn(0.5f, 2f),
-        volume = (this[Keys.volume] ?: 1f).coerceIn(0f, 1f),
+        volume = (this[Keys.volume] ?: DEFAULT_TTS_VOLUME).coerceIn(0f, 1f),
         raiseDeviceVolume = this[Keys.raiseDeviceVolume] ?: false,
         deviceVolumePercent = (this[Keys.deviceVolumePercent] ?: 90).coerceIn(10, 100),
     )

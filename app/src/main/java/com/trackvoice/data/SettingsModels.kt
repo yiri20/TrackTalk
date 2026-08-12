@@ -1,5 +1,7 @@
 package com.trackvoice.data
 
+const val DEFAULT_TTS_VOLUME = 0.65f
+
 enum class AnnouncementMode(val label: String) {
     SMART("Smart"),
     ALBUM("앨범 정보"),
@@ -61,7 +63,7 @@ data class UserSettings(
     val genderFilter: GenderFilter = GenderFilter.ANY,
     val speechRate: Float = 1f,
     val pitch: Float = 1f,
-    val volume: Float = 1f,
+    val volume: Float = DEFAULT_TTS_VOLUME,
     val raiseDeviceVolume: Boolean = false,
     val deviceVolumePercent: Int = 90,
 )

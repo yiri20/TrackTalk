@@ -162,7 +162,8 @@ class TtsEngine(context: Context) : TextToSpeech.OnInitListener {
             val fallbackLocale = settings.voiceLanguage.toLocale(text)
             val segments = MixedLanguageSegmenter.segment(text, fallbackLocale)
             val batch = PendingBatch(segments.size, onFinished)
-            var fallbackUsed = false
+            var localeFallbackUsed = false
+            var genderFallbackUsed = false
             segments.forEachIndexed { index, segment ->
                 val (resolvedLocale, localeFallback) = TtsLocaleResolver.choose(
                     requested = segment.locale,
@@ -172,8 +173,8 @@ class TtsEngine(context: Context) : TextToSpeech.OnInitListener {
                 val languageResult = engine.setLanguage(resolvedLocale)
                 val segmentFallback = localeFallback || languageResult == TextToSpeech.LANG_MISSING_DATA ||
                     languageResult == TextToSpeech.LANG_NOT_SUPPORTED
-                fallbackUsed = fallbackUsed || segmentFallback
-                selectVoice(engine, resolvedLocale, settings)
+                localeFallbackUsed = localeFallbackUsed || segmentFallback
+                genderFallbackUsed = genderFallbackUsed || selectVoice(engine, resolvedLocale, settings)
                 val utteranceId = "trackvoice-${System.nanoTime()}-$index"
                 pendingResults[utteranceId] = batch
                 val result = engine.speak(
@@ -189,8 +190,13 @@ class TtsEngine(context: Context) : TextToSpeech.OnInitListener {
             }
             _state.value = TtsState(
                 status = TtsStatus.READY,
-                message = if (fallbackUsed) "일부 언어는 설치된 기본 음성으로 안내합니다." else "다국어 TTS 준비 완료",
-                fallbackUsed = fallbackUsed,
+                message = when {
+                    localeFallbackUsed && genderFallbackUsed -> "일부 언어 또는 성별 음성이 없어 기본 음성으로 안내합니다."
+                    localeFallbackUsed -> "일부 언어 음성이 없어 기본 음성으로 안내합니다."
+                    genderFallbackUsed -> "일부 언어에 지정한 성별 음성이 없어 가능한 기본 음성으로 안내합니다."
+                    else -> "다국어 TTS 준비 완료"
+                },
+                fallbackUsed = localeFallbackUsed || genderFallbackUsed,
             )
         }
     }
@@ -252,17 +258,21 @@ class TtsEngine(context: Context) : TextToSpeech.OnInitListener {
         batch.callback(false, message)
     }
 
-    private fun selectVoice(engine: TextToSpeech, locale: Locale, settings: UserSettings) {
+    private fun selectVoice(engine: TextToSpeech, locale: Locale, settings: UserSettings): Boolean {
         val compatibleVoices = engine.voices.orEmpty().filter { it.locale.language == locale.language }
-        val explicitVoice = settings.voiceName?.let { name -> compatibleVoices.firstOrNull { it.name == name } }
-        val genderMatchedVoice = compatibleVoices
-            .filter { settings.genderFilter == GenderFilter.ANY || inferGender(it.name, it.features) == settings.genderFilter }
-            .sortedWith(compareBy({ it.isNetworkConnectionRequired }, { -it.quality }))
-            .firstOrNull()
-        val preferredVoice = explicitVoice ?: genderMatchedVoice ?: compatibleVoices
-            .sortedWith(compareBy({ it.isNetworkConnectionRequired }, { -it.quality }))
-            .firstOrNull()
-        preferredVoice?.let(engine::setVoice)
+        val candidates = compatibleVoices.map { voice ->
+            VoiceCandidate(
+                name = voice.name,
+                gender = inferGender(voice.name, voice.features),
+                quality = voice.quality,
+                requiresNetwork = voice.isNetworkConnectionRequired,
+            )
+        }
+        val selection = VoiceSelectionPolicy.choose(candidates, settings.voiceName, settings.genderFilter)
+        selection.name
+            ?.let { name -> compatibleVoices.firstOrNull { it.name == name } }
+            ?.let(engine::setVoice)
+        return selection.usedGenderFallback
     }
 
     private fun refreshVoices(engine: TextToSpeech) {

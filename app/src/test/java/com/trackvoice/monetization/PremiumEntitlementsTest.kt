@@ -6,6 +6,7 @@ import com.trackvoice.data.TrackStartBehavior
 import com.trackvoice.data.AnnouncementMode
 import com.trackvoice.data.AnnouncementTiming
 import com.trackvoice.data.AppSettings
+import com.trackvoice.data.DEFAULT_TTS_VOLUME
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -26,7 +27,7 @@ class PremiumEntitlementsTest {
         assertFalse(effective.autoEnableOnScreenOff)
         assertEquals(1f, effective.speechRate)
         assertEquals(1f, effective.pitch)
-        assertEquals(0.85f, effective.volume)
+        assertEquals(DEFAULT_TTS_VOLUME, effective.volume)
         assertEquals(MusicTreatment.DUCK, effective.musicTreatment)
         assertEquals(TrackStartBehavior.PLAY_IMMEDIATELY, effective.trackStartBehavior)
         assertFalse(effective.raiseDeviceVolume)

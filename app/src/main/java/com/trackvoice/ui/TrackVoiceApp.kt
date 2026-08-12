@@ -1268,6 +1268,7 @@ private fun BasicPlaybackDefaults() {
         Text("무료 기본값", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         Text("새 트랙이 시작되면 음악과 함께 음성 안내")
         Text("안내 중에는 음악 음량을 자동으로 줄임")
+        Text("음성 기본 음량 65%")
         Text("음성 음량은 음악과 분리된 기본 음량으로 출력")
     }
 }
