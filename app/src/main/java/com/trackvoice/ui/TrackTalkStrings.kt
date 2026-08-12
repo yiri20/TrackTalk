@@ -148,6 +148,20 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     val autoEnableOnConnectSummary: String get() = t("이 기기가 연결되면 안내를 켭니다.", "Enable announcements when this device connects.")
     val trackGuide: String get() = t("기본 안내", "Guide defaults")
     val trackStart: String get() = t("재생 시작", "Playback start")
+    fun trackStartSummary(behavior: TrackStartBehavior): String = when (behavior) {
+        TrackStartBehavior.PLAY_IMMEDIATELY -> t(
+            "새 곡이 감지되면 음악을 계속 재생하면서 안내합니다.",
+            "When a new track is detected, keep the music playing while announcing it.",
+        )
+        TrackStartBehavior.ANNOUNCE_THEN_PLAY -> t(
+            "새 곡이 감지되면 안내를 먼저 하고 음악을 재생합니다.",
+            "When a new track is detected, announce it first and then start the music.",
+        )
+    }
+    val announceThenPlaySummary: String get() = t(
+        "안내 중에는 음악을 일시정지하고, 음성 안내가 끝나면 자동으로 다시 재생합니다.",
+        "Music pauses during the announcement and resumes automatically when the voice guide ends.",
+    )
     val musicDuringGuide: String get() = t("안내 중 음악", "Music during guide")
     val musicVolumeSummary: String get() = t("음성 음량은 음성 탭에서 따로 조절합니다. 음량 줄이기를 선택하면 아래에서 안내 중 음악 음량을 정합니다.", "Adjust voice volume separately in Voice. When you lower music, choose its volume during announcements below.")
     val musicDuckAmount: String get() = t("안내 중 음악 음량", "Music volume during guide")

@@ -743,42 +743,58 @@ private fun GeneralSettingsScreen(
                         onUpdate { current ->
                             current.copy(
                                 trackStartBehavior = value,
-                                musicTreatment = if (value == TrackStartBehavior.PLAY_IMMEDIATELY && current.musicTreatment == MusicTreatment.PAUSE) {
-                                    MusicTreatment.DUCK
-                                } else current.musicTreatment,
+                                musicTreatment = when (value) {
+                                    TrackStartBehavior.ANNOUNCE_THEN_PLAY -> MusicTreatment.PAUSE
+                                    TrackStartBehavior.PLAY_IMMEDIATELY -> current.musicTreatment.takeUnless {
+                                        it == MusicTreatment.PAUSE
+                                    } ?: MusicTreatment.DUCK
+                                },
                             )
                         }
                     }
-                    val treatmentOptions = if (settings.trackStartBehavior == TrackStartBehavior.PLAY_IMMEDIATELY) {
-                        listOf(MusicTreatment.KEEP, MusicTreatment.DUCK)
-                    } else {
-                        MusicTreatment.values().toList()
-                    }
-                    OptionDropdown(strings.musicDuringGuide, settings.musicTreatment, treatmentOptions, strings::musicTreatment) { value ->
-                        onUpdate { it.copy(musicTreatment = value) }
-                    }
-                    if (settings.musicTreatment == MusicTreatment.DUCK) {
-                        SliderSetting(
-                            strings.musicDuckAmount,
-                            settings.musicDuckPercent.toFloat(),
-                            MIN_MUSIC_DUCK_PERCENT.toFloat()..MAX_MUSIC_DUCK_PERCENT.toFloat(),
-                            strings.musicDuckPercent(settings.musicDuckPercent),
-                        ) { value ->
-                            onUpdate {
-                                it.copy(
-                                    musicDuckPercent = value.toInt().coerceIn(
-                                        MIN_MUSIC_DUCK_PERCENT,
-                                        MAX_MUSIC_DUCK_PERCENT,
-                                    ),
-                                )
-                            }
-                        }
-                    }
                     Text(
-                        strings.musicVolumeSummary,
+                        strings.trackStartSummary(settings.trackStartBehavior),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    if (settings.trackStartBehavior == TrackStartBehavior.ANNOUNCE_THEN_PLAY) {
+                        Text(
+                            strings.announceThenPlaySummary,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    } else {
+                        val visibleTreatment = settings.musicTreatment.takeUnless { it == MusicTreatment.PAUSE }
+                            ?: MusicTreatment.DUCK
+                        OptionDropdown(
+                            strings.musicDuringGuide,
+                            visibleTreatment,
+                            listOf(MusicTreatment.KEEP, MusicTreatment.DUCK),
+                            strings::musicTreatment,
+                        ) { value -> onUpdate { it.copy(musicTreatment = value) } }
+                        if (visibleTreatment == MusicTreatment.DUCK) {
+                            SliderSetting(
+                                strings.musicDuckAmount,
+                                settings.musicDuckPercent.toFloat(),
+                                MIN_MUSIC_DUCK_PERCENT.toFloat()..MAX_MUSIC_DUCK_PERCENT.toFloat(),
+                                strings.musicDuckPercent(settings.musicDuckPercent),
+                            ) { value ->
+                                onUpdate {
+                                    it.copy(
+                                        musicDuckPercent = value.toInt().coerceIn(
+                                            MIN_MUSIC_DUCK_PERCENT,
+                                            MAX_MUSIC_DUCK_PERCENT,
+                                        ),
+                                    )
+                                }
+                            }
+                        }
+                        Text(
+                            strings.musicVolumeSummary,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     OptionDropdown(strings.announcementTiming, settings.timing, AnnouncementTiming.values().toList(), strings::announcementTiming) { selectedTiming ->
                         onUpdate { current -> current.copy(timing = selectedTiming) }
                     }

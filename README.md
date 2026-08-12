@@ -12,6 +12,7 @@ TrackTalk은 다른 음악 앱이 Android MediaSession으로 제공하는 현재
 - Media ID·제목·아티스트·앨범·source package 기반 fingerprint와 중복 억제
 - 일시정지 후 재생/앨범 아트만 변경된 이벤트의 재안내 방지
 - 지연 안내, 최소 재생 시간 이후 안내, 안내 탭의 전체 기본값과 앱별 예외 설정
+- 곡명 안내 후 재생 시 비동기 일시정지 콜백을 재확인하고 음성 안내 종료 후 자동 재생 복귀
 - 앨범·재생목록·알고리즘/랜덤 재생을 구분하고 콘텐츠 유형별 안내 방식·읽기 항목 체크리스트 제공
 - 안내 중 음악 유지·줄이기·일시정지, Plus의 음악 음량 감쇠 비율 조절, 곡명 안내 후 재생 옵션
 - 제목의 한글/영문 자동 감지와 언어별 TTS voice 필터, 성별 표식 기반 음성 선택
@@ -120,7 +121,7 @@ formatter 7개, 정책 8개, 중복 억제 5개, 혼합 언어 구간 3개, TTS 
 gradlew.bat :app:connectedDebugAndroidTest
 ```
 
-fake MediaSession의 metadata/playback/queue 매핑, 빈 metadata, active queue fallback, queue 제목·현재 위치 매핑과 실제 미디어 음량 덕킹·복구를 검증하는 5개 테스트가 Android 에뮬레이터에서 통과했습니다.
+fake MediaSession의 metadata/playback/queue 매핑, 빈 metadata, active queue fallback, queue 제목·현재 위치 매핑, 실제 미디어 음량 덕킹·복구와 지연된 일시정지 콜백 후 자동 재생 복귀를 검증하는 6개 테스트가 Android 에뮬레이터에서 통과했습니다.
 
 Android 13 이상에서는 앱을 처음 열 때 알림 권한 창을 자동으로 띄우지 않습니다. 홈 화면의 `알림 허용` 카드를 눌렀을 때만 상태 알림 권한을 요청하며, 음악 감지에 필요한 `알림 접근` 권한과는 별개입니다.
 

@@ -13,10 +13,14 @@ data class AnnouncementPlaybackPlan(
 
 object AnnouncementPlaybackPlanner {
     fun plan(settings: UserSettings): AnnouncementPlaybackPlan {
-        // "음악과 함께 안내" must never inherit an old PAUSE selection.
-        val treatment = settings.musicTreatment.takeUnless {
-            it == MusicTreatment.PAUSE && settings.trackStartBehavior == TrackStartBehavior.PLAY_IMMEDIATELY
-        } ?: MusicTreatment.DUCK
+        // "곡명 안내 후 재생" is itself the pause-until-speech-finishes mode.
+        // Keep it consistent even for settings saved by an older build.
+        val treatment = when (settings.trackStartBehavior) {
+            TrackStartBehavior.ANNOUNCE_THEN_PLAY -> MusicTreatment.PAUSE
+            TrackStartBehavior.PLAY_IMMEDIATELY -> settings.musicTreatment.takeUnless {
+                it == MusicTreatment.PAUSE
+            } ?: MusicTreatment.DUCK
+        }
         return AnnouncementPlaybackPlan(
             musicTreatment = treatment,
             pauseBeforeAnnouncement = settings.trackStartBehavior == TrackStartBehavior.ANNOUNCE_THEN_PLAY,

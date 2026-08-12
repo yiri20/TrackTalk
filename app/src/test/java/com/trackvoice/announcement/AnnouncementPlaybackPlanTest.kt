@@ -33,8 +33,9 @@ class AnnouncementPlaybackPlanTest {
             ),
         )
 
+        assertEquals(MusicTreatment.PAUSE, plan.musicTreatment)
         assertTrue(plan.pauseBeforeAnnouncement)
-        assertFalse(plan.requestAudioFocus)
+        assertTrue(plan.requestAudioFocus)
         assertFalse(plan.shouldDuckMusic)
     }
 }
