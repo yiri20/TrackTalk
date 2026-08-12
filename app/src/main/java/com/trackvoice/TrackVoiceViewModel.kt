@@ -41,4 +41,6 @@ class TrackVoiceViewModel(application: Application) : AndroidViewModel(applicati
     fun purchasePremium(activity: android.app.Activity) = billingManager.launchPurchase(activity)
 
     fun restorePremium() = billingManager.restorePurchases()
+
+    fun redeemLocalPromoCode(rawCode: String): Boolean = billingManager.redeemLocalPlusCode(rawCode)
 }

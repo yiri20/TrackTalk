@@ -1,7 +1,9 @@
 package com.trackvoice.monetization
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PromoCodeRedemptionTest {
@@ -20,5 +22,11 @@ class PromoCodeRedemptionTest {
         assertNull(promoCodeRedeemUrl("FRIEND_CODE"))
         assertNull(promoCodeRedeemUrl("FRIEND?2026"))
         assertNull(promoCodeRedeemUrl("친구-2026"))
+    }
+
+    @Test
+    fun acceptsPrivateEarlyAccessCodeOnlyAfterNormalization() {
+        assertTrue(isLocalPlusPromoCode(" ttplus-7k4m-92qx "))
+        assertFalse(isLocalPlusPromoCode("TTPLUS-7K4M-92QW"))
     }
 }

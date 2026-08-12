@@ -24,6 +24,7 @@ data class PremiumState(
     val price: String? = null,
     val isLoading: Boolean = false,
     val message: String? = null,
+    val isLocalUnlock: Boolean = false,
 )
 
 class PlayBillingManager(context: Context) : PurchasesUpdatedListener {
@@ -33,7 +34,18 @@ class PlayBillingManager(context: Context) : PurchasesUpdatedListener {
     }
 
     private val appContext = context.applicationContext
-    private val _state = MutableStateFlow(PremiumState())
+    private val localEntitlementPreferences = appContext.getSharedPreferences(
+        "tracktalk_entitlements",
+        Context.MODE_PRIVATE,
+    )
+    private var localPlusUnlocked = localEntitlementPreferences.getBoolean("local_plus_unlocked", false)
+    private var billingPlusPurchased = false
+    private val _state = MutableStateFlow(
+        PremiumState(
+            isPremium = localPlusUnlocked,
+            isLocalUnlock = localPlusUnlocked,
+        ),
+    )
     val state: StateFlow<PremiumState> = _state.asStateFlow()
 
     private val billingClient = BillingClient.newBuilder(appContext)
@@ -127,6 +139,21 @@ class PlayBillingManager(context: Context) : PurchasesUpdatedListener {
         queryPurchases()
     }
 
+    fun redeemLocalPlusCode(rawCode: String): Boolean {
+        if (!isLocalPlusPromoCode(rawCode)) return false
+        localPlusUnlocked = true
+        localEntitlementPreferences.edit()
+            .putBoolean("local_plus_unlocked", true)
+            .apply()
+        _state.value = _state.value.copy(
+            isPremium = true,
+            isLocalUnlock = true,
+            isLoading = false,
+            message = "지인용 Plus 코드가 적용되었습니다.",
+        )
+        return true
+    }
+
     override fun onPurchasesUpdated(billingResult: BillingResult, purchases: MutableList<Purchase>?) {
         when {
             billingResult.responseCode == BillingClient.BillingResponseCode.OK && purchases != null -> {
@@ -199,12 +226,14 @@ class PlayBillingManager(context: Context) : PurchasesUpdatedListener {
         val matchingPurchases = purchases.filter { it.products.contains(PREMIUM_PRODUCT_ID) }
         val purchased = matchingPurchases.any { it.purchaseState == Purchase.PurchaseState.PURCHASED }
         val pending = matchingPurchases.any { it.purchaseState == Purchase.PurchaseState.PENDING }
+        billingPlusPurchased = purchased
         _state.value = _state.value.copy(
-            isPremium = purchased,
+            isPremium = billingPlusPurchased || localPlusUnlocked,
+            isLocalUnlock = localPlusUnlocked,
             isLoading = false,
             message = when {
-                pending && !purchased -> "결제가 보류 중입니다. 결제가 완료되면 Plus가 활성화됩니다."
-                purchased -> null
+                pending && !purchased && !localPlusUnlocked -> "결제가 보류 중입니다. 결제가 완료되면 Plus가 활성화됩니다."
+                purchased || localPlusUnlocked -> null
                 else -> _state.value.message
             },
         )

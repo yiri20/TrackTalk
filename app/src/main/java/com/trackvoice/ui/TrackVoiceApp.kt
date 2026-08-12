@@ -243,6 +243,7 @@ fun TrackVoiceApp(viewModel: TrackVoiceViewModel, activity: Activity) {
             onDismiss = { showPremiumDialog = false },
             onPurchase = { viewModel.purchasePremium(activity) },
             onRestore = viewModel::restorePremium,
+            onRedeemLocalCode = viewModel::redeemLocalPromoCode,
             onOpenPromoCode = { url ->
                 context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
             },
@@ -406,6 +407,7 @@ private fun PremiumDialog(
     onDismiss: () -> Unit,
     onPurchase: () -> Unit,
     onRestore: () -> Unit,
+    onRedeemLocalCode: (String) -> Boolean,
     onOpenPromoCode: (String) -> Unit,
 ) {
     var promoCode by rememberSaveable { mutableStateOf("") }
@@ -446,7 +448,7 @@ private fun PremiumDialog(
                 if (!state.isPremium) {
                     HorizontalDivider()
                     Text(
-                        "Play Console에서 받은 Plus 프로모션 코드를 입력하면 Google Play에서 무료로 활성화할 수 있습니다.",
+                        "지인용 얼리 액세스 코드는 이 기기에서 Plus를 바로 활성화합니다. Google Play 프로모션 코드는 아래 버튼으로 redeem합니다.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                     OutlinedTextField(
@@ -465,6 +467,20 @@ private fun PremiumDialog(
                             null
                         },
                     )
+                    OutlinedButton(
+                        onClick = {
+                            if (onRedeemLocalCode(promoCode)) {
+                                promoCode = ""
+                                promoCodeError = false
+                            } else {
+                                promoCodeError = true
+                            }
+                        },
+                        enabled = promoCode.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("지인용 코드 적용")
+                    }
                     TextButton(
                         onClick = {
                             val url = promoCodeRedeemUrl(promoCode)

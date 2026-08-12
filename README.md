@@ -40,6 +40,8 @@ TrackTalk은 음악 감상 중 광고가 끼어들면 핵심 경험을 해치므
 
 일회성 상품은 재사용 가능한 custom code가 아니라 사용자별 일회용 코드를 사용해야 합니다. 실제 코드는 Play Console에서 생성해야 하며, 상품과 프로모션을 먼저 활성화한 뒤 내부 테스트 트랙에서 redemption과 구매 복원을 확인해야 합니다.
 
+Play Console을 아직 연결하지 않은 개인·지인용 Debug APK에는 별도의 얼리 액세스 코드 적용 버튼도 있습니다. 이 코드는 서버가 아닌 기기 로컬 entitlement를 저장하므로 앱을 삭제하면 다시 입력해야 하고, APK를 가진 사람이 분석해 공유할 수 있습니다. 따라서 정식 판매용 권한은 Google Play Billing으로 처리하고 이 코드는 제한된 사전 사용·시연에만 사용합니다.
+
 ## 설치
 
 1. Android Studio에서 이 폴더를 엽니다.
@@ -108,7 +110,7 @@ Android 설정 또는 알림 패널의 Quick Settings 편집 화면에서 `Track
 gradlew.bat --offline :app:testDebugUnitTest
 ```
 
-formatter 5개, 정책 4개, 중복 억제 5개, 혼합 언어 구간 3개, TTS 언어 fallback 1개, 활성 세션 선택 5개, 앱 카테고리 6개, Plus entitlement 2개, 프로모션 코드 2개로 총 33개 테스트가 통과합니다.
+formatter 5개, 정책 4개, 중복 억제 5개, 혼합 언어 구간 3개, TTS 언어 fallback 1개, 활성 세션 선택 5개, 앱 카테고리 6개, Plus entitlement 2개, 프로모션 코드 3개로 총 34개 테스트가 통과합니다.
 
 실제 Android 환경을 사용하는 MediaSession 매핑 테스트는 다음 명령으로 실행합니다.
 
