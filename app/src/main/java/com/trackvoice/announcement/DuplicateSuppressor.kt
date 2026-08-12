@@ -6,12 +6,17 @@ import com.trackvoice.media.TrackFingerprint
 class DuplicateSuppressor(
     private val repeatCooldownMs: Long = 30_000L,
 ) {
-    private val announcedAtByFingerprint = linkedMapOf<String, Long>()
+    private val announcedTracks = linkedMapOf<String, AnnouncedTrack>()
 
     fun shouldAnnounce(event: PlaybackEvent, allowRepeat: Boolean, now: Long): Boolean {
-        val fingerprint = TrackFingerprint.stable(event)
         if (!event.hasTitle && event.mediaId.isNullOrBlank()) return false
-        val previous = announcedAtByFingerprint[fingerprint]
+        val base = TrackFingerprint.announcementBase(event)
+        val previous = announcedTracks.values
+            .asSequence()
+            .filter { it.base == base }
+            .filter { it.isCompatibleWith(event) }
+            .maxByOrNull(AnnouncedTrack::announcedAt)
+            ?.announcedAt
         return when {
             previous == null -> true
             !allowRepeat -> false
@@ -21,11 +26,33 @@ class DuplicateSuppressor(
     }
 
     fun markAnnounced(event: PlaybackEvent, now: Long) {
-        announcedAtByFingerprint[TrackFingerprint.stable(event)] = now
-        while (announcedAtByFingerprint.size > 64) {
-            announcedAtByFingerprint.remove(announcedAtByFingerprint.keys.first())
+        val fingerprint = TrackFingerprint.announcement(event)
+        announcedTracks[fingerprint] = AnnouncedTrack(
+            base = TrackFingerprint.announcementBase(event),
+            trackNumber = event.trackNumber,
+            discNumber = event.discNumber,
+            announcedAt = now,
+        )
+        while (announcedTracks.size > 64) {
+            announcedTracks.remove(announcedTracks.keys.first())
         }
     }
 
-    fun clear() = announcedAtByFingerprint.clear()
+    fun clear() = announcedTracks.clear()
+
+    private data class AnnouncedTrack(
+        val base: String,
+        val trackNumber: Int?,
+        val discNumber: Int?,
+        val announcedAt: Long,
+    ) {
+        /**
+         * A later callback that only fills a missing optional field is still
+         * the same track. Two explicit, different track/disc values indicate
+         * a real queue item change and must remain announceable.
+         */
+        fun isCompatibleWith(event: PlaybackEvent): Boolean =
+            (trackNumber == null || event.trackNumber == null || trackNumber == event.trackNumber) &&
+                (discNumber == null || event.discNumber == null || discNumber == event.discNumber)
+    }
 }

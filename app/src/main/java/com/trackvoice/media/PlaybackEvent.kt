@@ -126,6 +126,11 @@ data class MediaMonitorUpdate(
 )
 
 object TrackFingerprint {
+    /**
+     * Full event identity used when the individual metadata fields matter.
+     * This is intentionally kept separate from [announcement] because media
+     * sessions often fill metadata in several callbacks for one track.
+     */
     fun stable(event: PlaybackEvent): String = listOf(
         event.sourcePackageName,
         event.mediaId.orEmpty(),
@@ -135,6 +140,43 @@ object TrackFingerprint {
         event.trackNumber?.toString().orEmpty(),
         event.discNumber?.toString().orEmpty(),
     ).joinToString("|")
+
+    /**
+     * Identity for one spoken track announcement.
+     *
+     * Android media sessions can publish the same track first with only a
+     * media ID and then publish title/album/track-number metadata. Including
+     * all of those fields in the de-duplication key makes the same song look
+     * like a new song in the middle of playback. A non-empty media ID is the
+     * most reliable identity; metadata is used only when the player provides
+     * no media ID at all.
+     */
+    fun announcement(event: PlaybackEvent): String {
+        return listOf(
+            announcementBase(event),
+            event.trackNumber?.toString().orEmpty(),
+            event.discNumber?.toString().orEmpty(),
+        ).joinToString("|")
+    }
+
+    /**
+     * The part of the announcement identity that remains stable while a
+     * player enriches optional track metadata.
+     */
+    fun announcementBase(event: PlaybackEvent): String {
+        val mediaId = event.mediaId?.trim()?.takeIf { it.isNotEmpty() }
+        return if (mediaId != null) {
+            listOf(event.sourcePackageName, "media-id", mediaId).joinToString("|")
+        } else {
+            listOf(
+                event.sourcePackageName,
+                "metadata",
+                event.title.orEmpty().trim(),
+                event.artist.orEmpty().trim(),
+                event.album.orEmpty().trim(),
+            ).joinToString("|")
+        }
+    }
 
     fun event(event: PlaybackEvent): String = listOf(
         stable(event),

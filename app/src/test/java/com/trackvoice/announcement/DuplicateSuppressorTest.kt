@@ -17,6 +17,24 @@ class DuplicateSuppressorTest {
     }
 
     @Test
+    fun metadataEnrichmentForSameMediaIdIsSuppressed() {
+        val suppressor = DuplicateSuppressor()
+        val early = event().copy(
+            title = null,
+            artist = null,
+            album = null,
+            trackNumber = null,
+            totalTracks = null,
+            discNumber = null,
+        )
+        val enriched = event()
+
+        assertTrue(suppressor.shouldAnnounce(early, allowRepeat = false, now = 1_000L))
+        suppressor.markAnnounced(early, 1_000L)
+        assertFalse(suppressor.shouldAnnounce(enriched, allowRepeat = false, now = 2_000L))
+    }
+
+    @Test
     fun sameTrackFromDifferentAppsIsASeparateEvent() {
         val suppressor = DuplicateSuppressor()
         val spotify = event("com.spotify.music")
@@ -47,8 +65,8 @@ class DuplicateSuppressorTest {
     @Test
     fun differentDiscOrTrackNumberIsNotTheSameFingerprint() {
         val suppressor = DuplicateSuppressor()
-        val first = event().copy(trackNumber = 1, discNumber = 1)
-        val second = event().copy(trackNumber = 1, discNumber = 2)
+        val first = event().copy(mediaId = null, trackNumber = 1, discNumber = 1)
+        val second = event().copy(mediaId = null, trackNumber = 1, discNumber = 2)
 
         suppressor.markAnnounced(first, 1_000L)
 

@@ -71,7 +71,7 @@ class MediaSessionMonitor(
         return if (paused) {
             PlaybackPauseToken(
                 sessionKey = sessionKey(tracked.controller),
-                fingerprint = TrackFingerprint.stable(event),
+                fingerprint = TrackFingerprint.announcement(event),
                 sourcePackageName = event.sourcePackageName,
                 mediaId = event.mediaId,
             )
@@ -108,7 +108,7 @@ class MediaSessionMonitor(
                 retryResume(
                     PlaybackPauseToken(
                         sessionKey = sessionKey(tracked.controller),
-                        fingerprint = TrackFingerprint.stable(event),
+                        fingerprint = TrackFingerprint.announcement(event),
                         sourcePackageName = event.sourcePackageName,
                         mediaId = event.mediaId,
                     ),
@@ -246,7 +246,7 @@ class MediaSessionMonitor(
     }
 
     private fun matchesPausedTrack(event: PlaybackEvent, token: PlaybackPauseToken): Boolean =
-        TrackFingerprint.stable(event) == token.fingerprint ||
+        TrackFingerprint.announcement(event) == token.fingerprint ||
             (event.sourcePackageName == token.sourcePackageName &&
                 token.mediaId != null &&
                 event.mediaId == token.mediaId)
