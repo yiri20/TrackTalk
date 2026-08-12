@@ -4,6 +4,7 @@ import com.trackvoice.data.AnnouncementMode
 import com.trackvoice.media.PlaybackEvent
 import com.trackvoice.media.PlaybackCollection
 import com.trackvoice.media.PlaybackStatus
+import com.trackvoice.data.VoiceLanguage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -12,6 +13,12 @@ class AnnouncementFormatterTest {
     @Test
     fun titleOnlyReadsTitle() {
         assertEquals("Glass Eyes.", AnnouncementFormatter.format(event(), AnnouncementMode.TITLE_ONLY))
+    }
+
+    @Test
+    fun testTextUsesSelectedVoiceLanguage() {
+        assertEquals("Track 3, Glass Eyes. Radiohead.", AnnouncementFormatter.testText(VoiceLanguage.ENGLISH))
+        assertEquals("트랙 3번, Glass Eyes. Radiohead.", AnnouncementFormatter.testText(VoiceLanguage.KOREAN))
     }
 
     @Test
@@ -24,6 +31,18 @@ class AnnouncementFormatterTest {
         assertEquals(
             "앨범 A Moon Shaped Pool, 트랙 3번, Glass Eyes, Radiohead.",
             AnnouncementFormatter.format(event(), AnnouncementMode.ALBUM),
+        )
+    }
+
+    @Test
+    fun englishVoiceLanguageLocalizesAlbumAndTrackLabels() {
+        assertEquals(
+            "Album A Moon Shaped Pool, Track 3, Glass Eyes, Radiohead.",
+            AnnouncementFormatter.format(
+                event(),
+                AnnouncementMode.ALBUM,
+                voiceLanguage = VoiceLanguage.ENGLISH,
+            ),
         )
     }
 
@@ -58,6 +77,19 @@ class AnnouncementFormatterTest {
                 event(queueTitle = "출근길"),
                 AnnouncementMode.PLAYLIST,
                 collection = PlaybackCollection.PLAYLIST,
+            ),
+        )
+    }
+
+    @Test
+    fun englishVoiceLanguageLocalizesPlaylistLabel() {
+        assertEquals(
+            "Playlist 출근길, Glass Eyes, Radiohead.",
+            AnnouncementFormatter.format(
+                event(queueTitle = "출근길"),
+                AnnouncementMode.PLAYLIST,
+                collection = PlaybackCollection.PLAYLIST,
+                voiceLanguage = VoiceLanguage.ENGLISH,
             ),
         )
     }

@@ -2,6 +2,7 @@ package com.trackvoice
 
 import android.content.Context
 import com.trackvoice.announcement.AnnouncementPolicy
+import com.trackvoice.announcement.AnnouncementFormatter
 import com.trackvoice.announcement.AudioFocusManager
 import com.trackvoice.announcement.AudioOutputDetector
 import com.trackvoice.announcement.DuplicateSuppressor
@@ -203,7 +204,7 @@ class TrackVoiceController(
     }
 
     fun speakTest() {
-        speak("트랙 3번, Glass Eyes. Radiohead.")
+        speak(AnnouncementFormatter.testText(effectiveSettings().voiceLanguage))
     }
 
     fun speak(text: String) {

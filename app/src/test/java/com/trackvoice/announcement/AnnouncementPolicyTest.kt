@@ -4,6 +4,7 @@ import com.trackvoice.data.AnnouncementMode
 import com.trackvoice.data.AnnouncementReadField
 import com.trackvoice.data.AppSettings
 import com.trackvoice.data.CollectionFallback
+import com.trackvoice.data.VoiceLanguage
 import com.trackvoice.data.UserSettings
 import com.trackvoice.media.PlaybackEvent
 import com.trackvoice.media.PlaybackStatus
@@ -30,6 +31,21 @@ class AnnouncementPolicyTest {
         )
         assertTrue(decision.shouldAnnounce)
         assertEquals("앨범 A Moon Shaped Pool, 트랙 3번, Glass Eyes.", decision.text)
+    }
+
+    @Test
+    fun englishVoiceLanguageFlowsIntoPolicyGeneratedText() {
+        val decision = AnnouncementPolicy.decide(
+            event = event(),
+            userSettings = UserSettings(
+                voiceLanguage = VoiceLanguage.ENGLISH,
+                suppressDuringSpeakerPlayback = false,
+            ),
+            appSettings = null,
+            externalAudioOutput = true,
+        )
+
+        assertEquals("Album A Moon Shaped Pool, Track 3, Glass Eyes, Radiohead.", decision.text)
     }
 
     @Test

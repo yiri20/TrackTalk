@@ -90,6 +90,7 @@ object AnnouncementPolicy {
             mode = mode,
             options = formatOptions,
             collection = collection,
+            voiceLanguage = userSettings.voiceLanguage,
         )
         return if (text == null) {
             skipped(mode, delayMs, AnnouncementSkipReason.NO_TEXT)
