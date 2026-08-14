@@ -18,6 +18,24 @@ import org.junit.Test
 
 class AnnouncementPolicyTest {
     @Test
+    fun runtimePolicyBlocksAnAppThatIsDisabledByItsEffectiveEnablement() {
+        val decision = AnnouncementPolicy.decide(
+            event = event(),
+            userSettings = UserSettings(outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS),
+            appSettings = AppSettings(
+                packageName = "com.google.android.youtube",
+                appName = "YouTube",
+                enabled = false,
+            ),
+            effectiveEnabled = true,
+            externalAudioOutput = true,
+        )
+
+        assertFalse(decision.shouldAnnounce)
+        assertEquals(AnnouncementSkipReason.APP_DISABLED, decision.skipReason)
+    }
+
+    @Test
     fun appChecklistTakesPriorityOverLegacyAppMode() {
         val decision = AnnouncementPolicy.decide(
             event = event(),

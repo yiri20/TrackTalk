@@ -4,12 +4,77 @@ import android.content.Context
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class DataStoreRepositoryInstrumentedTest {
+    @Test
+    fun appEnablementDefaultsAndExplicitChoicesSurviveRepositoryRecreation() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val repository = DataStoreRepository(context)
+        val musicPackage = "com.trackvoice.test.category.music"
+        val videoPackage = "com.trackvoice.test.category.video"
+        val unknownPackage = "com.trackvoice.test.category.unknown"
+
+        try {
+            repository.removeApp(musicPackage)
+            repository.removeApp(videoPackage)
+            repository.removeApp(unknownPackage)
+
+            repository.ensureApp(musicPackage, "Spotify")
+            repository.ensureApp(videoPackage, "YouTube")
+            repository.ensureApp(unknownPackage, "Unknown Player")
+
+            val discovered = repository.currentAppSettings()
+            assertTrue(discovered[musicPackage]!!.enabled)
+            assertNull(discovered[musicPackage]!!.enabledOverride)
+            assertFalse(discovered[videoPackage]!!.enabled)
+            assertNull(discovered[videoPackage]!!.enabledOverride)
+            assertFalse(discovered[unknownPackage]!!.enabled)
+
+            // Updating another app setting must not turn an unset default into
+            // an explicit false value.
+            repository.updateAppSettings(discovered[unknownPackage]!!.copy(readTitle = false))
+            repository.ensureApp(unknownPackage, "Spotify")
+            assertTrue(repository.currentAppSettings()[unknownPackage]!!.enabled)
+
+            repository.updateAppSettings(
+                repository.currentAppSettings()[videoPackage]!!.copy(
+                    enabled = true,
+                    enabledOverride = true,
+                ),
+            )
+            repository.updateAppSettings(
+                repository.currentAppSettings()[musicPackage]!!.copy(
+                    enabled = false,
+                    enabledOverride = false,
+                ),
+            )
+
+            val recreatedRepository = DataStoreRepository(context)
+            val recreated = recreatedRepository.currentAppSettings()
+            assertTrue(recreated[videoPackage]!!.enabled)
+            assertEquals(true, recreated[videoPackage]!!.enabledOverride)
+            assertFalse(recreated[musicPackage]!!.enabled)
+            assertEquals(false, recreated[musicPackage]!!.enabledOverride)
+
+            // An explicit choice remains authoritative even if the displayed
+            // app/category evidence changes later.
+            repository.ensureApp(musicPackage, "YouTube")
+            assertFalse(repository.currentAppSettings()[musicPackage]!!.enabled)
+            assertEquals(false, repository.currentAppSettings()[musicPackage]!!.enabledOverride)
+        } finally {
+            repository.removeApp(musicPackage)
+            repository.removeApp(videoPackage)
+            repository.removeApp(unknownPackage)
+        }
+    }
+
     @Test
     fun outputPolicySurvivesRepositoryRecreation() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()

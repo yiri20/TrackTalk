@@ -170,6 +170,7 @@ class DataStoreRepository(private val context: Context) {
             preferences[Keys.knownPackages] = packages
             preferences.remove(AppKeys.name(packageName))
             preferences.remove(AppKeys.enabled(packageName))
+            preferences.remove(AppKeys.enabledOverride(packageName))
             preferences.remove(AppKeys.useCustomGuideSettings(packageName))
             preferences.remove(AppKeys.mode(packageName))
             preferences.remove(AppKeys.collectionFallback(packageName))
@@ -231,6 +232,7 @@ class DataStoreRepository(private val context: Context) {
     private object AppKeys {
         fun name(packageName: String) = appKey(packageName, "name")
         fun enabled(packageName: String) = appBooleanKey(packageName, "enabled")
+        fun enabledOverride(packageName: String) = appBooleanKey(packageName, "enabled_override")
         fun useCustomGuideSettings(packageName: String) = appBooleanKey(packageName, "custom_guide_settings")
         fun mode(packageName: String) = appKey(packageName, "mode")
         fun collectionFallback(packageName: String) = appKey(packageName, "collection_fallback")
@@ -316,6 +318,13 @@ class DataStoreRepository(private val context: Context) {
     private fun Preferences.toAppSettings(): Map<String, AppSettings> = this[Keys.knownPackages]
         .orEmpty()
         .associateWith { packageName ->
+            val appName = this[AppKeys.name(packageName)] ?: packageName
+            // The new override key is canonical. The legacy enabled key is
+            // treated as explicit when present because older versions only
+            // wrote it after a user changed the Apps switch; apps without
+            // either key continue following the category default.
+            val explicitEnabled = this[AppKeys.enabledOverride(packageName)]
+                ?: this[AppKeys.enabled(packageName)]
             val mode = enumOrDefault(this[AppKeys.mode(packageName)], AnnouncementMode.SMART)
             val collectionFallback = enumOrDefault(
                 this[AppKeys.collectionFallback(packageName)],
@@ -329,11 +338,12 @@ class DataStoreRepository(private val context: Context) {
             val timing = nullableEnum<AnnouncementTiming>(this[AppKeys.timing(packageName)])?.normalizedForSettings()
             AppSettings(
                 packageName = packageName,
-                appName = this[AppKeys.name(packageName)] ?: packageName,
-                // YouTube is primarily a video app, so keep its first-run
-                // guide disabled. An explicit stored value still wins when
-                // the user turns it on or off from the Apps screen.
-                enabled = (this[AppKeys.enabled(packageName)] ?: defaultAppGuideEnabled(packageName)) &&
+                appName = appName,
+                enabled = AppGuideEnablementPolicy.effectiveEnabled(
+                    packageName = packageName,
+                    appName = appName,
+                    explicitOverride = explicitEnabled,
+                ) &&
                     !(this[AppKeys.alwaysExclude(packageName)] ?: false),
                 useCustomGuideSettings = this[AppKeys.useCustomGuideSettings(packageName)] ?: (
                     mode != AnnouncementMode.SMART ||
@@ -352,6 +362,7 @@ class DataStoreRepository(private val context: Context) {
                 readAlbum = readAlbum,
                 readCollection = readCollection,
                 timing = timing,
+                enabledOverride = explicitEnabled,
             )
         }
 
@@ -396,7 +407,13 @@ class DataStoreRepository(private val context: Context) {
 
     private fun MutablePreferences.writeAppSettings(settings: AppSettings) {
         this[AppKeys.name(settings.packageName)] = settings.appName
-        this[AppKeys.enabled(settings.packageName)] = settings.enabled
+        // Do not materialize a category default as an explicit user choice.
+        // The Apps switch supplies enabledOverride; keep the legacy key in
+        // sync for older builds while the new key is canonical.
+        settings.enabledOverride?.let { explicitEnabled ->
+            this[AppKeys.enabledOverride(settings.packageName)] = explicitEnabled
+            this[AppKeys.enabled(settings.packageName)] = explicitEnabled
+        }
         this[AppKeys.useCustomGuideSettings(settings.packageName)] = settings.useCustomGuideSettings
         this[AppKeys.mode(settings.packageName)] = settings.mode.name
         this[AppKeys.collectionFallback(settings.packageName)] = settings.collectionFallback.name

@@ -1557,7 +1557,9 @@ private fun AppSettingsCard(
                 }
                 Switch(
                     checked = app.enabled,
-                    onCheckedChange = { onUpdate(app.copy(enabled = it)) },
+                    onCheckedChange = { enabled ->
+                        onUpdate(app.copy(enabled = enabled, enabledOverride = enabled))
+                    },
                 )
             }
             HorizontalDivider()

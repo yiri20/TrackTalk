@@ -17,6 +17,7 @@ import com.trackvoice.announcement.TtsEngine
 import com.trackvoice.announcement.TtsState
 import com.trackvoice.announcement.shouldReadAlbum
 import com.trackvoice.data.AnnouncementMode
+import com.trackvoice.data.AppGuideEnablementPolicy
 import com.trackvoice.data.AppSettings
 import com.trackvoice.data.DataStoreRepository
 import com.trackvoice.data.UserSettings
@@ -408,7 +409,7 @@ class TrackVoiceController(
     private fun handleMediaUpdate(update: MediaMonitorUpdate) {
         val event = update.selected?.event
         val settings = effectiveSettings()
-        val app = event?.let { appSettings.value[it.sourcePackageName]?.forPremiumEntitlement(premiumState.value.isPremium) }
+        val app = event?.let(::appSettingsFor)
         val appGuideSettings = app?.takeIf { it.useCustomGuideSettings }
         val collection = event?.let { resolveCollection(it, appGuideSettings) } ?: PlaybackCollection.UNKNOWN
         val mode = AnnouncementPolicy.resolveMode(collection, settings, appGuideSettings)
@@ -554,8 +555,7 @@ class TrackVoiceController(
         collection: PlaybackCollection,
     ) {
         val settings = effectiveSettings()
-        val app = appSettings.value[event.sourcePackageName]
-            ?.forPremiumEntitlement(premiumState.value.isPremium)
+        val app = appSettingsFor(event)
         val connectedDevices = _connectedAudioDevices.value
         if (connectedDevices.isNotEmpty() && connectedDevices.none { device ->
                 audioDeviceSettings.value[device.key]?.enabled != false
@@ -579,6 +579,12 @@ class TrackVoiceController(
             "title" to event.title,
             "collection" to decision.collection,
             "mode" to decision.mode,
+            "appEnabled" to app.enabled,
+            "appOverride" to app.enabledOverride,
+            "appDefault" to AppGuideEnablementPolicy.defaultEnabled(
+                event.sourcePackageName,
+                event.sourceAppName,
+            ),
             "shouldAnnounce" to decision.shouldAnnounce,
             "skipReason" to decision.skipReason,
             "delayMs" to decision.delayMs,
@@ -722,8 +728,7 @@ class TrackVoiceController(
                 // switching from Bluetooth to the phone speaker cannot leak
                 // a queued announcement.
                 val currentSettings = effectiveSettings()
-                val currentApp = appSettings.value[current.sourcePackageName]
-                    ?.forPremiumEntitlement(premiumState.value.isPremium)
+                val currentApp = appSettingsFor(current)
                 val currentDecision = AnnouncementPolicy.decide(
                     event = current,
                     userSettings = currentSettings,
@@ -769,6 +774,24 @@ class TrackVoiceController(
             }
         }
     }
+
+    /**
+     * Resolve app enablement synchronously for the current media event. A new
+     * app can emit its first MediaSession callback before ensureApp() finishes;
+     * using a category-based fallback here prevents that race from bypassing
+     * the default-off policy at runtime.
+     */
+    private fun appSettingsFor(event: PlaybackEvent): AppSettings =
+        appSettings.value[event.sourcePackageName]
+            ?.forPremiumEntitlement(premiumState.value.isPremium)
+            ?: AppSettings(
+                packageName = event.sourcePackageName,
+                appName = event.sourceAppName,
+                enabled = AppGuideEnablementPolicy.defaultEnabled(
+                    event.sourcePackageName,
+                    event.sourceAppName,
+                ),
+            )
 
     private fun needsMetadataSettlement(
         event: PlaybackEvent,

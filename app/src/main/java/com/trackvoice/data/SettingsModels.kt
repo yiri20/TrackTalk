@@ -7,7 +7,8 @@ const val MIN_MUSIC_DUCK_PERCENT = 10
 const val MAX_MUSIC_DUCK_PERCENT = 80
 const val YOUTUBE_PACKAGE_NAME = "com.google.android.youtube"
 
-fun defaultAppGuideEnabled(packageName: String): Boolean = packageName != YOUTUBE_PACKAGE_NAME
+fun defaultAppGuideEnabled(packageName: String, appName: String = ""): Boolean =
+    AppGuideEnablementPolicy.defaultEnabled(packageName, appName)
 
 /**
  * The single source of truth for which media routes may receive announcements.
@@ -210,4 +211,6 @@ data class AppSettings(
     val readAlbum: Boolean = true,
     val readCollection: Boolean = true,
     val timing: AnnouncementTiming? = null,
+    /** Null means the app follows its category default; non-null is explicit. */
+    val enabledOverride: Boolean? = null,
 )

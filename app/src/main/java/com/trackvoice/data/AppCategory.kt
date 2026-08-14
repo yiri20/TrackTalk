@@ -13,6 +13,29 @@ enum class AppCategory(
     OTHER("기타 미디어", "자동 분류되지 않은 미디어 앱"),
 }
 
+/**
+ * Only music-streaming apps are enabled on first discovery. Other categories,
+ * including unclassified apps, stay off until the user explicitly enables
+ * them in the Apps screen.
+ */
+fun AppCategory.isGuideEnabledByDefault(): Boolean = this == AppCategory.MUSIC_STREAMING
+
+/**
+ * Shared app enablement policy. A nullable override is kept separate from the
+ * effective value so category corrections can update apps that were never
+ * explicitly changed by the user.
+ */
+object AppGuideEnablementPolicy {
+    fun defaultEnabled(packageName: String, appName: String = ""): Boolean =
+        categorizeApp(packageName, appName).isGuideEnabledByDefault()
+
+    fun effectiveEnabled(
+        packageName: String,
+        appName: String,
+        explicitOverride: Boolean?,
+    ): Boolean = explicitOverride ?: defaultEnabled(packageName, appName)
+}
+
 fun categorizeApp(packageName: String, appName: String): AppCategory {
     val searchableText = "$packageName $appName".lowercase(Locale.ROOT)
     val explicitVideoApp = searchableText.containsAny(

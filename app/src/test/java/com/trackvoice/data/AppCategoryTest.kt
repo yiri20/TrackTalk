@@ -13,6 +13,58 @@ class AppCategoryTest {
     }
 
     @Test
+    fun onlyMusicStreamingAppsAreEnabledByDefault() {
+        assertTrue(defaultAppGuideEnabled("com.spotify.music", "Spotify"))
+        assertFalse(defaultAppGuideEnabled("com.google.android.youtube", "YouTube"))
+        assertFalse(defaultAppGuideEnabled("com.audible.application", "Audible"))
+        assertFalse(defaultAppGuideEnabled("com.podcastaddict", "Podcast Addict"))
+        assertFalse(defaultAppGuideEnabled("com.example.unknown", "Unknown Player"))
+    }
+
+    @Test
+    fun explicitAppChoiceOverridesCategoryDefault() {
+        assertFalse(
+            AppGuideEnablementPolicy.effectiveEnabled(
+                "com.spotify.music",
+                "Spotify",
+                explicitOverride = false,
+            ),
+        )
+        assertTrue(
+            AppGuideEnablementPolicy.effectiveEnabled(
+                YOUTUBE_PACKAGE_NAME,
+                "YouTube",
+                explicitOverride = true,
+            ),
+        )
+    }
+
+    @Test
+    fun categoryCorrectionChangesOnlyAppsWithoutAnOverride() {
+        assertFalse(
+            AppGuideEnablementPolicy.effectiveEnabled(
+                "com.example.player",
+                "Unknown Player",
+                explicitOverride = null,
+            ),
+        )
+        assertTrue(
+            AppGuideEnablementPolicy.effectiveEnabled(
+                "com.example.player",
+                "Spotify",
+                explicitOverride = null,
+            ),
+        )
+        assertFalse(
+            AppGuideEnablementPolicy.effectiveEnabled(
+                "com.example.player",
+                "Spotify",
+                explicitOverride = false,
+            ),
+        )
+    }
+
+    @Test
     fun youtubeMusicIsMusicStreaming() {
         assertEquals(
             AppCategory.MUSIC_STREAMING,
