@@ -88,6 +88,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -432,18 +433,12 @@ private fun HomeScreen(
             PremiumCard(premiumState, onOpenPremium)
         }
         item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = TrackVoiceCardShape,
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
-            ) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(strings.guideSettings, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text(strings.guideTimingSummary(settings.timing, settings.delaySeconds))
-                    TextButton(onClick = onOpenGeneral) { Text(strings.openSettings) }
-                }
-            }
+            NavigationEntryCard(
+                title = strings.guideSettings,
+                summary = strings.guideTimingSummary(settings.timing, settings.delaySeconds),
+                onClick = onOpenGeneral,
+                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            )
         }
     }
 }
@@ -1070,10 +1065,11 @@ private fun GeneralSettingsScreen(
                     }
                 } else {
                     BasicPlaybackDefaults(settings.musicDuckPercent)
-                    PremiumLockedContent(
+                    NavigationEntryContent(
                         title = strings.detailedGuidePlusTitle,
                         summary = strings.freeGuideDetailsSummary,
-                        onOpenPremium = onOpenPremium,
+                        showPlusBadge = true,
+                        onClick = onOpenPremium,
                     )
                 }
             }
@@ -1153,10 +1149,11 @@ private fun GeneralSettingsScreen(
                         )
                     }
                 } else {
-                    PremiumLockedContent(
+                    NavigationEntryContent(
                         title = strings.contentReadingPlusTitle,
                         summary = strings.contentSpecificPlusSummary,
-                        onOpenPremium = onOpenPremium,
+                        showPlusBadge = true,
+                        onClick = onOpenPremium,
                     )
                 }
             }
@@ -1293,13 +1290,13 @@ private fun DeviceSettingsScreen(
             }
         } else {
             item {
-                SettingCard(strings.automationPlusTitle) {
-                    PremiumLockedContent(
-                        title = strings.automationPlusDetailsTitle,
-                        summary = strings.automationPlusSummary,
-                        onOpenPremium = onOpenPremium,
-                    )
-                }
+                NavigationEntryCard(
+                    title = strings.automationPlusTitle,
+                    summary = strings.automationPlusSummary,
+                    showPlusBadge = true,
+                    onClick = onOpenPremium,
+                    containerColor = MaterialTheme.colorScheme.surface,
+                )
             }
         }
         item {
@@ -1690,10 +1687,11 @@ private fun VoiceSettingsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 } else {
-                    PremiumLockedContent(
+                    NavigationEntryContent(
                         title = strings.voiceControlsPlusTitle,
                         summary = strings.voiceControlsFreeSummary,
-                        onOpenPremium = onOpenPremium,
+                        showPlusBadge = true,
+                        onClick = onOpenPremium,
                     )
                 }
                 Button(onClick = onTest) {
@@ -1783,27 +1781,101 @@ private fun SettingCard(title: String, content: @Composable ColumnScope.() -> Un
 }
 
 @Composable
-private fun PremiumLockedContent(
+private fun NavigationEntryCard(
     title: String,
     summary: String,
-    onOpenPremium: () -> Unit,
+    onClick: () -> Unit,
+    containerColor: androidx.compose.ui.graphics.Color,
+    showPlusBadge: Boolean = false,
 ) {
-    val strings = LocalTrackTalkStrings.current
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(role = Role.Button, onClick = onClick),
+        shape = TrackVoiceCardShape,
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        colors = CardDefaults.cardColors(containerColor = containerColor),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        NavigationEntryContent(
+            title = title,
+            summary = summary,
+            showPlusBadge = showPlusBadge,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+        )
+    }
+}
+
+@Composable
+private fun NavigationEntryContent(
+    title: String,
+    summary: String,
+    showPlusBadge: Boolean,
+    onClick: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
+) {
+    val entryModifier = if (onClick == null) {
+        modifier
+    } else {
+        modifier.clickable(role = Role.Button, onClick = onClick)
+    }
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = entryModifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(title, fontWeight = FontWeight.SemiBold)
+        Column(
+            Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    title,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (showPlusBadge) {
+                    PlusBadge()
+                }
+            }
             Text(
                 summary,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        TextButton(onClick = onOpenPremium) { Text(strings.plus) }
+        Icon(
+            Icons.Default.ChevronRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
+}
+
+@Composable
+private fun PlusBadge() {
+    val strings = LocalTrackTalkStrings.current
+    Text(
+        strings.plusBadge,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.primary,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier
+            .background(
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                RoundedCornerShape(4.dp),
+            )
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+    )
 }
 
 @Composable

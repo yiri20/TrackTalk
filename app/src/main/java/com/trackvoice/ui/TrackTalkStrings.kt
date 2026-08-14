@@ -79,7 +79,6 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
         return timingText
     }
     fun seconds(value: Int): String = if (english) "${value}s" else "${value}초"
-    val openSettings: String get() = t("설정 열기", "Open settings")
     fun announcementBasisValue(appSpecific: Boolean, typeSpecific: Boolean): String = when {
         appSpecific -> t("앱별 설정", "App-specific settings")
         typeSpecific -> t("유형별 설정", "Type-specific settings")
@@ -123,6 +122,7 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     fun lastDetected(time: String): String = t("마지막 감지 $time", "Last detected $time")
 
     val premiumTitle: String get() = "TrackTalk Plus"
+    val plusBadge: String get() = "PLUS"
     val premiumEnabledSummary: String get() = t("Plus가 활성화되어 모든 고급 기능을 사용할 수 있습니다.", "Plus is active. All advanced features are available.")
     val premiumLockedSummary: String get() = t("음성 속도·높이·음량과 기기별 자동화 기능을 한 번의 결제로 이용할 수 있습니다.", "Unlock detailed voice controls and per-device automation with a one-time purchase.")
     val view: String get() = t("보기", "View")
@@ -183,8 +183,7 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     val statusShortcut: String get() = t("상단바 바로가기", "Notification shortcut")
     val statusShortcutSummary: String get() = t("알림을 눌러 앱으로 바로 이동합니다.", "Tap the notification to open the app.")
     val connectedDevices: String get() = t("연결 기기", "Connected devices")
-    val automationPlusTitle: String get() = t("자동화 · Plus", "Automation · Plus")
-    val automationPlusDetailsTitle: String get() = t("기기별 동작과 화면 꺼짐 자동 활성화", "Device behavior and screen-off auto-enable")
+    val automationPlusTitle: String get() = t("자동화", "Automation")
     val automationPlusSummary: String get() = t(
         "Bluetooth·USB·HDMI 기기별 동작과 화면 꺼짐 자동 활성화를 설정할 수 있습니다.",
         "Configure Bluetooth, USB, and HDMI behavior plus screen-off auto-enable.",

@@ -62,6 +62,9 @@ class AppLanguageTest {
         assertFalse(english.albumPlaylistSummary.contains("Free", ignoreCase = true))
         assertEquals("기기·진단", korean.sectionTitle(AppSection.DEVICES))
         assertEquals("Devices & diagnostics", english.sectionTitle(AppSection.DEVICES))
+        assertEquals("PLUS", korean.plusBadge)
+        assertEquals("자동화", korean.automationPlusTitle)
+        assertEquals("Automation", english.automationPlusTitle)
     }
 
     @Test
