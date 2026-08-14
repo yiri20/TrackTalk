@@ -1,6 +1,7 @@
 package com.trackvoice.announcement
 
 import com.trackvoice.data.AnnouncementMode
+import com.trackvoice.data.AnnouncementOrder
 import com.trackvoice.media.PlaybackEvent
 import com.trackvoice.media.PlaybackCollection
 import com.trackvoice.media.PlaybackCollectionResolver
@@ -19,7 +20,18 @@ data class AnnouncementFormatOptions(
     val readTrackNumber: Boolean = true,
     val readAlbum: Boolean = true,
     val readCollection: Boolean = true,
+    val albumNameFirstTrackOnly: Boolean = false,
+    val announcementOrder: AnnouncementOrder = AnnouncementOrder.DEFAULT,
 )
+
+fun AnnouncementFormatOptions.shouldReadAlbum(
+    event: PlaybackEvent,
+    collection: PlaybackCollection,
+): Boolean = readAlbum && (
+    !albumNameFirstTrackOnly ||
+        collection != PlaybackCollection.ALBUM ||
+        AlbumTrackNumberResolver.isFirstAlbumTrack(event)
+    )
 
 object AnnouncementFormatter {
     fun testText(voiceLanguage: VoiceLanguage): String = when (voiceLanguage.toAnnouncementTextLanguage()) {
@@ -37,12 +49,17 @@ object AnnouncementFormatter {
         val textLanguage = voiceLanguage.toAnnouncementTextLanguage()
         val title = event.title.cleanIf(options.readTitle)
         val artist = event.artist.cleanIf(options.readArtist)
-        val album = event.album.cleanIf(options.readAlbum)
+        val album = event.album.cleanIf(options.shouldReadAlbum(event, collection))
         val collectionTitle = event.queueTitle.cleanIf(options.readCollection)
         val track = if (options.readTrackNumber) {
             AlbumTrackNumberResolver.resolve(
                 event = event,
-                allowQueuePositionFallback = collection == PlaybackCollection.ALBUM || mode == AnnouncementMode.ALBUM,
+                // A queue position is meaningful as an album track only when
+                // the content was actually identified as an album. A user may
+                // choose album/track fields for a recommendation or shuffle,
+                // but that queue is not album-ordered.
+                allowQueuePositionFallback = collection == PlaybackCollection.ALBUM ||
+                    (mode == AnnouncementMode.ALBUM && collection == PlaybackCollection.UNKNOWN),
             )
         } else {
             null
@@ -59,30 +76,69 @@ object AnnouncementFormatter {
             mode
         }
 
-        return when (resolvedMode) {
-            AnnouncementMode.TITLE_ONLY -> title
-            AnnouncementMode.TITLE_AND_ARTIST -> joinTitleAndArtist(title, artist)
-            AnnouncementMode.ALBUM -> joinParts(
-                album?.let { textLanguage.albumLabel(it) },
-                track?.let { textLanguage.trackLabel(it) },
-                title,
-                artist,
+        val parts = when (resolvedMode) {
+            AnnouncementMode.TITLE_ONLY -> listOf(
+                AnnouncementPart.TITLE to title,
             )
-            AnnouncementMode.PLAYLIST -> joinParts(
-                collectionTitle?.let { textLanguage.playlistLabel(it) },
-                title,
-                artist,
+            AnnouncementMode.TITLE_AND_ARTIST -> listOf(
+                AnnouncementPart.TITLE to title,
+                AnnouncementPart.ARTIST to artist,
             )
-            AnnouncementMode.SMART -> joinTitleAndArtist(title, artist)
-        }?.withSentenceEnding()
+            AnnouncementMode.ALBUM -> listOf(
+                // The field name is already visible in the settings. Speaking
+                // "Album <name>" makes the album value sound duplicated,
+                // especially with an English voice. Read the title itself.
+                AnnouncementPart.ALBUM to album,
+                AnnouncementPart.TRACK_NUMBER to track?.let { textLanguage.trackLabel(it) },
+                AnnouncementPart.TITLE to title,
+                AnnouncementPart.ARTIST to artist,
+            )
+            AnnouncementMode.PLAYLIST -> listOf(
+                AnnouncementPart.COLLECTION to collectionTitle?.let { textLanguage.playlistLabel(it) },
+                AnnouncementPart.ALBUM to album,
+                AnnouncementPart.TRACK_NUMBER to track?.let { textLanguage.trackLabel(it) },
+                AnnouncementPart.TITLE to title,
+                AnnouncementPart.ARTIST to artist,
+            )
+            AnnouncementMode.SMART -> listOf(
+                AnnouncementPart.TITLE to title,
+                AnnouncementPart.ARTIST to artist,
+            )
+        }
+
+        return joinParts(*orderParts(parts, options.announcementOrder).map { it.second }.toTypedArray())
+            ?.withSentenceEnding()
+    }
+
+    private enum class AnnouncementPart {
+        COLLECTION,
+        ALBUM,
+        TRACK_NUMBER,
+        TITLE,
+        ARTIST,
+    }
+
+    private fun orderParts(
+        parts: List<Pair<AnnouncementPart, String?>>,
+        order: AnnouncementOrder,
+    ): List<Pair<AnnouncementPart, String?>> {
+        val firstPart = when (order) {
+            AnnouncementOrder.DEFAULT -> null
+            AnnouncementOrder.TITLE_FIRST -> AnnouncementPart.TITLE
+            AnnouncementOrder.ALBUM_FIRST -> AnnouncementPart.ALBUM
+            AnnouncementOrder.TRACK_NUMBER_FIRST -> AnnouncementPart.TRACK_NUMBER
+            AnnouncementOrder.ARTIST_FIRST -> AnnouncementPart.ARTIST
+            AnnouncementOrder.COLLECTION_FIRST -> AnnouncementPart.COLLECTION
+        }
+        if (firstPart == null || parts.none { it.first == firstPart && !it.second.isNullOrBlank() }) {
+            return parts
+        }
+        val first = parts.first { it.first == firstPart }
+        return listOf(first) + parts.filterNot { it.first == firstPart }
     }
 
     private fun joinParts(vararg parts: String?): String? = parts
         .filterNot { it.isNullOrBlank() }
-        .takeIf { it.isNotEmpty() }
-        ?.joinToString(", ")
-
-    private fun joinTitleAndArtist(title: String?, artist: String?): String? = listOfNotNull(title, artist)
         .takeIf { it.isNotEmpty() }
         ?.joinToString(", ")
 
@@ -92,11 +148,6 @@ object AnnouncementFormatter {
     private fun String.withSentenceEnding(): String {
         val clean = trim().trimEnd('.', '!', '?', '。')
         return "$clean."
-    }
-
-    private fun AnnouncementTextLanguage.albumLabel(album: String): String = when (this) {
-        AnnouncementTextLanguage.KOREAN -> "앨범 $album"
-        AnnouncementTextLanguage.ENGLISH -> "Album $album"
     }
 
     private fun AnnouncementTextLanguage.trackLabel(track: Int): String = when (this) {

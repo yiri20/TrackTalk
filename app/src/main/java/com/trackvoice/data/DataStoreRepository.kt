@@ -24,7 +24,8 @@ private val Context.trackVoiceDataStore: DataStore<Preferences> by preferencesDa
 private fun appKey(packageName: String, suffix: String): Preferences.Key<String> =
     stringPreferencesKey("app.$packageName.$suffix")
 
-private const val TTS_VOLUME_DEFAULT_VERSION = 1
+private const val TTS_VOLUME_DEFAULT_VERSION = 2
+private const val CONTENT_READ_DEFAULT_VERSION = 1
 
 class DataStoreRepository(private val context: Context) {
     private val dataStore = context.trackVoiceDataStore
@@ -56,10 +57,42 @@ class DataStoreRepository(private val context: Context) {
                 return@edit
             }
             val storedVolume = preferences[Keys.volume]
+            // Migrate only values that belonged to an older app default. A
+            // stored 65% value may be an intentional Plus setting, so keep it.
             if (storedVolume == null || storedVolume == 1f || storedVolume == 0.85f) {
                 preferences[Keys.volume] = DEFAULT_TTS_VOLUME
             }
             preferences[Keys.ttsVolumeDefaultVersion] = TTS_VOLUME_DEFAULT_VERSION
+        }
+    }
+
+    suspend fun migrateContentReadDefaults() {
+        dataStore.edit { preferences ->
+            if ((preferences[Keys.contentReadDefaultVersion] ?: 0) >= CONTENT_READ_DEFAULT_VERSION) {
+                return@edit
+            }
+
+            // Only migrate the old untouched defaults. Any other set is a
+            // user choice and must remain intact.
+            val oldGlobalDefaults = setOf(
+                AnnouncementReadField.TITLE.name,
+                AnnouncementReadField.ARTIST.name,
+            )
+            val oldPlaylistDefaults = setOf(
+                AnnouncementReadField.COLLECTION.name,
+                AnnouncementReadField.TITLE.name,
+                AnnouncementReadField.ARTIST.name,
+            )
+            if (preferences[Keys.defaultReadFields] == oldGlobalDefaults) {
+                preferences[Keys.defaultReadFields] = DEFAULT_GLOBAL_READ_FIELDS.map(AnnouncementReadField::name).toSet()
+            }
+            if (preferences[Keys.playlistReadFields] == oldPlaylistDefaults) {
+                preferences[Keys.playlistReadFields] = DEFAULT_PLAYLIST_READ_FIELDS.map(AnnouncementReadField::name).toSet()
+            }
+            if (preferences[Keys.algorithmReadFields] == oldGlobalDefaults) {
+                preferences[Keys.algorithmReadFields] = DEFAULT_ALGORITHMIC_READ_FIELDS.map(AnnouncementReadField::name).toSet()
+            }
+            preferences[Keys.contentReadDefaultVersion] = CONTENT_READ_DEFAULT_VERSION
         }
     }
 
@@ -145,12 +178,16 @@ class DataStoreRepository(private val context: Context) {
         val timing = stringPreferencesKey("timing")
         val delaySeconds = intPreferencesKey("delay_seconds")
         val defaultMode = stringPreferencesKey("default_mode")
+        val useContentTypeSettings = booleanPreferencesKey("use_content_type_settings")
+        val defaultReadFields = stringSetPreferencesKey("default_read_fields")
+        val announcementOrder = stringPreferencesKey("announcement_order")
         val allowRepeatAnnouncements = booleanPreferencesKey("allow_repeat")
         val minimumPlaybackSeconds = intPreferencesKey("minimum_playback_seconds")
         val albumMode = stringPreferencesKey("album_mode")
         val playlistMode = stringPreferencesKey("playlist_mode")
         val algorithmMode = stringPreferencesKey("algorithm_mode")
         val albumReadFields = stringSetPreferencesKey("album_read_fields")
+        val albumNameFirstTrackOnly = booleanPreferencesKey("album_name_first_track_only")
         val playlistReadFields = stringSetPreferencesKey("playlist_read_fields")
         val algorithmReadFields = stringSetPreferencesKey("algorithm_read_fields")
         val voiceLanguage = stringPreferencesKey("voice_language")
@@ -160,6 +197,7 @@ class DataStoreRepository(private val context: Context) {
         val pitch = floatPreferencesKey("pitch")
         val volume = floatPreferencesKey("volume")
         val ttsVolumeDefaultVersion = intPreferencesKey("tts_volume_default_version")
+        val contentReadDefaultVersion = intPreferencesKey("content_read_default_version")
         val raiseDeviceVolume = booleanPreferencesKey("raise_device_volume")
         val deviceVolumePercent = intPreferencesKey("device_volume_percent")
         val knownPackages = stringSetPreferencesKey("known_app_packages")
@@ -207,9 +245,12 @@ class DataStoreRepository(private val context: Context) {
                 .coerceIn(MIN_MUSIC_DUCK_PERCENT, MAX_MUSIC_DUCK_PERCENT),
             trackStartBehavior = trackStartBehavior,
             showStatusNotification = this[Keys.showStatusNotification] ?: true,
-            timing = enumOrDefault(this[Keys.timing], AnnouncementTiming.IMMEDIATE),
+            timing = enumOrDefault(this[Keys.timing], AnnouncementTiming.IMMEDIATE).normalizedForSettings(),
             delaySeconds = (this[Keys.delaySeconds] ?: 0).coerceIn(0, 2),
             defaultMode = enumOrDefault(this[Keys.defaultMode], AnnouncementMode.SMART),
+            useContentTypeSettings = this[Keys.useContentTypeSettings] ?: true,
+            defaultReadFields = this[Keys.defaultReadFields]?.toReadFields() ?: DEFAULT_GLOBAL_READ_FIELDS,
+            announcementOrder = enumOrDefault(this[Keys.announcementOrder], AnnouncementOrder.DEFAULT),
             allowRepeatAnnouncements = this[Keys.allowRepeatAnnouncements] ?: false,
             minimumPlaybackSeconds = (this[Keys.minimumPlaybackSeconds] ?: 0).coerceIn(0, 120),
             albumMode = albumMode,
@@ -217,6 +258,7 @@ class DataStoreRepository(private val context: Context) {
             algorithmMode = algorithmMode,
             albumReadFields = this[Keys.albumReadFields]?.toReadFields()
                 ?: readFieldsForMode(albumMode, DEFAULT_ALBUM_READ_FIELDS),
+            albumNameFirstTrackOnly = this[Keys.albumNameFirstTrackOnly] ?: false,
             playlistReadFields = this[Keys.playlistReadFields]?.toReadFields()
                 ?: readFieldsForMode(playlistMode, DEFAULT_PLAYLIST_READ_FIELDS),
             algorithmReadFields = this[Keys.algorithmReadFields]?.toReadFields()
@@ -255,11 +297,14 @@ class DataStoreRepository(private val context: Context) {
             val readTrackNumber = this[AppKeys.readTrackNumber(packageName)] ?: true
             val readAlbum = this[AppKeys.readAlbum(packageName)] ?: true
             val readCollection = this[AppKeys.readCollection(packageName)] ?: true
-            val timing = nullableEnum<AnnouncementTiming>(this[AppKeys.timing(packageName)])
+            val timing = nullableEnum<AnnouncementTiming>(this[AppKeys.timing(packageName)])?.normalizedForSettings()
             AppSettings(
                 packageName = packageName,
                 appName = this[AppKeys.name(packageName)] ?: packageName,
-                enabled = this[AppKeys.enabled(packageName)] ?: true,
+                // YouTube is primarily a video app, so keep its first-run
+                // guide disabled. An explicit stored value still wins when
+                // the user turns it on or off from the Apps screen.
+                enabled = this[AppKeys.enabled(packageName)] ?: defaultAppGuideEnabled(packageName),
                 useCustomGuideSettings = this[AppKeys.useCustomGuideSettings(packageName)] ?: (
                     mode != AnnouncementMode.SMART ||
                         !readTitle ||
@@ -296,12 +341,16 @@ class DataStoreRepository(private val context: Context) {
         this[Keys.timing] = settings.timing.name
         this[Keys.delaySeconds] = settings.delaySeconds.coerceIn(0, 2)
         this[Keys.defaultMode] = settings.defaultMode.name
+        this[Keys.useContentTypeSettings] = settings.useContentTypeSettings
+        this[Keys.defaultReadFields] = settings.defaultReadFields.map(AnnouncementReadField::name).toSet()
+        this[Keys.announcementOrder] = settings.announcementOrder.name
         this[Keys.allowRepeatAnnouncements] = settings.allowRepeatAnnouncements
         this[Keys.minimumPlaybackSeconds] = settings.minimumPlaybackSeconds.coerceIn(0, 120)
         this[Keys.albumMode] = settings.albumMode.name
         this[Keys.playlistMode] = settings.playlistMode.name
         this[Keys.algorithmMode] = settings.algorithmMode.name
         this[Keys.albumReadFields] = settings.albumReadFields.map(AnnouncementReadField::name).toSet()
+        this[Keys.albumNameFirstTrackOnly] = settings.albumNameFirstTrackOnly
         this[Keys.playlistReadFields] = settings.playlistReadFields.map(AnnouncementReadField::name).toSet()
         this[Keys.algorithmReadFields] = settings.algorithmReadFields.map(AnnouncementReadField::name).toSet()
         this[Keys.voiceLanguage] = settings.voiceLanguage.name
@@ -337,6 +386,15 @@ class DataStoreRepository(private val context: Context) {
         value?.let { runCatching { enumValueOf<T>(it) }.getOrNull() }
 }
 
+private fun AnnouncementTiming.normalizedForSettings(): AnnouncementTiming = when (this) {
+    // The old "between tracks" option used the same post-detection delay as
+    // DELAYED. Keep old saved settings understandable in the new two-option UI.
+    AnnouncementTiming.BETWEEN_TRACKS -> AnnouncementTiming.DELAYED
+    AnnouncementTiming.IMMEDIATE,
+    AnnouncementTiming.DELAYED,
+    -> this
+}
+
 private fun Set<String>.toReadFields(): Set<AnnouncementReadField> =
     mapNotNull { runCatching { AnnouncementReadField.valueOf(it) }.getOrNull() }.toSet()
 
@@ -344,23 +402,15 @@ private fun readFieldsForMode(
     mode: AnnouncementMode,
     defaultFields: Set<AnnouncementReadField>,
 ): Set<AnnouncementReadField> = when (mode) {
-    AnnouncementMode.ALBUM -> setOf(
-        AnnouncementReadField.ALBUM,
-        AnnouncementReadField.TRACK_NUMBER,
-        AnnouncementReadField.TITLE,
-        AnnouncementReadField.ARTIST,
-    )
-    AnnouncementMode.PLAYLIST -> setOf(
-        AnnouncementReadField.COLLECTION,
-        AnnouncementReadField.TITLE,
-        AnnouncementReadField.ARTIST,
-    )
+    AnnouncementMode.ALBUM,
+    AnnouncementMode.PLAYLIST,
+    AnnouncementMode.SMART,
+    -> defaultFields
     AnnouncementMode.TITLE_ONLY -> setOf(AnnouncementReadField.TITLE)
     AnnouncementMode.TITLE_AND_ARTIST -> setOf(
         AnnouncementReadField.TITLE,
         AnnouncementReadField.ARTIST,
     )
-    AnnouncementMode.SMART -> defaultFields
 }
 
 private fun appBooleanKey(packageName: String, suffix: String): Preferences.Key<Boolean> =

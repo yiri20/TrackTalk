@@ -4,15 +4,23 @@ import com.trackvoice.data.UserSettings
 import com.trackvoice.data.MusicTreatment
 import com.trackvoice.data.TrackStartBehavior
 import com.trackvoice.data.AnnouncementMode
+import com.trackvoice.data.AnnouncementOrder
 import com.trackvoice.data.AnnouncementTiming
 import com.trackvoice.data.AppSettings
 import com.trackvoice.data.DEFAULT_TTS_VOLUME
+import com.trackvoice.data.DEFAULT_TTS_VOLUME_PERCENT
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PremiumEntitlementsTest {
+    @Test
+    fun freeVoiceDefaultIsReducedToComfortableLevel() {
+        assertEquals(40, DEFAULT_TTS_VOLUME_PERCENT)
+        assertEquals(0.40f, DEFAULT_TTS_VOLUME, 0f)
+    }
+
     @Test
     fun freeUserGetsBasicVoiceAndAutomationDefaults() {
         val effective = UserSettings(
@@ -31,6 +39,8 @@ class PremiumEntitlementsTest {
         assertEquals(MusicTreatment.DUCK, effective.musicTreatment)
         assertEquals(TrackStartBehavior.PLAY_IMMEDIATELY, effective.trackStartBehavior)
         assertEquals(AnnouncementMode.TITLE_AND_ARTIST, effective.algorithmMode)
+        assertEquals(AnnouncementOrder.DEFAULT, effective.announcementOrder)
+        assertFalse(effective.albumNameFirstTrackOnly)
         assertFalse(effective.raiseDeviceVolume)
         assertEquals(90, effective.deviceVolumePercent)
     }

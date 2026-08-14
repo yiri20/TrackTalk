@@ -23,25 +23,32 @@ class AudioDeviceMonitor(context: Context, private val onChanged: (List<Connecte
     }
 
     fun start() {
-        audioManager.registerAudioDeviceCallback(callback, Handler(Looper.getMainLooper()))
-        publish()
+        runCatching {
+            audioManager.registerAudioDeviceCallback(callback, Handler(Looper.getMainLooper()))
+            publish()
+        }
     }
 
-    fun stop() = audioManager.unregisterAudioDeviceCallback(callback)
+    fun stop() {
+        runCatching { audioManager.unregisterAudioDeviceCallback(callback) }
+    }
 
     private fun publish() {
-        onChanged(audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
-            .filter { it.type in supportedTypes }
-            .map { device ->
-                val name = device.productName?.toString()?.ifBlank { null } ?: typeLabel(device.type)
-                val address = device.address.orEmpty()
-                ConnectedAudioDevice(
-                    key = if (address.isNotBlank()) "${device.type}:$address" else "${device.type}:$name",
-                    name = name,
-                    typeLabel = typeLabel(device.type),
-                )
-            }
-            .distinctBy { it.key })
+        val devices = runCatching {
+            audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+                .filter { it.type in supportedTypes }
+                .map { device ->
+                    val name = device.productName?.toString()?.ifBlank { null } ?: typeLabel(device.type)
+                    val address = device.address.orEmpty()
+                    ConnectedAudioDevice(
+                        key = if (address.isNotBlank()) "${device.type}:$address" else "${device.type}:$name",
+                        name = name,
+                        typeLabel = typeLabel(device.type),
+                    )
+                }
+                .distinctBy { it.key }
+        }.getOrDefault(emptyList())
+        runCatching { onChanged(devices) }
     }
 
     private fun typeLabel(type: Int): String = when (type) {

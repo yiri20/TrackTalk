@@ -35,23 +35,91 @@ class DuplicateSuppressorTest {
     }
 
     @Test
-    fun metadataEnrichmentWithNewAnnouncementTextIsReadOnce() {
+    fun metadataEnrichmentDoesNotReadTheSameTrackAgain() {
         val suppressor = DuplicateSuppressor()
         val early = event().copy(artist = null)
         val enriched = event()
 
-        assertTrue(suppressor.shouldAnnounce(early, false, 1_000L, "Glass Eyes."))
-        suppressor.markAnnounced(early, 1_000L, "Glass Eyes.")
-        assertTrue(
+        assertTrue(suppressor.shouldAnnounce(early, false, 1_000L))
+        suppressor.markAnnounced(early, 1_000L)
+        assertFalse(suppressor.shouldAnnounce(enriched, false, 2_000L))
+    }
+
+    @Test
+    fun trackNumberCorrectionForSameMediaIdDoesNotReadAgain() {
+        val suppressor = DuplicateSuppressor()
+        val early = event().copy(trackNumber = null)
+        val corrected = event().copy(trackNumber = 3)
+
+        suppressor.markAnnounced(early, 1_000L)
+
+        assertFalse(suppressor.shouldAnnounce(corrected, false, 2_000L))
+    }
+
+    @Test
+    fun changedMediaIdWithSameTrackMetadataDoesNotReadAgain() {
+        val suppressor = DuplicateSuppressor()
+        val early = event()
+        val refreshed = event().copy(mediaId = "provider://track-3")
+
+        suppressor.markAnnounced(early, 1_000L)
+
+        assertFalse(suppressor.shouldAnnounce(refreshed, false, 2_000L))
+    }
+
+    @Test
+    fun changedMediaIdAndCorrectedTrackNumberDoesNotReadAgain() {
+        val suppressor = DuplicateSuppressor()
+        val early = event().copy(trackNumber = 0)
+        val corrected = event().copy(
+            mediaId = "provider://canonical-track-3",
+            trackNumber = 3,
+        )
+
+        suppressor.markAnnounced(early, 1_000L, announcementText = "Glass Eyes, Radiohead.")
+
+        assertFalse(
             suppressor.shouldAnnounce(
-                enriched,
-                false,
-                2_000L,
-                "Glass Eyes, Radiohead.",
+                corrected,
+                allowRepeat = false,
+                now = 20_000L,
+                announcementText = "트랙 3번, Glass Eyes, Radiohead.",
             ),
         )
-        suppressor.markAnnounced(enriched, 2_000L, "Glass Eyes, Radiohead.")
-        assertFalse(suppressor.shouldAnnounce(enriched, false, 3_000L, "Glass Eyes, Radiohead."))
+    }
+
+    @Test
+    fun queueDescriptionChangingToCanonicalTitleDoesNotReadAgain() {
+        val suppressor = DuplicateSuppressor()
+        val queueDescription = event().copy(
+            title = "Up next",
+            mediaId = "queue-item-3",
+            activeQueuePosition = 2,
+            queueTitle = "A Moon Shaped Pool",
+        )
+        val canonical = event().copy(
+            mediaId = "provider://canonical-track-3",
+            activeQueuePosition = 2,
+            queueTitle = "A Moon Shaped Pool",
+        )
+
+        suppressor.markAnnounced(queueDescription, 1_000L)
+
+        assertFalse(suppressor.shouldAnnounce(canonical, false, 2_000L))
+    }
+
+    @Test
+    fun albumCorrectionWithSameTitleAndArtistDoesNotReadAgain() {
+        val suppressor = DuplicateSuppressor()
+        val first = event().copy(album = "Original album")
+        val corrected = event().copy(
+            album = "Compilation album",
+            mediaId = "provider://refreshed-track-3",
+        )
+
+        suppressor.markAnnounced(first, 1_000L)
+
+        assertFalse(suppressor.shouldAnnounce(corrected, false, 20_000L))
     }
 
     @Test
@@ -80,6 +148,41 @@ class DuplicateSuppressorTest {
         suppressor.markAnnounced(event, 1_000L)
         assertFalse(suppressor.shouldAnnounce(event, true, 4_000L))
         assertTrue(suppressor.shouldAnnounce(event, true, 6_000L))
+    }
+
+    @Test
+    fun identicalSpokenTextFromASecondEventIsSuppressedBriefly() {
+        val suppressor = DuplicateSuppressor()
+        val first = event().copy(title = "First song", mediaId = "track-1")
+        val second = event().copy(title = "Second song", mediaId = "track-2")
+
+        suppressor.markAnnounced(first, 1_000L, announcementText = "Now playing.")
+
+        assertFalse(suppressor.shouldAnnounce(second, false, 2_000L, "Now playing."))
+        assertFalse(suppressor.shouldAnnounce(second, false, 7_000L, "Now playing."))
+        assertTrue(suppressor.shouldAnnounce(second, false, 13_001L, "Now playing."))
+    }
+
+    @Test
+    fun sameTrackFromAnotherMediaSessionIsSuppressedWhileSpeechIsActive() {
+        val suppressor = DuplicateSuppressor()
+        val first = event("com.google.android.apps.youtube.music")
+        val second = first.copy(
+            sourcePackageName = "com.google.android.youtube",
+            mediaId = "different-session-id",
+            album = "Updated album metadata",
+        )
+
+        suppressor.markAnnounced(first, 1_000L, announcementText = "Glass Eyes, Radiohead.")
+
+        assertFalse(
+            suppressor.shouldAnnounce(
+                second,
+                allowRepeat = false,
+                now = 4_000L,
+                announcementText = "Glass Eyes, Radiohead, Album Updated album metadata.",
+            ),
+        )
     }
 
     @Test

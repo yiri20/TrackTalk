@@ -1,6 +1,7 @@
-package com.trackvoice.announcement
+﻿package com.trackvoice.announcement
 
 import com.trackvoice.data.AnnouncementMode
+import com.trackvoice.data.AnnouncementOrder
 import com.trackvoice.media.PlaybackEvent
 import com.trackvoice.media.PlaybackCollection
 import com.trackvoice.media.PlaybackStatus
@@ -30,15 +31,71 @@ class AnnouncementFormatterTest {
     @Test
     fun albumModeReadsTrackAndTitle() {
         assertEquals(
-            "앨범 A Moon Shaped Pool, 트랙 3번, Glass Eyes, Radiohead.",
+            "A Moon Shaped Pool, 트랙 3번, Glass Eyes, Radiohead.",
             AnnouncementFormatter.format(event(), AnnouncementMode.ALBUM),
+        )
+    }
+
+    @Test
+    fun plusOrderCanPutTitleFirst() {
+        assertEquals(
+            "Glass Eyes, A Moon Shaped Pool, 트랙 3번, Radiohead.",
+            AnnouncementFormatter.format(
+                event(),
+                AnnouncementMode.ALBUM,
+                AnnouncementFormatOptions(announcementOrder = AnnouncementOrder.TITLE_FIRST),
+                collection = PlaybackCollection.ALBUM,
+            ),
+        )
+    }
+
+    @Test
+    fun plusOrderCanPutTrackNumberFirst() {
+        assertEquals(
+            "트랙 3번, A Moon Shaped Pool, Glass Eyes, Radiohead.",
+            AnnouncementFormatter.format(
+                event(),
+                AnnouncementMode.ALBUM,
+                AnnouncementFormatOptions(announcementOrder = AnnouncementOrder.TRACK_NUMBER_FIRST),
+                collection = PlaybackCollection.ALBUM,
+            ),
+        )
+    }
+
+    @Test
+    fun plusOrderSkipsAnUnavailableFieldAndKeepsCheckedFields() {
+        assertEquals(
+            "Glass Eyes, Radiohead.",
+            AnnouncementFormatter.format(
+                event(),
+                AnnouncementMode.ALBUM,
+                AnnouncementFormatOptions(
+                    readAlbum = false,
+                    readTrackNumber = false,
+                    announcementOrder = AnnouncementOrder.ALBUM_FIRST,
+                ),
+                collection = PlaybackCollection.ALBUM,
+            ),
+        )
+    }
+
+    @Test
+    fun plusOrderCanPutPlaylistNameFirst() {
+        assertEquals(
+            "Glass Eyes, 재생목록 출근길, A Moon Shaped Pool, 트랙 3번, Radiohead.",
+            AnnouncementFormatter.format(
+                event(queueTitle = "출근길"),
+                AnnouncementMode.PLAYLIST,
+                AnnouncementFormatOptions(announcementOrder = AnnouncementOrder.TITLE_FIRST),
+                collection = PlaybackCollection.PLAYLIST,
+            ),
         )
     }
 
     @Test
     fun englishVoiceLanguageLocalizesAlbumAndTrackLabels() {
         assertEquals(
-            "Album A Moon Shaped Pool, Track 3, Glass Eyes, Radiohead.",
+            "A Moon Shaped Pool, Track 3, Glass Eyes, Radiohead.",
             AnnouncementFormatter.format(
                 event(),
                 AnnouncementMode.ALBUM,
@@ -50,7 +107,7 @@ class AnnouncementFormatterTest {
     @Test
     fun nullTrackFallsBackToTitle() {
         assertEquals(
-            "앨범 A Moon Shaped Pool, Glass Eyes, Radiohead.",
+            "A Moon Shaped Pool, Glass Eyes, Radiohead.",
             AnnouncementFormatter.format(event(trackNumber = null), AnnouncementMode.ALBUM),
         )
     }
@@ -58,7 +115,7 @@ class AnnouncementFormatterTest {
     @Test
     fun albumModeUsesQueuePositionWhenTrackMetadataIsMissing() {
         assertEquals(
-            "앨범 A Moon Shaped Pool, 트랙 3번, Glass Eyes, Radiohead.",
+            "A Moon Shaped Pool, 트랙 3번, Glass Eyes, Radiohead.",
             AnnouncementFormatter.format(
                 event(trackNumber = null).copy(
                     activeQueuePosition = 2,
@@ -107,7 +164,183 @@ class AnnouncementFormatterTest {
             AnnouncementFormatter.format(
                 event(queueTitle = "출근길"),
                 AnnouncementMode.PLAYLIST,
+                AnnouncementFormatOptions(
+                    readAlbum = false,
+                    readTrackNumber = false,
+                ),
                 collection = PlaybackCollection.PLAYLIST,
+            ),
+        )
+    }
+
+    @Test
+    fun playlistModeCanReadAlbumAndTrackNumberWhenSelected() {
+        assertEquals(
+            "재생목록 출근길, A Moon Shaped Pool, 트랙 3번, Glass Eyes, Radiohead.",
+            AnnouncementFormatter.format(
+                event(queueTitle = "출근길"),
+                AnnouncementMode.PLAYLIST,
+                AnnouncementFormatOptions(
+                    readTitle = true,
+                    readArtist = true,
+                    readTrackNumber = true,
+                    readAlbum = true,
+                    readCollection = true,
+                ),
+                collection = PlaybackCollection.PLAYLIST,
+            ),
+        )
+    }
+
+    @Test
+    fun algorithmicModeCanReadAlbumAndTrackWhenSelected() {
+        assertEquals(
+            "A Moon Shaped Pool, 트랙 3번, Glass Eyes, Radiohead.",
+            AnnouncementFormatter.format(
+                event(),
+                AnnouncementMode.ALBUM,
+                AnnouncementFormatOptions(
+                    readTitle = true,
+                    readArtist = true,
+                    readTrackNumber = true,
+                    readAlbum = true,
+                    readCollection = false,
+                ),
+                collection = PlaybackCollection.ALGORITHMIC,
+            ),
+        )
+    }
+
+    @Test
+    fun albumOnlyReadsTheAlbumNameWithoutARedundantLabel() {
+        assertEquals(
+            "A Moon Shaped Pool.",
+            AnnouncementFormatter.format(
+                event(),
+                AnnouncementMode.ALBUM,
+                AnnouncementFormatOptions(
+                    readTitle = false,
+                    readArtist = false,
+                    readTrackNumber = false,
+                    readAlbum = true,
+                    readCollection = false,
+                ),
+                collection = PlaybackCollection.ALGORITHMIC,
+            ),
+        )
+    }
+
+    @Test
+    fun albumNameCanBeLimitedToTheFirstTrack() {
+        val options = AnnouncementFormatOptions(albumNameFirstTrackOnly = true)
+        assertEquals(
+            "A Moon Shaped Pool, 트랙 1번, First Song, Radiohead.",
+            AnnouncementFormatter.format(
+                event(title = "First Song", trackNumber = 1),
+                AnnouncementMode.ALBUM,
+                options,
+                collection = PlaybackCollection.ALBUM,
+            ),
+        )
+        assertEquals(
+            "트랙 2번, Second Song, Radiohead.",
+            AnnouncementFormatter.format(
+                event(title = "Second Song", trackNumber = 2),
+                AnnouncementMode.ALBUM,
+                options,
+                collection = PlaybackCollection.ALBUM,
+            ),
+        )
+    }
+
+    @Test
+    fun albumNameFirstTrackOnlyUsesStableQueuePositionWhenTrackMetadataIsMissing() {
+        val options = AnnouncementFormatOptions(albumNameFirstTrackOnly = true)
+        val first = event(trackNumber = null).copy(activeQueuePosition = 0)
+        val second = event(title = "Second Song", trackNumber = null).copy(activeQueuePosition = 1)
+
+        assertEquals(
+            "A Moon Shaped Pool, 트랙 1번, Glass Eyes, Radiohead.",
+            AnnouncementFormatter.format(first, AnnouncementMode.ALBUM, options, PlaybackCollection.ALBUM),
+        )
+        assertEquals(
+            "트랙 2번, Second Song, Radiohead.",
+            AnnouncementFormatter.format(second, AnnouncementMode.ALBUM, options, PlaybackCollection.ALBUM),
+        )
+    }
+
+    @Test
+    fun albumNameFirstTrackOnlyDoesNotGuessFirstTrackAfterQueueReorder() {
+        val announcement = AnnouncementFormatter.format(
+            event(trackNumber = null).copy(activeQueuePosition = 0, queueOrderChanged = true),
+            AnnouncementMode.ALBUM,
+            AnnouncementFormatOptions(albumNameFirstTrackOnly = true),
+            PlaybackCollection.ALBUM,
+        )
+
+        assertEquals("Glass Eyes, Radiohead.", announcement)
+    }
+
+    @Test
+    fun albumNameFirstTrackOnlyDoesNotTreatTrackOneAsFirstDuringShuffle() {
+        val announcement = AnnouncementFormatter.format(
+            event(trackNumber = 1).copy(shuffleState = com.trackvoice.media.ShuffleState.ON),
+            AnnouncementMode.ALBUM,
+            AnnouncementFormatOptions(albumNameFirstTrackOnly = true),
+            PlaybackCollection.ALBUM,
+        )
+
+        assertEquals("트랙 1번, Glass Eyes, Radiohead.", announcement)
+    }
+
+    @Test
+    fun trackNumberOnlyReadsTheDirectTrackNumber() {
+        assertEquals(
+            "트랙 3번.",
+            AnnouncementFormatter.format(
+                event(),
+                AnnouncementMode.ALBUM,
+                AnnouncementFormatOptions(
+                    readTitle = false,
+                    readArtist = false,
+                    readTrackNumber = true,
+                    readAlbum = false,
+                    readCollection = false,
+                ),
+                collection = PlaybackCollection.ALGORITHMIC,
+            ),
+        )
+    }
+
+    @Test
+    fun algorithmicModeDoesNotTreatQueuePositionAsAlbumTrackNumber() {
+        val announcement = AnnouncementFormatter.format(
+            event(trackNumber = null).copy(
+                activeQueuePosition = 2,
+                queue = List(11) { com.trackvoice.media.QueueItemSnapshot("track-$it", "Song $it", "Artist") },
+            ),
+            AnnouncementMode.ALBUM,
+            AnnouncementFormatOptions(
+                readTitle = true,
+                readArtist = true,
+                readTrackNumber = true,
+                readAlbum = true,
+                readCollection = false,
+            ),
+            collection = PlaybackCollection.ALGORITHMIC,
+        )
+
+        assertEquals("A Moon Shaped Pool, Glass Eyes, Radiohead.", announcement)
+    }
+
+    @Test
+    fun nonAlbumPlaybackCanReadDirectAlbumTrackMetadata() {
+        assertEquals(
+            "A Moon Shaped Pool, 트랙 3번, Glass Eyes, Radiohead.",
+            AnnouncementFormatter.format(
+                event(queueTitle = "Daily Mix 1"),
+                AnnouncementMode.ALBUM,
+                collection = PlaybackCollection.ALGORITHMIC,
             ),
         )
     }
@@ -119,6 +352,10 @@ class AnnouncementFormatterTest {
             AnnouncementFormatter.format(
                 event(queueTitle = "출근길"),
                 AnnouncementMode.PLAYLIST,
+                AnnouncementFormatOptions(
+                    readAlbum = false,
+                    readTrackNumber = false,
+                ),
                 collection = PlaybackCollection.PLAYLIST,
                 voiceLanguage = VoiceLanguage.ENGLISH,
             ),

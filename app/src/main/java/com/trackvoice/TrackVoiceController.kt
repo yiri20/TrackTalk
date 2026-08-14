@@ -3,21 +3,26 @@ package com.trackvoice
 import android.content.Context
 import com.trackvoice.announcement.AnnouncementPolicy
 import com.trackvoice.announcement.AnnouncementFormatter
+import com.trackvoice.announcement.AnnouncementTrackMatcher
 import com.trackvoice.announcement.AudioFocusManager
 import com.trackvoice.announcement.AudioOutputDetector
 import com.trackvoice.announcement.DuplicateSuppressor
 import com.trackvoice.announcement.AudioDeviceMonitor
 import com.trackvoice.announcement.AnnouncementPlaybackPlanner
+import com.trackvoice.announcement.AnnouncementAudioTiming
 import com.trackvoice.announcement.ConnectedAudioDevice
 import com.trackvoice.announcement.MusicVolumeManager
 import com.trackvoice.announcement.InstalledVoice
 import com.trackvoice.announcement.TtsEngine
 import com.trackvoice.announcement.TtsState
+import com.trackvoice.announcement.shouldReadAlbum
 import com.trackvoice.data.AnnouncementMode
 import com.trackvoice.data.AppSettings
 import com.trackvoice.data.DataStoreRepository
 import com.trackvoice.data.UserSettings
+import com.trackvoice.diagnostics.TrackTalkDebugLog
 import com.trackvoice.data.AudioDeviceSettings
+import com.trackvoice.data.CollectionFallback
 import com.trackvoice.monetization.PremiumState
 import com.trackvoice.monetization.forPremiumEntitlement
 import android.content.Intent
@@ -32,6 +37,7 @@ import com.trackvoice.media.PlaybackEvent
 import com.trackvoice.media.TrackFingerprint
 import com.trackvoice.media.PlaybackCollection
 import com.trackvoice.media.PlaybackCollectionResolver
+import com.trackvoice.media.AlbumTrackNumberResolver
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -45,6 +51,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 data class MediaUiState(
     val currentEvent: PlaybackEvent? = null,
@@ -81,8 +88,14 @@ class TrackVoiceController(
     private val duplicateSuppressor = DuplicateSuppressor()
     private val pendingFingerprints = mutableSetOf<String>()
     private var pendingJob: Job? = null
+    private var pendingAnnouncementEvent: PlaybackEvent? = null
+    private var pendingAnnouncementToken = 0L
+    private var preparedAnnouncement: PreparedAnnouncement? = null
     private var monitor: MediaSessionMonitor? = null
     private var pausedPlayback: PlaybackPauseToken? = null
+    private var activeSpeechTrack: PlaybackEvent? = null
+    private var lastAnnouncedTrack: PlaybackEvent? = null
+    private var lastAnnouncedAt: Long = Long.MIN_VALUE
     private var speechGeneration = 0L
     private var screenAutoActivated = false
     private var deviceAutoActivated = false
@@ -113,6 +126,7 @@ class TrackVoiceController(
 
     init {
         scope.launch(Dispatchers.IO) { repository.migrateTtsVolumeDefault() }
+        scope.launch(Dispatchers.IO) { repository.migrateContentReadDefaults() }
         scope.launch {
             userSettings.collectLatest { settings ->
                 val effectiveSettings = settings.forPremiumEntitlement(premiumState.value.isPremium)
@@ -152,7 +166,12 @@ class TrackVoiceController(
     }
 
     fun detachNotificationListener() {
-        resumePausedPlayback()
+        speechGeneration += 1
+        activeSpeechTrack = null
+        lastAnnouncedTrack = null
+        lastAnnouncedAt = Long.MIN_VALUE
+        cancelPendingAnnouncement()
+        finishAnnouncementAudio()
         monitor?.stop()
         monitor = null
         _diagnostics.value = _diagnostics.value.copy(notificationListenerConnected = false)
@@ -208,6 +227,9 @@ class TrackVoiceController(
     }
 
     fun speak(text: String) {
+        // A manual test should take over any delayed automatic announcement.
+        cancelPendingAnnouncement()
+        activeSpeechTrack = null
         val generation = ++speechGeneration
         val settings = effectiveSettings()
         val plan = AnnouncementPlaybackPlanner.plan(settings)
@@ -255,6 +277,31 @@ class TrackVoiceController(
         }
     }
 
+    private fun speakPrepared(
+        text: String,
+        track: PlaybackEvent,
+        fingerprint: String,
+        pendingToken: Long,
+    ) {
+        if (!isPendingAnnouncement(pendingToken, fingerprint)) return
+        if (preparedAnnouncement?.fingerprint != fingerprint || preparedAnnouncement?.token != pendingToken) return
+        preparedAnnouncement = null
+        activeSpeechTrack = track
+        val generation = ++speechGeneration
+        val settings = effectiveSettings()
+        ttsEngine.speak(text, settings) { success, message ->
+            if (generation == speechGeneration) {
+                activeSpeechTrack = null
+                finishAnnouncementAudio()
+                _diagnostics.value = _diagnostics.value.copy(
+                    lastAnnouncementAt = System.currentTimeMillis(),
+                    lastAnnouncementSucceeded = success,
+                    lastAnnouncementMessage = message,
+                )
+            }
+        }
+    }
+
     fun onScreenOff() {
         val settings = effectiveSettings()
         if (!settings.autoEnableOnScreenOff) return
@@ -268,9 +315,11 @@ class TrackVoiceController(
 
     fun close() {
         speechGeneration += 1
-        pendingJob?.cancel()
-        resumePausedPlayback()
-        musicVolumeManager.restore()
+        activeSpeechTrack = null
+        lastAnnouncedTrack = null
+        lastAnnouncedAt = Long.MIN_VALUE
+        cancelPendingAnnouncement()
+        finishAnnouncementAudio()
         monitor?.stop()
         monitor = null
         audioDeviceMonitor.stop()
@@ -360,21 +409,21 @@ class TrackVoiceController(
         val settings = effectiveSettings()
         val app = event?.let { appSettings.value[it.sourcePackageName]?.forPremiumEntitlement(premiumState.value.isPremium) }
         val appGuideSettings = app?.takeIf { it.useCustomGuideSettings }
-        val collection = event?.let {
-            PlaybackCollectionResolver.applyFallback(
-                detected = PlaybackCollectionResolver.resolve(it),
-                fallback = appGuideSettings?.collectionFallback
-                    ?: com.trackvoice.data.CollectionFallback.AUTO,
-            )
-        } ?: PlaybackCollection.UNKNOWN
-        val configuredMode = appGuideSettings?.mode ?: settings.defaultMode
-        val mode = when {
-            configuredMode != AnnouncementMode.SMART -> configuredMode
-            collection == PlaybackCollection.ALBUM -> settings.albumMode
-            collection == PlaybackCollection.PLAYLIST -> settings.playlistMode
-            collection == PlaybackCollection.ALGORITHMIC -> settings.algorithmMode
-            else -> AnnouncementMode.TITLE_AND_ARTIST
-        }
+        val collection = event?.let { resolveCollection(it, appGuideSettings) } ?: PlaybackCollection.UNKNOWN
+        val mode = AnnouncementPolicy.resolveMode(collection, settings, appGuideSettings)
+        TrackTalkDebugLog.event(
+            "controller_media_update",
+            "eventType" to update.eventType,
+            "source" to event?.sourcePackageName,
+            "mediaId" to event?.mediaId,
+            "title" to event?.title,
+            "artist" to event?.artist,
+            "album" to event?.album,
+            "collection" to collection,
+            "mode" to mode,
+            "playing" to event?.isPlaying,
+            "observedAt" to update.observedAt,
+        )
         _mediaState.value = _mediaState.value.copy(
             currentEvent = event,
             effectiveEnabled = settings.enabled || screenAutoActivated || deviceAutoActivated,
@@ -400,11 +449,109 @@ class TrackVoiceController(
             scope.launch { repository.ensureApp(event.sourcePackageName, event.sourceAppName) }
         }
 
-        if (event == null || !event.isPlaying) return
-        scheduleAnnouncement(event)
+        if (event == null) {
+            TrackTalkDebugLog.event("announcement_cancel", "reason" to "no_selected_event")
+            cancelPendingAnnouncement()
+            return
+        }
+        if (!event.isPlaying) {
+            // A media session commonly reports PAUSED while audio focus is
+            // moving to TTS. Once preparation or speech has been committed,
+            // keep that batch alive; otherwise a real user pause still cancels
+            // the delayed announcement as expected.
+            val sameCommittedAnnouncement =
+                (preparedAnnouncement != null || activeSpeechTrack != null) &&
+                    (
+                        preparedAnnouncement != null &&
+                            pendingAnnouncementEvent?.let {
+                                AnnouncementTrackMatcher.matches(it, event, requireSameSource = false)
+                            } == true ||
+                            activeSpeechTrack?.let {
+                                AnnouncementTrackMatcher.matches(it, event, requireSameSource = false)
+                            } == true
+                        )
+            if (!sameCommittedAnnouncement) cancelPendingAnnouncement()
+            TrackTalkDebugLog.event(
+                "announcement_pause_state",
+                "committed" to sameCommittedAnnouncement,
+                "mediaId" to event.mediaId,
+                "title" to event.title,
+            )
+            return
+        }
+        scheduleAnnouncement(event, collection)
     }
 
-    private fun scheduleAnnouncement(event: PlaybackEvent) {
+    private fun resolveCollection(event: PlaybackEvent, appGuideSettings: AppSettings?): PlaybackCollection {
+        val resolved = PlaybackCollectionResolver.applyFallback(
+            detected = PlaybackCollectionResolver.resolve(
+                event = event,
+                previousEvent = _mediaState.value.currentEvent,
+                previousCollection = _mediaState.value.currentCollection,
+            ),
+            fallback = appGuideSettings?.collectionFallback ?: CollectionFallback.AUTO,
+        )
+        if (resolved != PlaybackCollection.UNKNOWN) return resolved
+
+        // Some players publish a rich queue once and then omit queue metadata
+        // on later callbacks. Keep the known type for that same queue/track
+        // instead of reverting the UI and announcement mode to "checking".
+        val previousEvent = _mediaState.value.currentEvent
+        val previousCollection = _mediaState.value.currentCollection
+        return if (
+            previousCollection != PlaybackCollection.UNKNOWN &&
+            previousCollection != PlaybackCollection.ALGORITHMIC &&
+            previousEvent != null &&
+            samePlaybackContext(previousEvent, event)
+        ) {
+            previousCollection
+        } else {
+            PlaybackCollection.UNKNOWN
+        }
+    }
+
+    private fun samePlaybackContext(previous: PlaybackEvent, current: PlaybackEvent): Boolean {
+        if (previous.sourcePackageName != current.sourcePackageName) return false
+
+        val previousMediaId = previous.mediaId.normalizedOrNull()
+        val currentMediaId = current.mediaId.normalizedOrNull()
+        if (previousMediaId != null && currentMediaId != null) {
+            return previousMediaId == currentMediaId
+        }
+
+        val previousQueueTitle = previous.queueTitle.normalizedOrNull()
+        val currentQueueTitle = current.queueTitle.normalizedOrNull()
+        if (
+            previousQueueTitle != null &&
+            previousQueueTitle == currentQueueTitle &&
+            !PlaybackCollectionResolver.isGenericQueueTitle(previous.queueTitle) &&
+            !PlaybackCollectionResolver.isGenericQueueTitle(current.queueTitle)
+        ) {
+            return true
+        }
+
+        return sameRequiredText(previous.title, current.title) &&
+            sameOptionalText(previous.artist, current.artist) &&
+            sameOptionalText(previous.album, current.album)
+    }
+
+    private fun String?.normalizedOrNull(): String? = this
+        ?.trim()
+        ?.lowercase(Locale.ROOT)
+        ?.replace(Regex("\\s+"), " ")
+        ?.takeIf { it.isNotEmpty() }
+
+    private fun sameRequiredText(previous: String?, current: String?): Boolean =
+        previous.normalizedOrNull() != null && previous.normalizedOrNull() == current.normalizedOrNull()
+
+    private fun sameOptionalText(previous: String?, current: String?): Boolean =
+        previous.normalizedOrNull() == null || current.normalizedOrNull() == null ||
+            previous.normalizedOrNull() == current.normalizedOrNull()
+
+    private fun scheduleAnnouncement(
+        event: PlaybackEvent,
+        collection: PlaybackCollection,
+    ) {
         val settings = effectiveSettings()
         val app = appSettings.value[event.sourcePackageName]
             ?.forPremiumEntitlement(premiumState.value.isPremium)
@@ -412,7 +559,10 @@ class TrackVoiceController(
         if (connectedDevices.isNotEmpty() && connectedDevices.none { device ->
                 audioDeviceSettings.value[device.key]?.enabled != false
             }
-        ) return
+        ) {
+            cancelPendingAnnouncement()
+            return
+        }
         val externalOutput = outputDetector.hasExternalOutput()
         val decision = AnnouncementPolicy.decide(
             event = event,
@@ -420,37 +570,292 @@ class TrackVoiceController(
             appSettings = app,
             effectiveEnabled = settings.enabled || screenAutoActivated || deviceAutoActivated,
             externalAudioOutput = externalOutput,
+            collectionOverride = collection,
         )
-        if (!decision.shouldAnnounce || decision.text == null) return
+        TrackTalkDebugLog.event(
+            "announcement_policy",
+            "mediaId" to event.mediaId,
+            "title" to event.title,
+            "collection" to decision.collection,
+            "mode" to decision.mode,
+            "shouldAnnounce" to decision.shouldAnnounce,
+            "skipReason" to decision.skipReason,
+            "delayMs" to decision.delayMs,
+        )
+        if (!decision.shouldAnnounce || decision.text == null) {
+            cancelPendingAnnouncement()
+            return
+        }
+
+        // Media apps often emit a transient PAUSED/metadata-cleared event
+        // while audio focus moves to TTS. Do not schedule the same track again
+        // while its announcement is still being spoken.
+        if (activeSpeechTrack?.let { AnnouncementTrackMatcher.matches(it, event, requireSameSource = false) } == true) {
+            TrackTalkDebugLog.event("duplicate_suppressed", "reason" to "active_speech", "mediaId" to event.mediaId)
+            return
+        }
+
+        // MediaSession can emit several callbacks for one playback start:
+        // queue description, canonical metadata, focus-induced pause/resume,
+        // and a refreshed media ID. The suppressor handles history, while
+        // this latch prevents the current playback epoch from being scheduled
+        // again after the first speech has already completed.
+        val now = System.currentTimeMillis()
+        if (
+            lastAnnouncedTrack?.let {
+                AnnouncementTrackMatcher.matchesForDuplicateSuppression(
+                    expected = it,
+                    current = event,
+                    requireSameSource = true,
+                )
+            } == true &&
+            (!settings.allowRepeatAnnouncements || now - lastAnnouncedAt < REPEAT_ANNOUNCEMENT_COOLDOWN_MS)
+        ) {
+            TrackTalkDebugLog.event("duplicate_suppressed", "reason" to "completed_track", "mediaId" to event.mediaId)
+            return
+        }
 
         val fingerprint = TrackFingerprint.announcement(event)
-        if (fingerprint in pendingFingerprints) return
+        // Metadata and queue callbacks for one track can arrive while the
+        // first announcement is still waiting for its settlement delay. The
+        // full fingerprint may change when album/track-number metadata is
+        // filled in, so use the track identity as the pending key too. This
+        // prevents a metadata update from cancelling and rescheduling the
+        // same announcement before the first one has spoken.
+        if (pendingAnnouncementEvent?.let { AnnouncementTrackMatcher.matches(it, event, requireSameSource = false) } == true) {
+            TrackTalkDebugLog.event("duplicate_suppressed", "reason" to "pending_track", "mediaId" to event.mediaId)
+            return
+        }
+        if (fingerprint in pendingFingerprints) {
+            TrackTalkDebugLog.event("duplicate_suppressed", "reason" to "pending_fingerprint", "mediaId" to event.mediaId)
+            return
+        }
         if (!duplicateSuppressor.shouldAnnounce(
-                event = event,
-                allowRepeat = settings.allowRepeatAnnouncements,
-                now = System.currentTimeMillis(),
-                announcementText = decision.text,
-            )
-        ) return
+            event = event,
+            allowRepeat = settings.allowRepeatAnnouncements,
+            now = System.currentTimeMillis(),
+            announcementText = decision.text,
+        )
+        ) {
+            TrackTalkDebugLog.event("duplicate_suppressed", "reason" to "history", "mediaId" to event.mediaId)
+            cancelPendingAnnouncement()
+            return
+        }
 
-        pendingJob?.cancel()
+        cancelPendingAnnouncement()
+        pendingAnnouncementEvent = event
+        val pendingToken = ++pendingAnnouncementToken
+        val scheduledDelayMs = maxOf(
+            decision.delayMs,
+            if (needsMetadataSettlement(event, decision)) METADATA_SETTLE_DELAY_MS else 0L,
+        )
+        val preparationDelayMs = AnnouncementAudioTiming.preparationDelayMs(
+            scheduledDelayMs = scheduledDelayMs,
+            decisionDelayMs = decision.delayMs,
+        )
+        TrackTalkDebugLog.event(
+            "announcement_scheduled",
+            "mediaId" to event.mediaId,
+            "title" to event.title,
+            "decisionDelayMs" to decision.delayMs,
+            "scheduledDelayMs" to scheduledDelayMs,
+            "preparationDelayMs" to preparationDelayMs,
+            "observedAt" to event.observedAt,
+        )
         pendingFingerprints += fingerprint
         pendingJob = scope.launch {
             try {
-                if (decision.delayMs > 0L) delay(decision.delayMs)
+                if (preparationDelayMs > 0L) delay(preparationDelayMs)
+                if (!isPendingAnnouncement(pendingToken, fingerprint)) return@launch
+                if (preparedAnnouncement == null) {
+                    // Mark the batch before requesting audio focus or pausing
+                    // the player. Those calls synchronously/asynchronously
+                    // produce a PAUSED callback; without this marker that
+                    // callback cancels the very job that caused it.
+                    preparedAnnouncement = PreparedAnnouncement(fingerprint, pendingToken)
+                    if (!prepareAnnouncementAudio(settings, event)) {
+                        if (preparedAnnouncement?.fingerprint == fingerprint) {
+                            releasePreparedAnnouncement()
+                        }
+                        return@launch
+                    }
+                    if (!isPendingAnnouncement(pendingToken, fingerprint)) {
+                        finishAnnouncementAudio()
+                        return@launch
+                    }
+                }
+                val remainingDelayMs = scheduledDelayMs - preparationDelayMs
+                if (remainingDelayMs > 0L) delay(remainingDelayMs)
+                if (!isPendingAnnouncement(pendingToken, fingerprint)) return@launch
                 val current = _mediaState.value.currentEvent
-                if (current == null || !current.isPlaying || TrackFingerprint.announcement(current) != fingerprint) return@launch
+                val currentMatches = current != null && AnnouncementTrackMatcher.matches(event, current)
+                val committedCurrent = currentMatches && (
+                    current?.isPlaying == true ||
+                        preparedAnnouncement?.fingerprint == fingerprint
+                    )
+                if (!committedCurrent) return@launch
 
-                duplicateSuppressor.markAnnounced(
-                    event = event,
-                    now = System.currentTimeMillis(),
-                    announcementText = decision.text,
+                // Settings and the audio route can change while the metadata
+                // settlement/announcement delay is running. Re-read both at
+                // the last possible moment so enabling speaker suppression or
+                // switching from Bluetooth to the phone speaker cannot leak
+                // a queued announcement.
+                val currentSettings = effectiveSettings()
+                val currentApp = appSettings.value[current.sourcePackageName]
+                    ?.forPremiumEntitlement(premiumState.value.isPremium)
+                val currentDecision = AnnouncementPolicy.decide(
+                    event = current,
+                    userSettings = currentSettings,
+                    appSettings = currentApp,
+                    effectiveEnabled = currentSettings.enabled || screenAutoActivated || deviceAutoActivated,
+                    externalAudioOutput = outputDetector.hasExternalOutput(),
+                    collectionOverride = _mediaState.value.currentCollection,
                 )
-                speak(decision.text)
+                if (!currentDecision.shouldAnnounce || currentDecision.text == null) return@launch
+
+                val announcedAt = System.currentTimeMillis()
+                lastAnnouncedTrack = current
+                lastAnnouncedAt = announcedAt
+                duplicateSuppressor.markAnnounced(
+                    event = current,
+                    now = announcedAt,
+                    announcementText = currentDecision.text,
+                )
+                TrackTalkDebugLog.event(
+                    "tts_request",
+                    "mediaId" to current.mediaId,
+                    "title" to current.title,
+                    "observedAt" to current.observedAt,
+                    "elapsedSinceObservedMs" to (announcedAt - current.observedAt),
+                    "collection" to currentDecision.collection,
+                    "mode" to currentDecision.mode,
+                )
+                speakPrepared(currentDecision.text, current, fingerprint, pendingToken)
             } finally {
-                pendingFingerprints -= fingerprint
+                if (pendingAnnouncementToken == pendingToken) {
+                    pendingFingerprints -= fingerprint
+                    pendingAnnouncementEvent = null
+                    if (preparedAnnouncement?.fingerprint == fingerprint) {
+                        releasePreparedAnnouncement()
+                    }
+                }
             }
         }
+    }
+
+    private fun needsMetadataSettlement(
+        event: PlaybackEvent,
+        decision: com.trackvoice.announcement.AnnouncementDecision,
+    ): Boolean {
+        val options = decision.formatOptions
+        if (options.readArtist && event.artist.isNullOrBlank()) return true
+        if (options.shouldReadAlbum(event, decision.collection) && event.album.isNullOrBlank()) return true
+        if (
+            options.readTrackNumber &&
+            AlbumTrackNumberResolver.resolve(
+                event,
+                allowQueuePositionFallback = decision.collection == PlaybackCollection.ALBUM,
+            ) == null
+        ) return true
+        return options.readCollection &&
+            decision.collection == PlaybackCollection.PLAYLIST &&
+            (
+                event.queueTitle.isNullOrBlank() ||
+                    PlaybackCollectionResolver.isGenericQueueTitle(event.queueTitle)
+                )
+    }
+
+    /**
+     * Applies music ducking/pausing before the delayed announcement job runs.
+     * MediaSession callbacks arrive after playback has started, so doing this
+     * here removes the additional gap before TTS takes over.
+     */
+    private fun prepareAnnouncementAudio(settings: UserSettings, event: PlaybackEvent? = pendingAnnouncementEvent): Boolean {
+        val preparationStartedAt = System.currentTimeMillis()
+        val plan = AnnouncementPlaybackPlanner.plan(settings)
+        musicVolumeManager.restore()
+        if (!plan.pauseBeforeAnnouncement) {
+            // If a previous "announce then play" batch was interrupted, do not
+            // carry its pause token into a new "play immediately" announcement.
+            resumePausedPlayback()
+        }
+        audioFocusManager.abandon()
+        if (pausedPlayback == null && plan.pauseBeforeAnnouncement) {
+            pausedPlayback = monitor?.pauseSelectedIfPlaying()
+        }
+        if (plan.shouldDuckMusic) musicVolumeManager.duckTo(settings.musicDuckPercent)
+
+        TrackTalkDebugLog.event(
+            "audio_protection",
+            "mediaId" to event?.mediaId,
+            "title" to event?.title,
+            "pauseBeforeAnnouncement" to plan.pauseBeforeAnnouncement,
+            "pauseToken" to (pausedPlayback != null),
+            "duck" to plan.shouldDuckMusic,
+            "duckPercent" to settings.musicDuckPercent.takeIf { plan.shouldDuckMusic },
+            "elapsedSinceObservedMs" to event?.let { preparationStartedAt - it.observedAt },
+        )
+
+        // In pause-until-finished mode, a focus request can pause a media app
+        // even when its session was too transient to return a resume token.
+        val shouldRequestAudioFocus = plan.requestAudioFocus &&
+            (!plan.pauseBeforeAnnouncement || pausedPlayback != null)
+        if (shouldRequestAudioFocus && !audioFocusManager.request(plan.shouldDuckMusic)) {
+            finishAnnouncementAudio()
+            _diagnostics.value = _diagnostics.value.copy(
+                lastAnnouncementAt = System.currentTimeMillis(),
+                lastAnnouncementSucceeded = false,
+                lastAnnouncementMessage = "?ㅻ뵒???ъ빱?ㅻ? ?살? 紐삵빐 ?덈궡瑜?嫄대꼫?곗뿀?듬땲??",
+            )
+            return false
+        }
+        TrackTalkDebugLog.event(
+            "audio_protection_ready",
+            "mediaId" to event?.mediaId,
+            "elapsedSinceObservedMs" to event?.let { System.currentTimeMillis() - it.observedAt },
+        )
+        return true
+    }
+
+    private fun cancelPendingAnnouncement() {
+        pendingAnnouncementToken += 1
+        pendingJob?.cancel()
+        pendingJob = null
+        pendingAnnouncementEvent = null
+        pendingFingerprints.clear()
+        releasePreparedAnnouncement()
+    }
+
+    private fun isPendingAnnouncement(token: Long, fingerprint: String): Boolean =
+        pendingAnnouncementToken == token && fingerprint in pendingFingerprints
+
+    private fun isSameAnnouncementTrack(
+        expected: PlaybackEvent,
+        current: PlaybackEvent,
+        requireSameSource: Boolean = true,
+    ): Boolean = AnnouncementTrackMatcher.matches(expected, current, requireSameSource)
+
+    private fun releasePreparedAnnouncement() {
+        if (preparedAnnouncement == null) return
+        preparedAnnouncement = null
+        finishAnnouncementAudio()
+    }
+
+    private fun finishAnnouncementAudio() {
+        TrackTalkDebugLog.event("playback_restore")
+        audioFocusManager.abandon()
+        musicVolumeManager.restore()
+        resumePausedPlayback()
+    }
+
+    private data class PreparedAnnouncement(
+        val fingerprint: String,
+        val token: Long,
+    )
+
+    private companion object {
+        const val METADATA_SETTLE_DELAY_MS = 250L
+        const val REPEAT_ANNOUNCEMENT_COOLDOWN_MS = 30_000L
     }
 
     private fun effectiveSettings(): UserSettings =

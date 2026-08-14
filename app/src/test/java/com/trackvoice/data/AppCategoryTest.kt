@@ -2,8 +2,16 @@ package com.trackvoice.data
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 
 class AppCategoryTest {
+    @Test
+    fun youtubeGuideIsOffByDefaultButYoutubeMusicIsNot() {
+        assertFalse(defaultAppGuideEnabled(YOUTUBE_PACKAGE_NAME))
+        assertTrue(defaultAppGuideEnabled("com.google.android.apps.youtube.music"))
+    }
+
     @Test
     fun youtubeMusicIsMusicStreaming() {
         assertEquals(

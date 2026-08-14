@@ -1,5 +1,6 @@
 package com.trackvoice.media
 
+import android.content.ComponentName
 import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.MediaSession
@@ -31,9 +32,13 @@ class MediaSessionMonitorInstrumentedTest {
             context.contentResolver,
             "enabled_notification_listeners",
         ).orEmpty()
+        val trackTalkListener = ComponentName(
+            context,
+            TrackVoiceNotificationListenerService::class.java,
+        ).flattenToString()
         assumeTrue(
             "TrackTalk notification access is required for MediaSessionMonitor integration tests",
-            enabledListeners.contains(TrackVoiceNotificationListenerService::class.java.name),
+            enabledListeners.split(':').any { it == trackTalkListener },
         )
 
         session = MediaSession(context, "TrackTalkMonitorInstrumentationTest")

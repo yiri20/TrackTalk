@@ -10,6 +10,7 @@ import android.media.AudioAttributes
 import com.trackvoice.data.UserSettings
 import com.trackvoice.data.VoiceLanguage
 import com.trackvoice.data.GenderFilter
+import com.trackvoice.diagnostics.TrackTalkDebugLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -110,19 +111,20 @@ class TtsEngine(context: Context) : TextToSpeech.OnInitListener {
     }
 
     override fun onInit(status: Int) {
+        TrackTalkDebugLog.event("tts_init", "status" to status)
         if (status != TextToSpeech.SUCCESS) {
             _state.value = TtsState(TtsStatus.ERROR, "기본 TTS 엔진을 초기화하지 못했습니다.")
             return
         }
         val engine = textToSpeech ?: return
-        engine.setOnUtteranceProgressListener(progressListener)
-        engine.setAudioAttributes(
+        runCatching { engine.setOnUtteranceProgressListener(progressListener) }
+        runCatching { engine.setAudioAttributes(
             AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                 .build(),
-        )
-        refreshVoices(engine)
+        ) }
+        runCatching { refreshVoices(engine) }
         _state.value = TtsState(TtsStatus.READY, "사용 가능한 TTS 음성을 준비했습니다.")
     }
 
@@ -152,16 +154,25 @@ class TtsEngine(context: Context) : TextToSpeech.OnInitListener {
                 }
             }
             pendingResults.clear()
-            engine.stop()
-            val supportedLocales = engine.voices.orEmpty().map { it.locale }.toSet()
-            engine.setSpeechRate(settings.speechRate.coerceIn(0.5f, 2f))
-            engine.setPitch(settings.pitch.coerceIn(0.5f, 2f))
+            runCatching { engine.stop() }
+            val supportedLocales = runCatching { engine.voices.orEmpty().map { it.locale }.toSet() }
+                .getOrDefault(emptySet())
+            runCatching { engine.setSpeechRate(settings.speechRate.coerceIn(0.5f, 2f)) }
+            runCatching { engine.setPitch(settings.pitch.coerceIn(0.5f, 2f)) }
             val params = Bundle().apply {
                 putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, settings.volume.coerceIn(0f, 1f))
             }
             val fallbackLocale = settings.voiceLanguage.toLocale(text)
             val segments = MixedLanguageSegmenter.segment(text, fallbackLocale)
             val batch = PendingBatch(segments.size, onFinished)
+            TrackTalkDebugLog.event(
+                "tts_enqueue",
+                "segments" to segments.size,
+                "textLength" to text.length,
+                "volume" to settings.volume.coerceIn(0f, 1f),
+                "voiceLanguage" to settings.voiceLanguage,
+                "gender" to settings.genderFilter,
+            )
             var localeFallbackUsed = false
             var genderFallbackUsed = false
             segments.forEachIndexed { index, segment ->
@@ -170,19 +181,22 @@ class TtsEngine(context: Context) : TextToSpeech.OnInitListener {
                     supported = supportedLocales,
                     systemDefault = fallbackLocale,
                 )
-                val languageResult = engine.setLanguage(resolvedLocale)
+                val languageResult = runCatching { engine.setLanguage(resolvedLocale) }
+                    .getOrDefault(TextToSpeech.LANG_NOT_SUPPORTED)
                 val segmentFallback = localeFallback || languageResult == TextToSpeech.LANG_MISSING_DATA ||
                     languageResult == TextToSpeech.LANG_NOT_SUPPORTED
                 localeFallbackUsed = localeFallbackUsed || segmentFallback
-                genderFallbackUsed = genderFallbackUsed || selectVoice(engine, resolvedLocale, settings)
+                genderFallbackUsed = genderFallbackUsed || runCatching {
+                    selectVoice(engine, resolvedLocale, settings)
+                }.getOrDefault(true)
                 val utteranceId = "trackvoice-${System.nanoTime()}-$index"
                 pendingResults[utteranceId] = batch
-                val result = engine.speak(
+                val result = runCatching { engine.speak(
                     segment.text,
                     if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD,
                     params,
                     utteranceId,
-                )
+                ) }.getOrDefault(TextToSpeech.ERROR)
                 if (result == TextToSpeech.ERROR) {
                     failBatch(batch, "TTS 음성 합성에 실패했습니다.")
                     return@post
@@ -203,8 +217,8 @@ class TtsEngine(context: Context) : TextToSpeech.OnInitListener {
 
     fun shutdown() {
         mainHandler.post {
-            textToSpeech?.stop()
-            textToSpeech?.shutdown()
+            runCatching { textToSpeech?.stop() }
+            runCatching { textToSpeech?.shutdown() }
             textToSpeech = null
             pendingResults.clear()
             _state.value = TtsState(TtsStatus.CLOSED, "TTS 종료")
@@ -220,10 +234,13 @@ class TtsEngine(context: Context) : TextToSpeech.OnInitListener {
     private val pendingResults = mutableMapOf<String, PendingBatch>()
 
     private val progressListener = object : UtteranceProgressListener() {
-        override fun onStart(utteranceId: String?) = Unit
+        override fun onStart(utteranceId: String?) {
+            TrackTalkDebugLog.event("tts_start", "utteranceId" to utteranceId)
+        }
 
         override fun onDone(utteranceId: String?) {
             if (utteranceId == null) return
+            TrackTalkDebugLog.event("tts_segment_done", "utteranceId" to utteranceId)
             mainHandler.post {
                 val batch = pendingResults.remove(utteranceId) ?: return@post
                 batch.remaining -= 1
@@ -237,6 +254,7 @@ class TtsEngine(context: Context) : TextToSpeech.OnInitListener {
         @Deprecated("Deprecated in Android API; kept for TTS compatibility")
         override fun onError(utteranceId: String?) {
             if (utteranceId == null) return
+            TrackTalkDebugLog.event("tts_error", "utteranceId" to utteranceId)
             mainHandler.post {
                 pendingResults[utteranceId]?.let { failBatch(it, "TTS 재생 중 오류가 발생했습니다.") }
             }
@@ -244,6 +262,7 @@ class TtsEngine(context: Context) : TextToSpeech.OnInitListener {
 
         override fun onError(utteranceId: String?, errorCode: Int) {
             if (utteranceId == null) return
+            TrackTalkDebugLog.event("tts_error", "utteranceId" to utteranceId, "errorCode" to errorCode)
             mainHandler.post {
                 pendingResults[utteranceId]?.let { failBatch(it, "TTS 재생 오류 코드: $errorCode") }
             }
@@ -254,8 +273,8 @@ class TtsEngine(context: Context) : TextToSpeech.OnInitListener {
         if (batch.completed) return
         batch.completed = true
         pendingResults.entries.removeAll { it.value === batch }
-        textToSpeech?.stop()
-        batch.callback(false, message)
+        runCatching { textToSpeech?.stop() }
+        runCatching { batch.callback(false, message) }
     }
 
     private fun selectVoice(engine: TextToSpeech, locale: Locale, settings: UserSettings): Boolean {

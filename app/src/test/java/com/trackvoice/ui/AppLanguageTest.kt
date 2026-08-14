@@ -1,6 +1,8 @@
 package com.trackvoice.ui
 
 import com.trackvoice.data.AppLanguage
+import com.trackvoice.data.AnnouncementTiming
+import com.trackvoice.data.AnnouncementMode
 import com.trackvoice.data.resolve
 import com.trackvoice.monetization.PremiumMessage
 import org.junit.Assert.assertEquals
@@ -27,6 +29,10 @@ class AppLanguageTest {
     fun stringsFollowSelectedLanguage() {
         assertEquals("홈", TrackTalkStrings.forLanguage(AppLanguage.KOREAN, "en").navLabel(AppSection.HOME))
         assertEquals("Home", TrackTalkStrings.forLanguage(AppLanguage.ENGLISH, "ko").navLabel(AppSection.HOME))
+        assertEquals("안내·음성", TrackTalkStrings.forLanguage(AppLanguage.KOREAN, "en").navLabel(AppSection.GENERAL))
+        assertEquals("기기", TrackTalkStrings.forLanguage(AppLanguage.KOREAN, "en").navLabel(AppSection.DEVICES))
+        assertEquals("Guide & voice", TrackTalkStrings.forLanguage(AppLanguage.ENGLISH, "ko").navLabel(AppSection.GENERAL))
+        assertEquals("Devices", TrackTalkStrings.forLanguage(AppLanguage.ENGLISH, "ko").navLabel(AppSection.DEVICES))
     }
 
     @Test
@@ -41,5 +47,42 @@ class AppLanguageTest {
             TrackTalkStrings.forLanguage(AppLanguage.ENGLISH, "ko")
                 .premiumMessage(PremiumMessage.PRODUCT_UNAVAILABLE),
         )
+    }
+
+    @Test
+    fun announcementTimingExplainsTheActualWait() {
+        val korean = TrackTalkStrings.forLanguage(AppLanguage.KOREAN, "en")
+        val english = TrackTalkStrings.forLanguage(AppLanguage.ENGLISH, "ko")
+
+        assertEquals(
+            "새 곡을 감지한 뒤 2초 후 읽습니다.",
+            korean.announcementTimingSummary(AnnouncementTiming.DELAYED, 2),
+        )
+        assertEquals(
+            "It reads immediately at 0s. Set 1–2s to wait before reading.",
+            english.announcementTimingSummary(AnnouncementTiming.DELAYED, 0),
+        )
+        assertEquals(
+            "자동 · 바로 안내",
+            korean.guideSummary(com.trackvoice.data.AnnouncementMode.SMART, AnnouncementTiming.IMMEDIATE, 2),
+        )
+    }
+
+    @Test
+    fun nowPlayingCardUsesASeparateGuideBasisLabel() {
+        val korean = TrackTalkStrings.forLanguage(AppLanguage.KOREAN, "en")
+        val english = TrackTalkStrings.forLanguage(AppLanguage.ENGLISH, "ko")
+
+        assertEquals(
+            "안내 기준: 앨범",
+            korean.readingFormatLabel(AnnouncementMode.ALBUM),
+        )
+        assertEquals(
+            "Guide basis: Playlist",
+            english.readingFormatLabel(AnnouncementMode.PLAYLIST),
+        )
+        assertEquals("기본 설정", korean.announcementBasisValue(appSpecific = false, typeSpecific = false))
+        assertEquals("유형별 설정", korean.announcementBasisValue(appSpecific = false, typeSpecific = true))
+        assertEquals("앱별 설정", korean.announcementBasisValue(appSpecific = true, typeSpecific = true))
     }
 }

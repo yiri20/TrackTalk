@@ -18,46 +18,78 @@ class TrackMetadataMapper(
         val rawQueue = controller.queue.orEmpty()
         val queue = rawQueue.map { it.toSnapshot() }
         val metadataMediaId = metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID).clean()
-        val activeQueueDescription = state?.activeQueueItemId
-            ?.takeIf { it >= 0L }
-            ?.let { queueId -> rawQueue.firstOrNull { it.queueId == queueId }?.description }
-            ?: metadataMediaId?.let { mediaId ->
-                rawQueue.firstOrNull { it.description.mediaId.clean() == mediaId }?.description
-            }
-        val activeQueuePosition = state?.activeQueueItemId
+        // Players do not all populate the same MediaMetadata keys. In
+        // particular, some streaming clients expose the spoken track name as
+        // DISPLAY_TITLE while leaving TITLE empty. Resolve the canonical
+        // fields once so the UI and announcement pipeline receive the same
+        // value.
+        val metadataTitle = metadata.firstText(
+            MediaMetadata.METADATA_KEY_TITLE,
+            MediaMetadata.METADATA_KEY_DISPLAY_TITLE,
+        )
+        val metadataArtist = metadata.firstText(
+            MediaMetadata.METADATA_KEY_ARTIST,
+            MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE,
+        )
+        val metadataAlbum = metadata.firstText(MediaMetadata.METADATA_KEY_ALBUM)
+        val stateActiveQueuePosition = state?.activeQueueItemId
             ?.takeIf { it >= 0L }
             ?.let { queueId -> rawQueue.indexOfFirst { it.queueId == queueId } }
             ?.takeIf { it >= 0 }
-            ?: metadataMediaId?.let { mediaId ->
-                rawQueue.indexOfFirst { it.description.mediaId == mediaId }
-            }?.takeIf { it >= 0 }
-        val queueOrderChanged = detectQueueOrderChange(controller, rawQueue)
-        val shuffleState = state.toShuffleState()
-        rememberQueueTrackNumbers(controller.packageName, queue)
-        val metadataTrackNumber = metadata?.getLong(MediaMetadata.METADATA_KEY_TRACK_NUMBER)?.safeInt()
-        val activeQueueTrackNumber = activeQueueDescription?.extras?.intMetadata(MediaMetadata.METADATA_KEY_TRACK_NUMBER)
+        // Several players, including YouTube Music, publish the current
+        // metadata while leaving activeQueueItemId at -1. Resolve the item
+        // from its media id first, then from title/artist/album so an album
+        // queue position can still be used as a track-number fallback.
+        val activeQueuePosition = stateActiveQueuePosition ?: resolveActiveQueuePosition(
+            queue = queue,
+            mediaId = metadataMediaId,
+            title = metadataTitle,
+            artist = metadataArtist,
+            album = metadataAlbum,
+        )
+        val activeQueueDescription = activeQueuePosition?.let { position ->
+            rawQueue.getOrNull(position)?.description
+        }
+        val activeQueueTrackNumber = activeQueuePosition?.let { position ->
+            queue.getOrNull(position)?.trackNumber
+        }
+        val metadataTrackNumber = metadata.intMetadata(MediaMetadata.METADATA_KEY_TRACK_NUMBER)
         val mediaId = metadataMediaId ?: activeQueueDescription?.mediaId.clean()
         val trackKey = mediaId?.let { trackKey(controller.packageName, it) }
         val cachedTrackNumber = trackKey?.let(knownTrackNumbers::get)
+        val queueOrderChanged = detectQueueOrderChange(controller, rawQueue)
+        val shuffleState = state.toShuffleState()
+        rememberQueueTrackNumbers(controller.packageName, queue)
         val resolvedTrackNumber = when {
             activeQueueTrackNumber != null -> activeQueueTrackNumber
             queueOrderChanged || shuffleState == ShuffleState.ON -> cachedTrackNumber ?: metadataTrackNumber
             else -> metadataTrackNumber
         }
+        // A track number read directly from media metadata remains valid even
+        // when the surrounding recommendation queue is shuffled or reordered.
+        // Only a queue position needs to be rejected after a shuffle.
         val trackNumberReliable = activeQueueTrackNumber != null ||
             cachedTrackNumber != null && (queueOrderChanged || shuffleState == ShuffleState.ON) ||
-            metadataTrackNumber != null && !queueOrderChanged && shuffleState != ShuffleState.ON
+            metadataTrackNumber != null
         if (trackKey != null && resolvedTrackNumber != null && trackNumberReliable) {
             knownTrackNumbers[trackKey] = resolvedTrackNumber
         }
         return PlaybackEvent(
             sourcePackageName = controller.packageName,
             sourceAppName = appNameForPackage(controller.packageName),
-            title = metadata?.getString(MediaMetadata.METADATA_KEY_TITLE).clean()
-                ?: activeQueueDescription?.title?.toString().clean(),
-            artist = metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST).clean()
-                ?: activeQueueDescription?.subtitle?.toString().clean(),
-            album = metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM).clean()
+            title = metadataTitle
+                ?: activeQueueDescription?.title?.toString().clean()
+                ?: activeQueueDescription?.extras?.firstText(
+                    MediaMetadata.METADATA_KEY_TITLE,
+                    MediaMetadata.METADATA_KEY_DISPLAY_TITLE,
+                ),
+            artist = metadataArtist
+                ?: activeQueueDescription?.subtitle?.toString().clean()
+                ?: activeQueueDescription?.extras?.firstText(
+                    MediaMetadata.METADATA_KEY_ARTIST,
+                    MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE,
+                ),
+            album = metadataAlbum
                 ?: activeQueueDescription?.extras?.getString(MediaMetadata.METADATA_KEY_ALBUM).clean(),
             albumArtist = metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST).clean(),
             trackNumber = resolvedTrackNumber,
@@ -75,6 +107,84 @@ class TrackMetadataMapper(
             shuffleState = shuffleState,
             trackNumberReliable = trackNumberReliable,
         )
+    }
+
+    /**
+     * Finds the current item when a media session omits both the active queue
+     * id and a usable media id. A unique title/artist match is intentionally
+     * required before falling back to title-only, avoiding false track 1/2
+     * readings for repeated song titles.
+     */
+    internal fun resolveActiveQueuePosition(
+        queue: List<QueueItemSnapshot>,
+        mediaId: String?,
+        title: String?,
+        artist: String?,
+        album: String?,
+    ): Int? {
+        mediaId?.let { currentMediaId ->
+            queue.mapIndexedNotNull { index, item ->
+                index.takeIf { item.mediaId.clean() == currentMediaId }
+            }.singleOrNull()?.let { return it }
+        }
+
+        val currentTitle = title.normalizedMetadata() ?: return null
+        val titleMatches = queue.mapIndexedNotNull { index, item ->
+            index.takeIf { item.title.normalizedMetadata() == currentTitle }
+        }
+        if (titleMatches.isEmpty()) return null
+
+        val artistMatches = if (artist.normalizedMetadata() == null) {
+            titleMatches
+        } else {
+            titleMatches.filter { queue[it].artist.normalizedMetadata() == artist.normalizedMetadata() }
+        }
+        if (album.normalizedMetadata() != null) {
+            val albumMatches = artistMatches.filter {
+                queue[it].album.normalizedMetadata() == album.normalizedMetadata()
+            }
+            if (albumMatches.size == 1) return albumMatches.single()
+        }
+        if (artistMatches.size == 1) return artistMatches.single()
+        return titleMatches.singleOrNull()
+    }
+
+    private fun String?.normalizedMetadata(): String? = this
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.replace(Regex("\\s+"), " ")
+        ?.lowercase(java.util.Locale.ROOT)
+
+    private fun String?.clean(): String? = this?.trim()?.takeIf { it.isNotEmpty() }
+
+    private fun MediaMetadata?.firstText(vararg keys: String): String? = keys
+        .asSequence()
+        .mapNotNull { key -> runCatching { this?.getString(key) }.getOrNull().clean() }
+        .firstOrNull()
+
+    private fun android.os.Bundle?.firstText(vararg keys: String): String? = keys
+        .asSequence()
+        .mapNotNull { key -> runCatching { this?.getString(key) }.getOrNull().clean() }
+        .firstOrNull()
+
+    private fun Long.safeInt(): Int? = toInt().takeIf { it > 0 && it.toLong() == this }
+
+    private fun android.os.Bundle.intMetadata(key: String): Int? {
+        if (!containsKey(key)) return null
+        val longValue = getLong(key, Long.MIN_VALUE)
+        if (longValue != Long.MIN_VALUE) return longValue.safeInt()
+        val intValue = getInt(key, Int.MIN_VALUE).takeIf { it > 0 }
+        if (intValue != null) return intValue
+        return getString(key)?.trim()?.toIntOrNull()?.takeIf { it > 0 }
+    }
+
+    private fun MediaMetadata?.intMetadata(key: String): Int? {
+        if (this == null || !containsKey(key)) return null
+        val longValue = runCatching { getLong(key) }.getOrNull()
+        if (longValue != null && longValue > 0L) return longValue.safeInt()
+        return runCatching { getString(key)?.trim()?.toIntOrNull() }
+            .getOrNull()
+            ?.takeIf { it > 0 }
     }
 
     private fun detectQueueOrderChange(
@@ -112,8 +222,16 @@ class TrackMetadataMapper(
 
     private fun MediaSession.QueueItem.toSnapshot(): QueueItemSnapshot = QueueItemSnapshot(
         mediaId = description.mediaId,
-        title = description.title?.toString().clean(),
-        artist = description.subtitle?.toString().clean(),
+        title = description.title?.toString().clean()
+            ?: description.extras.firstText(
+                MediaMetadata.METADATA_KEY_TITLE,
+                MediaMetadata.METADATA_KEY_DISPLAY_TITLE,
+            ),
+        artist = description.subtitle?.toString().clean()
+            ?: description.extras.firstText(
+                MediaMetadata.METADATA_KEY_ARTIST,
+                MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE,
+            ),
         album = description.extras?.getString(MediaMetadata.METADATA_KEY_ALBUM).clean(),
         trackNumber = description.extras?.intMetadata(MediaMetadata.METADATA_KEY_TRACK_NUMBER),
     )
@@ -136,16 +254,6 @@ class TrackMetadataMapper(
             actionName.contains("on") || actionName.contains("enable") || actionName.contains("\uC0AC\uC6A9") -> ShuffleState.OFF
             else -> ShuffleState.UNKNOWN
         }
-    }
-
-    private fun String?.clean(): String? = this?.trim()?.takeIf { it.isNotEmpty() }
-    private fun Long.safeInt(): Int? = toInt().takeIf { it > 0 && it.toLong() == this }
-
-    private fun android.os.Bundle.intMetadata(key: String): Int? {
-        if (!containsKey(key)) return null
-        val longValue = getLong(key, Long.MIN_VALUE)
-        if (longValue != Long.MIN_VALUE) return longValue.safeInt()
-        return getInt(key, Int.MIN_VALUE).takeIf { it > 0 }
     }
 
     private data class QueueHistory(

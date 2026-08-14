@@ -89,6 +89,27 @@ class TrackMetadataMapperInstrumentedTest {
     }
 
     @Test
+    fun mapsDisplayTitleWhenPlayerOmitsCanonicalTitleKeys() {
+        session.setMetadata(
+            MediaMetadata.Builder()
+                .putString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE, "Display-only song")
+                .putString(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE, "Display-only artist")
+                .build(),
+        )
+        session.setPlaybackState(
+            PlaybackState.Builder()
+                .setState(PlaybackState.STATE_PLAYING, 0L, 1f)
+                .build(),
+        )
+
+        val controller = MediaController(context, session.sessionToken)
+        val event = TrackMetadataMapper { "Test Music" }.map(controller, observedAt = 234L)
+
+        assertEquals("Display-only song", event.title)
+        assertEquals("Display-only artist", event.artist)
+    }
+
+    @Test
     fun missingMetadataProducesEmptyOptionalFields() {
         session.setPlaybackState(
             PlaybackState.Builder()
@@ -205,6 +226,35 @@ class TrackMetadataMapperInstrumentedTest {
     }
 
     @Test
+    fun derivesActiveQueuePositionFromMetadataTitleWhenPlayerOmitsIds() {
+        session.setMetadata(
+            MediaMetadata.Builder()
+                .putString(MediaMetadata.METADATA_KEY_TITLE, "Second")
+                .putString(MediaMetadata.METADATA_KEY_ARTIST, "Artist")
+                .putString(MediaMetadata.METADATA_KEY_ALBUM, "Album")
+                .build(),
+        )
+        session.setPlaybackState(
+            PlaybackState.Builder()
+                .setState(PlaybackState.STATE_PLAYING, 0L, 1f)
+                .setActiveQueueItemId(-1L)
+                .build(),
+        )
+        session.setQueue(
+            listOf(
+                queueItemWithMetadata("first", "First", "Artist", "Album", 1L),
+                queueItemWithMetadata("second", "Second", "Artist", "Album", 2L),
+                queueItemWithMetadata("third", "Third", "Artist", "Album", 3L),
+            ),
+        )
+
+        val controller = MediaController(context, session.sessionToken)
+        val event = TrackMetadataMapper { "Test Music" }.map(controller, observedAt = 1_150L)
+
+        assertEquals(1, event.activeQueuePosition)
+    }
+
+    @Test
     fun mapsAlbumAndTrackNumberFromQueueItemExtras() {
         val extras = Bundle().apply {
             putString(MediaMetadata.METADATA_KEY_ALBUM, "Queue Album")
@@ -311,5 +361,24 @@ class TrackMetadataMapperInstrumentedTest {
             .setTitle(title)
             .build(),
         queueId,
+    )
+
+    private fun queueItemWithMetadata(
+        mediaId: String,
+        title: String,
+        artist: String,
+        album: String,
+        trackNumber: Long,
+    ) = MediaSession.QueueItem(
+        MediaDescription.Builder()
+            .setMediaId(mediaId)
+            .setTitle(title)
+            .setSubtitle(artist)
+            .setExtras(Bundle().apply {
+                putString(MediaMetadata.METADATA_KEY_ALBUM, album)
+                putLong(MediaMetadata.METADATA_KEY_TRACK_NUMBER, trackNumber)
+            })
+            .build(),
+        trackNumber,
     )
 }

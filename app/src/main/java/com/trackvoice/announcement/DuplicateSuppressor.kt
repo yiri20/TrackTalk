@@ -1,12 +1,190 @@
 package com.trackvoice.announcement
 
 import com.trackvoice.media.PlaybackEvent
+import com.trackvoice.media.PlaybackCollectionResolver
 import com.trackvoice.media.TrackFingerprint
+import java.util.Locale
+
+/**
+ * Matches media-session snapshots that describe one track. Media apps often
+ * replace a temporary queue ID, fill in the artist later, or correct a title
+ * after playback has already started. Those changes must not create a second
+ * announcement.
+ */
+object AnnouncementTrackMatcher {
+    fun matches(
+        expected: PlaybackEvent,
+        current: PlaybackEvent,
+        requireSameSource: Boolean = true,
+    ): Boolean {
+        if (requireSameSource && expected.sourcePackageName != current.sourcePackageName) return false
+
+        val expectedMediaId = expected.mediaId.normalizedOrNull()
+        val currentMediaId = current.mediaId.normalizedOrNull()
+        if (expectedMediaId != null && currentMediaId != null && expectedMediaId == currentMediaId) {
+            return true
+        }
+
+        if (!compatibleText(expected.artist, current.artist)) return false
+        val titleMatches = sameText(expected.title, current.title)
+        val hasTemporaryTitle = isTemporaryTitle(expected.title) || isTemporaryTitle(current.title)
+        val sameAlbum = compatibleText(expected.album, current.album) &&
+            !expected.album.isNullOrBlank() &&
+            !current.album.isNullOrBlank()
+        val sameTrackNumber = expected.trackNumber != null &&
+            current.trackNumber != null &&
+            expected.trackNumber == current.trackNumber
+        val sameDiscNumber = expected.discNumber == null ||
+            current.discNumber == null ||
+            expected.discNumber == current.discNumber
+        val reliableTrackNumber = expected.trackNumberReliable && current.trackNumberReliable
+        val trackNumbersConflict = expected.trackNumber != null &&
+            current.trackNumber != null &&
+            expected.trackNumber != current.trackNumber
+        val discNumbersConflict = expected.discNumber != null &&
+            current.discNumber != null &&
+            expected.discNumber != current.discNumber
+
+        if (titleMatches) {
+            // When both snapshots have no media ID, explicit track/disc
+            // changes are the only reliable sign of a different track.
+            // With a media ID, allow one side to correct a missing number,
+            // but do not merge two fully specified, conflicting tracks.
+            if (expectedMediaId == null && currentMediaId == null) {
+                return !trackNumbersConflict && !discNumbersConflict
+            }
+            // A changed provider ID plus a corrected track/disc number is a
+            // common metadata hand-off (queue item -> canonical metadata),
+            // not proof that the song changed. Title and artist are the
+            // stronger identity during that hand-off.
+            return true
+        }
+
+        // A title can be corrected from a queue description to canonical
+        // metadata. Album + reliable track/disc is a safe alias for that
+        // short-lived transition, even when the provider replaces its media
+        // ID at the same time. This also covers the common case where the
+        // first callback contains a queue title and the next one contains the
+        // actual title.
+        return (sameAlbum && sameTrackNumber && sameDiscNumber && reliableTrackNumber) ||
+            sameQueueItem(expected, current)
+    }
+
+    fun sameContent(
+        expected: PlaybackEvent,
+        current: PlaybackEvent,
+        requireSameSource: Boolean = true,
+    ): Boolean {
+        if (requireSameSource && expected.sourcePackageName != current.sourcePackageName) return false
+        return sameText(expected.title, current.title) && compatibleText(expected.artist, current.artist)
+    }
+
+    /**
+     * Conservative identity used after speech has already been committed.
+     * Album/track aliases are useful while a pending callback is settling,
+     * but they are too broad for suppressing a completed announcement because
+     * different songs can share a track number across albums/providers.
+     */
+    fun matchesForDuplicateSuppression(
+        expected: PlaybackEvent,
+        current: PlaybackEvent,
+        requireSameSource: Boolean = true,
+    ): Boolean {
+        if (requireSameSource && expected.sourcePackageName != current.sourcePackageName) return false
+        val expectedMediaId = expected.mediaId.normalizedOrNull()
+        val currentMediaId = current.mediaId.normalizedOrNull()
+        if (expectedMediaId != null && currentMediaId != null && expectedMediaId == currentMediaId) return true
+        if (!compatibleText(expected.artist, current.artist)) return false
+
+        val titleMatches = sameText(expected.title, current.title)
+        val hasTemporaryTitle = isTemporaryTitle(expected.title) || isTemporaryTitle(current.title)
+        val sameAlbum = compatibleText(expected.album, current.album) &&
+            !expected.album.isNullOrBlank() &&
+            !current.album.isNullOrBlank()
+        val sameTrackNumber = expected.trackNumber != null &&
+            current.trackNumber != null &&
+            expected.trackNumber == current.trackNumber
+        val sameDiscNumber = expected.discNumber == null ||
+            current.discNumber == null ||
+            expected.discNumber == current.discNumber
+        val reliableTrackNumber = expected.trackNumberReliable && current.trackNumberReliable
+        val validTrackNumbersConflict = expected.trackNumber
+            ?.takeIf { expected.trackNumberReliable && it in 1..999 }
+            ?.let { expectedTrack ->
+                current.trackNumber
+                    ?.takeIf { current.trackNumberReliable && it in 1..999 }
+                    ?.let { currentTrack -> expectedTrack != currentTrack }
+            } == true
+        val discNumbersConflict = expected.discNumber != null &&
+            current.discNumber != null &&
+            expected.discNumber != current.discNumber
+
+        if (!titleMatches) {
+            // The old guard treated two non-empty titles as different tracks
+            // even when the player was only replacing a queue description
+            // with the canonical title. Keep that transition attached to the
+            // already-spoken track when album/track or queue position proves
+            // that it is the same item.
+            if (hasTemporaryTitle &&
+                (
+                    sameAlbum && sameTrackNumber && sameDiscNumber && reliableTrackNumber ||
+                        sameQueueItem(expected, current)
+                    )
+            ) {
+                return true
+            }
+            if (!expected.title.isNullOrBlank() && !current.title.isNullOrBlank()) return false
+            return matches(expected, current, requireSameSource)
+        }
+
+        // A provider can refresh the media ID while correcting optional
+        // metadata. Valid, conflicting track/disc numbers are the one strong
+        // signal that this is actually another queue item. Ignore invalid
+        // values such as the transient 0 often emitted before the real number.
+        if (validTrackNumbersConflict || discNumbersConflict) return false
+
+        if (expectedMediaId == null && currentMediaId == null) {
+            val trackConflict = expected.trackNumber != null &&
+                current.trackNumber != null &&
+                expected.trackNumber != current.trackNumber
+            val discConflict = expected.discNumber != null &&
+                current.discNumber != null &&
+                expected.discNumber != current.discNumber
+            if (trackConflict || discConflict) return false
+        }
+        return true
+    }
+
+    private fun sameQueueItem(expected: PlaybackEvent, current: PlaybackEvent): Boolean {
+        val expectedPosition = expected.activeQueuePosition ?: return false
+        val currentPosition = current.activeQueuePosition ?: return false
+        if (expectedPosition != currentPosition) return false
+        val expectedQueue = expected.queueTitle.normalizedOrNull() ?: return false
+        val currentQueue = current.queueTitle.normalizedOrNull() ?: return false
+        return expectedQueue == currentQueue
+    }
+
+    private fun isTemporaryTitle(value: String?): Boolean =
+        PlaybackCollectionResolver.isGenericQueueTitle(value)
+
+    private fun sameText(expected: String?, current: String?): Boolean =
+        !expected.isNullOrBlank() && !current.isNullOrBlank() && normalize(expected) == normalize(current)
+
+    private fun compatibleText(expected: String?, current: String?): Boolean =
+        expected.isNullOrBlank() || current.isNullOrBlank() || normalize(expected) == normalize(current)
+
+    private fun String?.normalizedOrNull(): String? = this?.trim()?.takeIf { it.isNotEmpty() }
+
+    private fun normalize(value: String): String =
+        value.trim().lowercase(Locale.ROOT).replace(Regex("\\s+"), " ")
+}
 
 class DuplicateSuppressor(
     private val repeatCooldownMs: Long = 30_000L,
+    private val speechDuplicateCooldownMs: Long = 12_000L,
 ) {
     private val announcedTracks = linkedMapOf<String, AnnouncedTrack>()
+    private var lastSpeech: SpokenAnnouncement? = null
 
     fun shouldAnnounce(
         event: PlaybackEvent,
@@ -15,18 +193,15 @@ class DuplicateSuppressor(
         announcementText: String? = null,
     ): Boolean {
         if (!event.hasTitle && event.mediaId.isNullOrBlank()) return false
-        val base = TrackFingerprint.announcementBase(event)
+        if (lastSpeech?.isDuplicateOf(event, announcementText, now, speechDuplicateCooldownMs) == true) {
+            return false
+        }
         val previous = announcedTracks.values
             .asSequence()
-            .filter { it.base == base }
-            .filter { it.isCompatibleWith(event) }
+            .filter { it.isSameTrack(event) }
             .maxByOrNull(AnnouncedTrack::announcedAt)
         return when {
             previous == null -> true
-            previous.isMetadataEnrichedBy(event) &&
-                announcementText != null &&
-                previous.announcementText != null &&
-                previous.announcementText != announcementText -> true
             !allowRepeat -> false
             now - previous.announcedAt >= repeatCooldownMs -> true
             else -> false
@@ -35,43 +210,85 @@ class DuplicateSuppressor(
 
     fun markAnnounced(event: PlaybackEvent, now: Long, announcementText: String? = null) {
         val fingerprint = TrackFingerprint.announcement(event)
-        announcedTracks[fingerprint] = AnnouncedTrack(
-            base = TrackFingerprint.announcementBase(event),
-            trackNumber = event.trackNumber,
-            discNumber = event.discNumber,
-            artistPresent = !event.artist.isNullOrBlank(),
-            albumPresent = !event.album.isNullOrBlank(),
-            announcementText = announcementText,
-            announcedAt = now,
-        )
+        val track = AnnouncedTrack.from(event, now)
+        announcedTracks[fingerprint] = track
+        if (!announcementText.isNullOrBlank()) {
+            lastSpeech = SpokenAnnouncement(
+                track = track,
+                normalizedText = normalize(announcementText),
+                announcedAt = now,
+            )
+        }
         while (announcedTracks.size > 64) {
             announcedTracks.remove(announcedTracks.keys.first())
         }
     }
 
-    fun clear() = announcedTracks.clear()
+    fun clear() {
+        announcedTracks.clear()
+        lastSpeech = null
+    }
+
+    private fun normalize(value: String): String =
+        value.trim().lowercase(Locale.ROOT).replace(Regex("\\s+"), " ")
 
     private data class AnnouncedTrack(
-        val base: String,
-        val trackNumber: Int?,
-        val discNumber: Int?,
-        val artistPresent: Boolean,
-        val albumPresent: Boolean,
-        val announcementText: String?,
+        val event: PlaybackEvent,
         val announcedAt: Long,
     ) {
+        companion object {
+            fun from(event: PlaybackEvent, announcedAt: Long) = AnnouncedTrack(
+                event = event,
+                announcedAt = announcedAt,
+            )
+        }
+
         /**
          * A later callback that only fills a missing optional field is still
          * the same track. Two explicit, different track/disc values indicate
          * a real queue item change and must remain announceable.
          */
-        fun isCompatibleWith(event: PlaybackEvent): Boolean =
-            (trackNumber == null || event.trackNumber == null || trackNumber == event.trackNumber) &&
-                (discNumber == null || event.discNumber == null || discNumber == event.discNumber)
+        fun isSameTrack(event: PlaybackEvent, requireSameSource: Boolean = true): Boolean {
+            return AnnouncementTrackMatcher.matchesForDuplicateSuppression(
+                expected = this.event,
+                current = event,
+                requireSameSource = requireSameSource,
+            )
+        }
 
-        fun isMetadataEnrichedBy(event: PlaybackEvent): Boolean =
-            (!artistPresent && !event.artist.isNullOrBlank()) ||
-                (!albumPresent && !event.album.isNullOrBlank()) ||
-                (trackNumber == null && event.trackNumberReliable && event.trackNumber != null)
+        fun isSameContent(event: PlaybackEvent, requireSameSource: Boolean = true): Boolean {
+            return AnnouncementTrackMatcher.sameContent(
+                expected = this.event,
+                current = event,
+                requireSameSource = requireSameSource,
+            )
+        }
+    }
+
+    private data class SpokenAnnouncement(
+        val track: AnnouncedTrack,
+        val normalizedText: String,
+        val announcedAt: Long,
+    ) {
+        fun isDuplicateOf(
+            event: PlaybackEvent,
+            text: String?,
+            now: Long,
+            cooldownMs: Long,
+        ): Boolean =
+            !text.isNullOrBlank() &&
+                now - announcedAt in 0 until cooldownMs &&
+                (
+                    normalizedText == normalize(text) ||
+                    track.isSameContent(event, requireSameSource = false) ||
+                    AnnouncementTrackMatcher.matchesForDuplicateSuppression(
+                        expected = track.event,
+                        current = event,
+                        requireSameSource = false,
+                    )
+                    )
+
+        private fun normalize(value: String): String =
+            value.trim().lowercase(Locale.ROOT).replace(Regex("\\s+"), " ")
     }
 }

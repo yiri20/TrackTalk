@@ -1,9 +1,13 @@
 package com.trackvoice.data
 
-const val DEFAULT_TTS_VOLUME = 0.65f
+const val DEFAULT_TTS_VOLUME_PERCENT = 40
+const val DEFAULT_TTS_VOLUME = 0.40f
 const val DEFAULT_MUSIC_DUCK_PERCENT = 35
 const val MIN_MUSIC_DUCK_PERCENT = 10
 const val MAX_MUSIC_DUCK_PERCENT = 80
+const val YOUTUBE_PACKAGE_NAME = "com.google.android.youtube"
+
+fun defaultAppGuideEnabled(packageName: String): Boolean = packageName != YOUTUBE_PACKAGE_NAME
 
 enum class AnnouncementMode(val label: String) {
     SMART("Smart"),
@@ -11,6 +15,22 @@ enum class AnnouncementMode(val label: String) {
     PLAYLIST("재생목록 정보"),
     TITLE_AND_ARTIST("제목 + 아티스트"),
     TITLE_ONLY("제목만"),
+}
+
+/**
+ * The first item spoken in a multi-field announcement.
+ *
+ * DEFAULT keeps the content-aware order (for example, album -> track ->
+ * title -> artist for albums). The other values move the selected field to
+ * the front and keep the remaining checked fields in that stable order.
+ */
+enum class AnnouncementOrder {
+    DEFAULT,
+    TITLE_FIRST,
+    ALBUM_FIRST,
+    TRACK_NUMBER_FIRST,
+    ARTIST_FIRST,
+    COLLECTION_FIRST,
 }
 
 enum class CollectionFallback {
@@ -37,14 +57,22 @@ val DEFAULT_ALBUM_READ_FIELDS = setOf(
 
 val DEFAULT_PLAYLIST_READ_FIELDS = setOf(
     AnnouncementReadField.COLLECTION,
+    AnnouncementReadField.ALBUM,
+    AnnouncementReadField.TRACK_NUMBER,
     AnnouncementReadField.TITLE,
     AnnouncementReadField.ARTIST,
 )
 
 val DEFAULT_ALGORITHMIC_READ_FIELDS = setOf(
+    AnnouncementReadField.ALBUM,
+    AnnouncementReadField.TRACK_NUMBER,
     AnnouncementReadField.TITLE,
     AnnouncementReadField.ARTIST,
 )
+
+// A safe global fallback that works across players even when album or queue
+// metadata is missing.
+val DEFAULT_GLOBAL_READ_FIELDS = DEFAULT_ALGORITHMIC_READ_FIELDS
 
 enum class AnnouncementTiming(val label: String) {
     IMMEDIATE("즉시"),
@@ -109,12 +137,16 @@ data class UserSettings(
     val timing: AnnouncementTiming = AnnouncementTiming.IMMEDIATE,
     val delaySeconds: Int = 0,
     val defaultMode: AnnouncementMode = AnnouncementMode.SMART,
+    val useContentTypeSettings: Boolean = true,
+    val defaultReadFields: Set<AnnouncementReadField> = DEFAULT_GLOBAL_READ_FIELDS,
+    val announcementOrder: AnnouncementOrder = AnnouncementOrder.DEFAULT,
     val allowRepeatAnnouncements: Boolean = false,
     val minimumPlaybackSeconds: Int = 0,
     val albumMode: AnnouncementMode = AnnouncementMode.ALBUM,
     val playlistMode: AnnouncementMode = AnnouncementMode.PLAYLIST,
     val algorithmMode: AnnouncementMode = AnnouncementMode.TITLE_AND_ARTIST,
     val albumReadFields: Set<AnnouncementReadField> = DEFAULT_ALBUM_READ_FIELDS,
+    val albumNameFirstTrackOnly: Boolean = false,
     val playlistReadFields: Set<AnnouncementReadField> = DEFAULT_PLAYLIST_READ_FIELDS,
     val algorithmReadFields: Set<AnnouncementReadField> = DEFAULT_ALGORITHMIC_READ_FIELDS,
     val voiceLanguage: VoiceLanguage = VoiceLanguage.AUTO,

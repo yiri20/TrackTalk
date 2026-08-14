@@ -8,6 +8,7 @@ import android.media.session.MediaSessionManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import com.trackvoice.diagnostics.TrackTalkDebugLog
 import com.trackvoice.service.TrackVoiceNotificationListenerService
 import java.util.Locale
 
@@ -32,27 +33,35 @@ class MediaSessionMonitor(
 
     private val activeSessionsListener = MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
         if (!started) return@OnActiveSessionsChangedListener
-        updateControllers(controllers.orEmpty())
-        publish(MediaEventType.ACTIVE_SESSIONS)
+        runCatching {
+            updateControllers(controllers.orEmpty())
+            publish(MediaEventType.ACTIVE_SESSIONS)
+        }
     }
 
     fun start() {
         if (started) return
         started = true
-        manager.addOnActiveSessionsChangedListener(
-            activeSessionsListener,
-            listenerComponent,
-            handler,
-        )
-        updateControllers(manager.getActiveSessions(listenerComponent).orEmpty())
-        publish(MediaEventType.INITIAL)
+        runCatching {
+            manager.addOnActiveSessionsChangedListener(
+                activeSessionsListener,
+                listenerComponent,
+                handler,
+            )
+            updateControllers(manager.getActiveSessions(listenerComponent).orEmpty())
+            publish(MediaEventType.INITIAL)
+        }.onFailure {
+            started = false
+            sessions.clear()
+            selectedSessionKey = null
+        }
     }
 
     fun stop() {
         resumeRequestId += 1
         if (!started) return
         started = false
-        manager.removeOnActiveSessionsChangedListener(activeSessionsListener)
+        runCatching { manager.removeOnActiveSessionsChangedListener(activeSessionsListener) }
         sessions.values.forEach { tracked ->
             runCatching { tracked.controller.unregisterCallback(tracked.callback) }
         }
@@ -62,8 +71,10 @@ class MediaSessionMonitor(
 
     fun refresh() {
         if (!started) return
-        updateControllers(manager.getActiveSessions(listenerComponent).orEmpty())
-        publish(MediaEventType.ACTIVE_SESSIONS)
+        runCatching {
+            updateControllers(manager.getActiveSessions(listenerComponent).orEmpty())
+            publish(MediaEventType.ACTIVE_SESSIONS)
+        }
     }
 
     fun pauseSelectedIfPlaying(): PlaybackPauseToken? {
@@ -71,9 +82,12 @@ class MediaSessionMonitor(
         // delayed retry from a previous announcement play the track again.
         resumeRequestId += 1
         val tracked = selectedTrackedSession() ?: return null
-        val event = mapper.map(tracked.controller)
+        val event = runCatching { mapper.map(tracked.controller) }.getOrNull() ?: return null
         if (!event.isPlaying || !event.hasTitle) return null
-        val paused = runCatching { tracked.controller.transportControls.pause() }.isSuccess
+        val paused = runCatching {
+            tracked.controller.transportControls.pause()
+            true
+        }.getOrDefault(false)
         return if (paused) {
             PlaybackPauseToken(
                 sessionKey = sessionKey(tracked.controller),
@@ -104,7 +118,7 @@ class MediaSessionMonitor(
         // resume that may still be queued for an earlier announcement.
         resumeRequestId += 1
         val tracked = selectedTrackedSession() ?: return null
-        val event = mapper.map(tracked.controller)
+        val event = runCatching { mapper.map(tracked.controller) }.getOrNull() ?: return null
         return when {
             event.isPlaying -> runCatching {
                 tracked.controller.transportControls.pause()
@@ -137,7 +151,7 @@ class MediaSessionMonitor(
     }
 
     fun isSelectedPlaybackPlaying(): Boolean? = selectedTrackedSession()?.let {
-        mapper.map(it.controller).isPlaying
+        runCatching { mapper.map(it.controller).isPlaying }.getOrNull()
     }
 
     private fun updateControllers(controllers: List<MediaController>) {
@@ -211,29 +225,45 @@ class MediaSessionMonitor(
 
         val mediaKeyToken = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             runCatching { manager.getMediaKeyEventSession() }.getOrNull()
-        } else {
-            null
-        }
+        } else null
         val snapshots = sessions.map { (key, tracked) ->
-            SessionSnapshot(
-                sessionKey = key,
-                event = mapper.map(tracked.controller, now),
-                isMediaKeySession = mediaKeyToken != null && mediaKeyToken == tracked.controller.sessionToken,
-                lastMetadataChangedAt = tracked.lastMetadataChangedAt,
-                lastPlaybackStateChangedAt = tracked.lastPlaybackStateChangedAt,
-                lastObservedAt = tracked.lastObservedAt,
-            )
-        }
+            runCatching {
+                SessionSnapshot(
+                    sessionKey = key,
+                    event = mapper.map(tracked.controller, now),
+                    isMediaKeySession = mediaKeyToken != null && mediaKeyToken == tracked.controller.sessionToken,
+                    lastMetadataChangedAt = tracked.lastMetadataChangedAt,
+                    lastPlaybackStateChangedAt = tracked.lastPlaybackStateChangedAt,
+                    lastObservedAt = tracked.lastObservedAt,
+                )
+            }.getOrNull()
+        }.mapNotNull { it }
         val selected = ActiveSessionSelector.select(snapshots)
         selectedSessionKey = selected?.sessionKey
-        onUpdate(
-            MediaMonitorUpdate(
-                selected = selected,
-                activeSessionCount = sessions.size,
-                eventType = eventType,
-                observedAt = now,
-            ),
+        TrackTalkDebugLog.event(
+            "media_update",
+            "type" to eventType,
+            "activeSessions" to sessions.size,
+            "source" to selected?.event?.sourcePackageName,
+            "mediaId" to selected?.event?.mediaId,
+            "title" to selected?.event?.title,
+            "artist" to selected?.event?.artist,
+            "album" to selected?.event?.album,
+            "queueTitle" to selected?.event?.queueTitle,
+            "queueSize" to selected?.event?.queue?.size,
+            "playing" to selected?.event?.isPlaying,
+            "observedAt" to now,
         )
+        runCatching {
+            onUpdate(
+                MediaMonitorUpdate(
+                    selected = selected,
+                    activeSessionCount = sessions.size,
+                    eventType = eventType,
+                    observedAt = now,
+                ),
+            )
+        }
     }
 
     private fun sessionKey(controller: MediaController): String =
@@ -256,7 +286,7 @@ class MediaSessionMonitor(
         handler.postDelayed({
             if (!started || requestId != resumeRequestId) return@postDelayed
             val tracked = trackedSession(token)
-            val event = tracked?.let { mapper.map(it.controller) }
+            val event = tracked?.let { runCatching { mapper.map(it.controller) }.getOrNull() }
             if (tracked != null && event != null && matchesPausedTrack(event, token)) {
                 // Sending PLAY even when the state is still PLAYING is safe and
                 // covers players that publish the delayed PAUSED callback after

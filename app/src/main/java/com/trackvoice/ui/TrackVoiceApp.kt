@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -27,19 +29,21 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Tune
@@ -49,7 +53,6 @@ import androidx.compose.material.icons.filled.Podcasts
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -74,6 +77,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -86,6 +90,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -94,10 +99,12 @@ import androidx.core.graphics.drawable.toBitmap
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.trackvoice.BuildConfig
 import com.trackvoice.TrackVoiceViewModel
 import com.trackvoice.announcement.InstalledVoice
 import com.trackvoice.announcement.TtsStatus
 import com.trackvoice.data.AnnouncementMode
+import com.trackvoice.data.AnnouncementOrder
 import com.trackvoice.data.AnnouncementReadField
 import com.trackvoice.data.AnnouncementTiming
 import com.trackvoice.data.AppSettings
@@ -113,7 +120,9 @@ import com.trackvoice.data.TrackStartBehavior
 import com.trackvoice.data.AudioDeviceSettings
 import com.trackvoice.data.DEFAULT_ALBUM_READ_FIELDS
 import com.trackvoice.data.DEFAULT_ALGORITHMIC_READ_FIELDS
+import com.trackvoice.data.DEFAULT_GLOBAL_READ_FIELDS
 import com.trackvoice.data.DEFAULT_PLAYLIST_READ_FIELDS
+import com.trackvoice.data.DEFAULT_TTS_VOLUME_PERCENT
 import com.trackvoice.announcement.ConnectedAudioDevice
 import com.trackvoice.data.MAX_MUSIC_DUCK_PERCENT
 import com.trackvoice.data.MIN_MUSIC_DUCK_PERCENT
@@ -133,9 +142,27 @@ enum class AppSection {
     HOME,
     GENERAL,
     APPS,
-    VOICE,
+    DEVICES,
     DIAGNOSTICS,
 }
+
+private enum class GuideSettingsPane {
+    GUIDE,
+    VOICE,
+}
+
+private const val LEGACY_VOICE_SECTION_NAME = "VOICE"
+
+enum class GeneralSettingsTarget {
+    ALBUM,
+    PLAYLIST,
+    ALGORITHMIC,
+}
+
+private const val CONTENT_DEFAULTS_ITEM_INDEX = 3
+private const val CONTENT_ALBUM_ITEM_INDEX = 4
+private const val CONTENT_PLAYLIST_ITEM_INDEX = 5
+private const val CONTENT_ALGORITHMIC_ITEM_INDEX = 6
 
 private val TrackVoiceCardShape = RoundedCornerShape(14.dp)
 
@@ -152,9 +179,36 @@ fun TrackVoiceApp(viewModel: TrackVoiceViewModel, activity: Activity) {
     val premiumState by viewModel.premiumState.collectAsStateWithLifecycle()
     val effectiveSettings = settings.forPremiumEntitlement(premiumState.isPremium)
     val strings = TrackTalkStrings.forLanguage(settings.appLanguage, Locale.getDefault().language)
+    val currentAppUsesCustomGuide = mediaState.currentEvent?.let { event ->
+        appSettings[event.sourcePackageName]
+            ?.forPremiumEntitlement(premiumState.isPremium)
+            ?.useCustomGuideSettings == true
+    } == true
+    val currentGuideUsesTypeSpecificSettings = effectiveSettings.useContentTypeSettings &&
+        mediaState.currentCollection != PlaybackCollection.UNKNOWN
+    val currentGuideUsesAppSpecificSettings = currentAppUsesCustomGuide &&
+        !currentGuideUsesTypeSpecificSettings
+    val currentGuideBasis = strings.announcementBasisValue(
+        appSpecific = currentGuideUsesAppSpecificSettings,
+        typeSpecific = currentGuideUsesTypeSpecificSettings,
+    )
     var selectedSectionName by rememberSaveable { mutableStateOf(AppSection.HOME.name) }
+    var guidePaneName by rememberSaveable { mutableStateOf(GuideSettingsPane.GUIDE.name) }
+    var generalSettingsTargetName by rememberSaveable { mutableStateOf<String?>(null) }
     var showPremiumDialog by rememberSaveable { mutableStateOf(false) }
-    val selectedSection = AppSection.valueOf(selectedSectionName)
+    val selectedSection = when (selectedSectionName) {
+        LEGACY_VOICE_SECTION_NAME -> AppSection.GENERAL
+        else -> runCatching { AppSection.valueOf(selectedSectionName) }.getOrDefault(AppSection.HOME)
+    }
+    val generalSettingsTarget = generalSettingsTargetName?.let { name ->
+        GeneralSettingsTarget.values().firstOrNull { it.name == name }
+    }
+    LaunchedEffect(selectedSectionName) {
+        if (selectedSectionName == LEGACY_VOICE_SECTION_NAME) {
+            selectedSectionName = AppSection.GENERAL.name
+            guidePaneName = GuideSettingsPane.VOICE.name
+        }
+    }
     val context = LocalContext.current
     var notificationPermissionGranted by remember {
         mutableStateOf(
@@ -192,11 +246,22 @@ fun TrackVoiceApp(viewModel: TrackVoiceViewModel, activity: Activity) {
             },
             bottomBar = {
                 NavigationBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) {
-                    NavigationItem(AppSection.HOME, Icons.Default.Home, selectedSection) { selectedSectionName = it.name }
-                    NavigationItem(AppSection.GENERAL, Icons.Default.Tune, selectedSection) { selectedSectionName = it.name }
-                    NavigationItem(AppSection.APPS, Icons.Default.Apps, selectedSection) { selectedSectionName = it.name }
-                    NavigationItem(AppSection.VOICE, Icons.Default.RecordVoiceOver, selectedSection) { selectedSectionName = it.name }
-                    NavigationItem(AppSection.DIAGNOSTICS, Icons.Default.BugReport, selectedSection) { selectedSectionName = it.name }
+                    NavigationItem(AppSection.HOME, Icons.Default.Home, selectedSection) {
+                        selectedSectionName = it.name
+                        generalSettingsTargetName = null
+                    }
+                    NavigationItem(AppSection.GENERAL, Icons.Default.Tune, selectedSection) {
+                        selectedSectionName = it.name
+                        generalSettingsTargetName = null
+                    }
+                    NavigationItem(AppSection.APPS, Icons.Default.Apps, selectedSection) {
+                        selectedSectionName = it.name
+                        generalSettingsTargetName = null
+                    }
+                    NavigationItem(AppSection.DEVICES, Icons.Default.Settings, selectedSection) {
+                        selectedSectionName = it.name
+                        generalSettingsTargetName = null
+                    }
                 }
             },
         ) { padding ->
@@ -205,8 +270,8 @@ fun TrackVoiceApp(viewModel: TrackVoiceViewModel, activity: Activity) {
                 AppSection.HOME -> HomeScreen(
                     settings = effectiveSettings,
                     mediaEvent = mediaState.currentEvent,
-                    currentMode = mediaState.currentMode,
                     currentCollection = mediaState.currentCollection,
+                    guideBasis = currentGuideBasis,
                     lastDetectedAt = mediaState.lastDetectedAt,
                     effectiveEnabled = mediaState.effectiveEnabled,
                     notificationAccess = diagnostics.notificationListenerConnected,
@@ -222,18 +287,31 @@ fun TrackVoiceApp(viewModel: TrackVoiceViewModel, activity: Activity) {
                             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                         }
                     },
-                    onOpenGeneral = { selectedSectionName = AppSection.GENERAL.name },
+                    onOpenGeneral = {
+                        generalSettingsTargetName = null
+                        guidePaneName = GuideSettingsPane.GUIDE.name
+                        selectedSectionName = AppSection.GENERAL.name
+                    },
+                    onOpenCollectionSettings = { collection ->
+                        generalSettingsTargetName = collection.toGeneralSettingsTarget()?.name
+                        guidePaneName = GuideSettingsPane.GUIDE.name
+                        selectedSectionName = AppSection.GENERAL.name
+                    },
                     onOpenPremium = { showPremiumDialog = true },
                 )
 
-                AppSection.GENERAL -> GeneralSettingsScreen(
+                AppSection.GENERAL -> GuideSettingsScreen(
                     settings = effectiveSettings,
-                    connectedDevices = connectedDevices,
-                    deviceSettings = deviceSettings,
+                    voices = voices,
+                    ttsStatus = diagnostics.ttsState,
                     isPremium = premiumState.isPremium,
                     onUpdate = viewModel.controller::updateUserSettings,
-                    onUpdateDevice = viewModel.controller::updateAudioDeviceSettings,
+                    onTest = viewModel.controller::speakTest,
                     onOpenPremium = { showPremiumDialog = true },
+                    target = generalSettingsTarget,
+                    onTargetHandled = { generalSettingsTargetName = null },
+                    selectedPaneName = guidePaneName,
+                    onPaneSelected = { guidePaneName = it.name },
                 )
 
                 AppSection.APPS -> AppSettingsScreen(
@@ -244,17 +322,25 @@ fun TrackVoiceApp(viewModel: TrackVoiceViewModel, activity: Activity) {
                     onOpenPremium = { showPremiumDialog = true },
                 )
 
-                AppSection.VOICE -> VoiceSettingsScreen(
+                AppSection.DEVICES -> DeviceSettingsScreen(
                     settings = effectiveSettings,
-                    voices = voices,
-                    ttsStatus = diagnostics.ttsState,
+                    connectedDevices = connectedDevices,
+                    deviceSettings = deviceSettings,
                     isPremium = premiumState.isPremium,
                     onUpdate = viewModel.controller::updateUserSettings,
-                    onTest = viewModel.controller::speakTest,
+                    onUpdateDevice = viewModel.controller::updateAudioDeviceSettings,
                     onOpenPremium = { showPremiumDialog = true },
+                    onOpenDiagnostics = { selectedSectionName = AppSection.DIAGNOSTICS.name },
+                    onOpenRepository = {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, "https://github.com/yiri20/TrackTalk".toUri()))
+                    },
                 )
 
-                AppSection.DIAGNOSTICS -> DiagnosticsScreen(diagnostics, mediaState.currentEvent)
+                AppSection.DIAGNOSTICS -> DiagnosticsScreen(
+                    diagnostics,
+                    mediaState.currentEvent,
+                    onBack = { selectedSectionName = AppSection.DEVICES.name },
+                )
                 }
             }
         }
@@ -303,8 +389,8 @@ private fun SurfaceContent(padding: PaddingValues, content: @Composable ColumnSc
 private fun HomeScreen(
     settings: UserSettings,
     mediaEvent: PlaybackEvent?,
-    currentMode: AnnouncementMode,
     currentCollection: PlaybackCollection,
+    guideBasis: String,
     lastDetectedAt: Long?,
     effectiveEnabled: Boolean,
     notificationAccess: Boolean,
@@ -315,6 +401,7 @@ private fun HomeScreen(
     onOpenPermission: () -> Unit,
     onRequestNotificationPermission: () -> Unit,
     onOpenGeneral: () -> Unit,
+    onOpenCollectionSettings: (PlaybackCollection) -> Unit,
     onOpenPremium: () -> Unit,
 ) {
     val strings = LocalTrackTalkStrings.current
@@ -341,7 +428,14 @@ private fun HomeScreen(
             }
         }
         item {
-            CurrentTrackCard(mediaEvent, currentMode, currentCollection, lastDetectedAt, onTogglePlayback)
+            CurrentTrackCard(
+                event = mediaEvent,
+                collection = currentCollection,
+                guideBasis = guideBasis,
+                lastDetectedAt = lastDetectedAt,
+                onTogglePlayback = onTogglePlayback,
+                onOpenCollectionSettings = onOpenCollectionSettings,
+            )
         }
         item {
             PremiumCard(premiumState, onOpenPremium)
@@ -355,7 +449,7 @@ private fun HomeScreen(
             ) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(strings.guideSettings, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text(strings.guideSummary(currentMode, settings.delaySeconds))
+                    Text(strings.guideTimingSummary(settings.timing, settings.delaySeconds))
                     TextButton(onClick = onOpenGeneral) { Text(strings.openSettings) }
                 }
             }
@@ -603,10 +697,11 @@ private fun PermissionCard(onOpenPermission: () -> Unit) {
 @Composable
 private fun CurrentTrackCard(
     event: PlaybackEvent?,
-    mode: AnnouncementMode,
     collection: PlaybackCollection,
+    guideBasis: String,
     lastDetectedAt: Long?,
     onTogglePlayback: () -> Unit,
+    onOpenCollectionSettings: (PlaybackCollection) -> Unit,
 ) {
     val strings = LocalTrackTalkStrings.current
     Card(
@@ -635,7 +730,7 @@ private fun CurrentTrackCard(
                 }
                 val visibleTrackNumber = AlbumTrackNumberResolver.resolve(
                     event = event,
-                    allowQueuePositionFallback = collection == PlaybackCollection.ALBUM || mode == AnnouncementMode.ALBUM,
+                    allowQueuePositionFallback = collection == PlaybackCollection.ALBUM,
                 )
                 if (visibleTrackNumber != null) {
                     TrackField(
@@ -643,9 +738,17 @@ private fun CurrentTrackCard(
                         strings.trackNumber(visibleTrackNumber, event.totalTracks ?: event.queue.size.takeIf { it > 1 }),
                     )
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    AssistChip(onClick = {}, label = { Text(strings.collectionLabel(collection)) })
-                    AssistChip(onClick = {}, label = { Text("${strings.announcementMode(mode)} · ${strings.playbackStatus(event.playbackState)}") })
+                CurrentTrackSummary(
+                    collection = collection,
+                    guideBasis = guideBasis,
+                    onClick = { onOpenCollectionSettings(collection) },
+                )
+                if (collection == PlaybackCollection.UNKNOWN) {
+                    Text(
+                        strings.collectionUnknownSummary,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
                 OutlinedButton(onClick = onTogglePlayback, modifier = Modifier.fillMaxWidth()) {
                     Box(Modifier.fillMaxWidth()) {
@@ -667,6 +770,75 @@ private fun CurrentTrackCard(
 }
 
 @Composable
+private fun CurrentTrackSummary(
+    collection: PlaybackCollection,
+    guideBasis: String,
+    onClick: () -> Unit,
+) {
+    val strings = LocalTrackTalkStrings.current
+    val summaryShape = RoundedCornerShape(12.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(summaryShape)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.32f))
+            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), summaryShape)
+            .padding(horizontal = 10.dp, vertical = 9.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        SummaryInfo(
+            modifier = Modifier
+                .weight(0.9f)
+                .clickable(enabled = collection != PlaybackCollection.UNKNOWN, onClick = onClick)
+                .padding(horizontal = 3.dp, vertical = 1.dp),
+            label = strings.playbackTypeLabel,
+            value = strings.collectionValue(collection),
+        )
+        Box(
+            modifier = Modifier
+                .width(1.dp)
+                .height(30.dp)
+                .background(MaterialTheme.colorScheme.outlineVariant),
+        )
+        SummaryInfo(
+            modifier = Modifier
+                .weight(1.1f)
+                .padding(horizontal = 3.dp, vertical = 1.dp),
+            label = strings.announcementBasisLabel,
+            value = guideBasis,
+        )
+    }
+}
+
+@Composable
+private fun SummaryInfo(
+    modifier: Modifier,
+    label: String,
+    value: String,
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            value,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
 private fun TrackField(label: String, value: String) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(label, modifier = Modifier.width(64.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -675,17 +847,93 @@ private fun TrackField(label: String, value: String) {
 }
 
 @Composable
-private fun GeneralSettingsScreen(
+private fun GuideSettingsScreen(
     settings: UserSettings,
-    connectedDevices: List<ConnectedAudioDevice>,
-    deviceSettings: Map<String, AudioDeviceSettings>,
+    voices: List<InstalledVoice>,
+    ttsStatus: com.trackvoice.announcement.TtsState,
     isPremium: Boolean,
     onUpdate: ((UserSettings) -> UserSettings) -> Unit,
-    onUpdateDevice: (AudioDeviceSettings) -> Unit,
+    onTest: () -> Unit,
     onOpenPremium: () -> Unit,
+    target: GeneralSettingsTarget?,
+    onTargetHandled: () -> Unit,
+    selectedPaneName: String,
+    onPaneSelected: (GuideSettingsPane) -> Unit,
+) {
+    val selectedPane = runCatching { GuideSettingsPane.valueOf(selectedPaneName) }
+        .getOrDefault(GuideSettingsPane.GUIDE)
+    val strings = LocalTrackTalkStrings.current
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            FilterChip(
+                selected = selectedPane == GuideSettingsPane.GUIDE,
+                onClick = { onPaneSelected(GuideSettingsPane.GUIDE) },
+                label = { Text(strings.text("안내", "Guide")) },
+                modifier = Modifier.weight(1f),
+            )
+            FilterChip(
+                selected = selectedPane == GuideSettingsPane.VOICE,
+                onClick = { onPaneSelected(GuideSettingsPane.VOICE) },
+                label = { Text(strings.text("음성", "Voice")) },
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            if (selectedPane == GuideSettingsPane.GUIDE) {
+                GeneralSettingsScreen(
+                    settings = settings,
+                    isPremium = isPremium,
+                    onUpdate = onUpdate,
+                    onOpenPremium = onOpenPremium,
+                    target = target,
+                    onTargetHandled = onTargetHandled,
+                )
+            } else {
+                VoiceSettingsScreen(
+                    settings = settings,
+                    voices = voices,
+                    ttsStatus = ttsStatus,
+                    isPremium = isPremium,
+                    onUpdate = onUpdate,
+                    onTest = onTest,
+                    onOpenPremium = onOpenPremium,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun GeneralSettingsScreen(
+    settings: UserSettings,
+    isPremium: Boolean,
+    onUpdate: ((UserSettings) -> UserSettings) -> Unit,
+    onOpenPremium: () -> Unit,
+    target: GeneralSettingsTarget?,
+    onTargetHandled: () -> Unit,
 ) {
     val strings = LocalTrackTalkStrings.current
+    val listState = rememberLazyListState()
+    val targetItemIndex = when {
+        !isPremium || !settings.useContentTypeSettings -> CONTENT_DEFAULTS_ITEM_INDEX
+        target == GeneralSettingsTarget.ALBUM -> CONTENT_ALBUM_ITEM_INDEX
+        target == GeneralSettingsTarget.PLAYLIST -> CONTENT_PLAYLIST_ITEM_INDEX
+        target == GeneralSettingsTarget.ALGORITHMIC -> CONTENT_ALGORITHMIC_ITEM_INDEX
+        else -> CONTENT_DEFAULTS_ITEM_INDEX
+    }
+    LaunchedEffect(target, isPremium, settings.useContentTypeSettings) {
+        if (target != null) {
+            listState.scrollToItem(targetItemIndex)
+            onTargetHandled()
+        }
+    }
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -722,37 +970,9 @@ private fun GeneralSettingsScreen(
             }
         }
         item {
-            SettingCard(strings.connectedDevices) {
-                if (isPremium) {
-                    Text(strings.deviceAutomationSummary, style = MaterialTheme.typography.bodySmall)
-                    if (connectedDevices.isEmpty()) {
-                        Text(strings.noConnectedDevices, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    connectedDevices.forEach { device ->
-                        val saved = deviceSettings[device.key] ?: AudioDeviceSettings(device.key, device.name)
-                        Text(device.name, fontWeight = FontWeight.SemiBold)
-                        Text(device.typeLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        SettingSwitchRow(strings.useOnThisDevice, strings.useOnThisDeviceSummary, saved.enabled) {
-                            onUpdateDevice(saved.copy(enabled = it))
-                        }
-                        SettingSwitchRow(strings.autoEnableOnConnect, strings.autoEnableOnConnectSummary, saved.autoEnable) {
-                            onUpdateDevice(saved.copy(autoEnable = it))
-                        }
-                        HorizontalDivider()
-                    }
-                } else {
-                    PremiumLockedContent(
-                        title = strings.text("기기별 자동화는 Plus 기능입니다.", "Per-device automation is a Plus feature."),
-                        summary = strings.text("Bluetooth·USB·HDMI 기기별로 안내 여부와 자동 켜짐을 설정할 수 있습니다.", "Configure announcements and auto-enable for Bluetooth, USB, and HDMI devices."),
-                        onOpenPremium = onOpenPremium,
-                    )
-                }
-            }
-        }
-        item {
             SettingCard(strings.trackGuide) {
                 Text(
-                    strings.text("모든 앱에 적용되는 안내 기본값입니다.", "Defaults applied to all apps."),
+                    strings.guideDefaultsSummary,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -795,7 +1015,7 @@ private fun GeneralSettingsScreen(
                                 strings.musicDuckAmount,
                                 settings.musicDuckPercent.toFloat(),
                                 MIN_MUSIC_DUCK_PERCENT.toFloat()..MAX_MUSIC_DUCK_PERCENT.toFloat(),
-                                strings.musicDuckPercent(settings.musicDuckPercent),
+                                { value -> strings.musicDuckPercent(value.toInt()) },
                             ) { value ->
                                 onUpdate {
                                     it.copy(
@@ -813,29 +1033,39 @@ private fun GeneralSettingsScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    OptionDropdown(strings.announcementTiming, settings.timing, AnnouncementTiming.values().toList(), strings::announcementTiming) { selectedTiming ->
+                    val timingOptions = listOf(
+                        AnnouncementTiming.IMMEDIATE,
+                        AnnouncementTiming.DELAYED,
+                    )
+                    OptionDropdown(strings.announcementTiming, settings.timing, timingOptions, strings::announcementTiming) { selectedTiming ->
                         onUpdate { current -> current.copy(timing = selectedTiming) }
                     }
-                    OptionDropdown(strings.readContent, settings.defaultMode, AnnouncementMode.values().toList(), strings::announcementMode) { selectedMode ->
-                        onUpdate { current -> current.copy(defaultMode = selectedMode) }
+                    Text(
+                        strings.announcementTimingSummary(settings.timing, settings.delaySeconds),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    val playbackThresholdsActive = settings.timing != AnnouncementTiming.IMMEDIATE &&
+                        settings.trackStartBehavior != TrackStartBehavior.ANNOUNCE_THEN_PLAY
+                    if (playbackThresholdsActive) {
+                        SliderSetting(strings.announcementDelay, settings.delaySeconds.toFloat(), 0f..2f, { value -> strings.seconds(value.toInt()) }) { value ->
+                            onUpdate { it.copy(delaySeconds = value.toInt()) }
+                        }
+                        SliderSetting(
+                            strings.minimumPlayback,
+                            settings.minimumPlaybackSeconds.toFloat(),
+                            0f..60f,
+                            { value -> strings.seconds(value.toInt()) },
+                        ) { value -> onUpdate { it.copy(minimumPlaybackSeconds = value.toInt()) } }
                     }
-                    SliderSetting(strings.announcementDelay, settings.delaySeconds.toFloat(), 0f..2f, strings.seconds(settings.delaySeconds)) { value ->
-                        onUpdate { it.copy(delaySeconds = value.toInt()) }
-                    }
-                    SliderSetting(
-                        strings.minimumPlayback,
-                        settings.minimumPlaybackSeconds.toFloat(),
-                        0f..60f,
-                        strings.seconds(settings.minimumPlaybackSeconds),
-                    ) { value -> onUpdate { it.copy(minimumPlaybackSeconds = value.toInt()) } }
                     SettingSwitchRow(strings.repeatTrack, strings.repeatTrackSummary, settings.allowRepeatAnnouncements) { enabled ->
                         onUpdate { current -> current.copy(allowRepeatAnnouncements = enabled) }
                     }
                 } else {
                     BasicPlaybackDefaults(settings.musicDuckPercent)
                     PremiumLockedContent(
-                        title = strings.text("안내 방식 세부 설정은 Plus 기능입니다.", "Detailed announcement modes are a Plus feature."),
-                        summary = strings.text("무료 버전은 새 트랙을 바로 안내하고 음악을 기본 감쇠량으로 줄입니다.", "The free version announces new tracks immediately and uses the default music ducking."),
+                        title = strings.detailedGuidePlusTitle,
+                        summary = strings.freeGuideDetailsSummary,
                         onOpenPremium = onOpenPremium,
                     )
                 }
@@ -849,9 +1079,91 @@ private fun GeneralSettingsScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (isPremium) {
-                    OptionDropdown(strings.albumPlayback, settings.albumMode, AnnouncementMode.values().toList(), strings::announcementMode) { mode ->
-                        onUpdate { it.copy(albumMode = mode, albumReadFields = mode.toReadFields(DEFAULT_ALBUM_READ_FIELDS)) }
+                    Text(
+                        strings.contentReadPresetHint,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    SettingSwitchRow(
+                        strings.contentTypeSettings,
+                        strings.contentTypeSettingsSummary(settings.useContentTypeSettings, settings.defaultMode),
+                        settings.useContentTypeSettings,
+                    ) { enabled ->
+                        onUpdate { it.copy(useContentTypeSettings = enabled) }
                     }
+                    OptionDropdown(
+                        strings.globalReadContent,
+                        settings.defaultMode,
+                        AnnouncementMode.values().toList(),
+                        strings::announcementMode,
+                    ) { selectedMode ->
+                        onUpdate { current -> current.copy(defaultMode = selectedMode) }
+                    }
+                    Text(
+                        strings.globalReadContentSummary(settings.defaultMode, settings.useContentTypeSettings),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OptionDropdown(
+                        strings.announcementOrder,
+                        settings.announcementOrder,
+                        AnnouncementOrder.values().toList(),
+                        strings::announcementOrder,
+                    ) { selectedOrder ->
+                        onUpdate { current -> current.copy(announcementOrder = selectedOrder) }
+                    }
+                    Text(
+                        strings.announcementOrderSummary,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OptionDropdown(
+                        strings.allContentPresetLabel,
+                        settings.defaultReadFields.toContentReadPreset(DEFAULT_GLOBAL_READ_FIELDS),
+                        CONTENT_READ_PRESET_OPTIONS,
+                        strings::contentReadPreset,
+                    ) { preset ->
+                        onUpdate { it.withGlobalReadPreset(preset) }
+                    }
+                    ContentReadChecklist(
+                        title = strings.allContentReadItems,
+                        availableFields = listOf(
+                            AnnouncementReadField.TITLE,
+                            AnnouncementReadField.ARTIST,
+                            AnnouncementReadField.ALBUM,
+                            AnnouncementReadField.TRACK_NUMBER,
+                            AnnouncementReadField.COLLECTION,
+                        ),
+                        selectedFields = settings.defaultReadFields,
+                    ) { fields ->
+                        onUpdate { it.copy(defaultMode = AnnouncementMode.SMART, defaultReadFields = fields) }
+                    }
+                    if (!settings.useContentTypeSettings) {
+                        Text(
+                            strings.contentTypeSettingsDisabledSummary,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                } else {
+                    Text(strings.freeAlbumPlaylistDefaults)
+                    PremiumLockedContent(
+                        title = strings.contentReadingPlusTitle,
+                        summary = strings.contentSpecificPlusSummary,
+                        onOpenPremium = onOpenPremium,
+                    )
+                }
+            }
+        }
+        if (isPremium && settings.useContentTypeSettings) {
+            item {
+                SettingCard(strings.contentTypeSectionTitle(PlaybackCollection.ALBUM)) {
+                    OptionDropdown(
+                        strings.contentPresetLabel(PlaybackCollection.ALBUM),
+                        settings.albumReadFields.toContentReadPreset(DEFAULT_ALBUM_READ_FIELDS),
+                        CONTENT_READ_PRESET_OPTIONS,
+                        strings::contentReadPreset,
+                    ) { preset -> onUpdate { it.withAlbumReadPreset(preset) } }
                     ContentReadChecklist(
                         title = strings.albumReadItems,
                         availableFields = listOf(
@@ -862,34 +1174,106 @@ private fun GeneralSettingsScreen(
                         ),
                         selectedFields = settings.albumReadFields,
                     ) { fields -> onUpdate { it.copy(albumMode = AnnouncementMode.ALBUM, albumReadFields = fields) } }
-                    OptionDropdown(strings.playlistPlayback, settings.playlistMode, AnnouncementMode.values().toList(), strings::announcementMode) { mode ->
-                        onUpdate { it.copy(playlistMode = mode, playlistReadFields = mode.toReadFields(DEFAULT_PLAYLIST_READ_FIELDS)) }
-                    }
+                    SettingSwitchRow(
+                        strings.albumNameFirstTrackOnly,
+                        strings.albumNameFirstTrackOnlySummary,
+                        settings.albumNameFirstTrackOnly,
+                    ) { enabled -> onUpdate { it.copy(albumNameFirstTrackOnly = enabled) } }
+                }
+            }
+            item {
+                SettingCard(strings.contentTypeSectionTitle(PlaybackCollection.PLAYLIST)) {
+                    OptionDropdown(
+                        strings.contentPresetLabel(PlaybackCollection.PLAYLIST),
+                        settings.playlistReadFields.toContentReadPreset(DEFAULT_PLAYLIST_READ_FIELDS),
+                        CONTENT_READ_PRESET_OPTIONS,
+                        strings::contentReadPreset,
+                    ) { preset -> onUpdate { it.withPlaylistReadPreset(preset) } }
                     ContentReadChecklist(
                         title = strings.playlistReadItems,
                         availableFields = listOf(
                             AnnouncementReadField.COLLECTION,
+                            AnnouncementReadField.ALBUM,
+                            AnnouncementReadField.TRACK_NUMBER,
                             AnnouncementReadField.TITLE,
                             AnnouncementReadField.ARTIST,
                         ),
                         selectedFields = settings.playlistReadFields,
                     ) { fields -> onUpdate { it.copy(playlistMode = AnnouncementMode.PLAYLIST, playlistReadFields = fields) } }
-                    OptionDropdown(strings.algorithmPlayback, settings.algorithmMode, AnnouncementMode.values().toList(), strings::announcementMode) { mode ->
-                        onUpdate { it.copy(algorithmMode = mode, algorithmReadFields = mode.toReadFields(DEFAULT_ALGORITHMIC_READ_FIELDS)) }
-                    }
+                }
+            }
+            item {
+                SettingCard(strings.contentTypeSectionTitle(PlaybackCollection.ALGORITHMIC)) {
+                    OptionDropdown(
+                        strings.contentPresetLabel(PlaybackCollection.ALGORITHMIC),
+                        settings.algorithmReadFields.toContentReadPreset(DEFAULT_ALGORITHMIC_READ_FIELDS),
+                        CONTENT_READ_PRESET_OPTIONS,
+                        strings::contentReadPreset,
+                    ) { preset -> onUpdate { it.withAlgorithmReadPreset(preset) } }
                     ContentReadChecklist(
                         title = strings.algorithmReadItems,
                         availableFields = listOf(
                             AnnouncementReadField.TITLE,
                             AnnouncementReadField.ARTIST,
+                            AnnouncementReadField.ALBUM,
+                            AnnouncementReadField.TRACK_NUMBER,
                         ),
                         selectedFields = settings.algorithmReadFields,
-                    ) { fields -> onUpdate { it.copy(algorithmMode = AnnouncementMode.TITLE_AND_ARTIST, algorithmReadFields = fields) } }
+                    ) { fields ->
+                        onUpdate {
+                            it.copy(
+                                algorithmMode = fields.toAlgorithmAnnouncementMode(),
+                                algorithmReadFields = fields,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DeviceSettingsScreen(
+    settings: UserSettings,
+    connectedDevices: List<ConnectedAudioDevice>,
+    deviceSettings: Map<String, AudioDeviceSettings>,
+    isPremium: Boolean,
+    onUpdate: ((UserSettings) -> UserSettings) -> Unit,
+    onUpdateDevice: (AudioDeviceSettings) -> Unit,
+    onOpenPremium: () -> Unit,
+    onOpenDiagnostics: () -> Unit,
+    onOpenRepository: () -> Unit,
+) {
+    val strings = LocalTrackTalkStrings.current
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            SettingCard(strings.connectedDevices) {
+                if (isPremium) {
+                    Text(strings.deviceAutomationSummary, style = MaterialTheme.typography.bodySmall)
+                    if (connectedDevices.isEmpty()) {
+                        Text(strings.noConnectedDevices, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    connectedDevices.forEach { device ->
+                        val saved = deviceSettings[device.key] ?: AudioDeviceSettings(device.key, device.name)
+                        Text(device.name, fontWeight = FontWeight.SemiBold)
+                        Text(device.typeLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        SettingSwitchRow(strings.useOnThisDevice, strings.useOnThisDeviceSummary, saved.enabled) {
+                            onUpdateDevice(saved.copy(enabled = it))
+                        }
+                        SettingSwitchRow(strings.autoEnableOnConnect, strings.autoEnableOnConnectSummary, saved.autoEnable) {
+                            onUpdateDevice(saved.copy(autoEnable = it))
+                        }
+                        HorizontalDivider()
+                    }
                 } else {
-                    Text(strings.freeAlbumPlaylistDefaults)
                     PremiumLockedContent(
-                        title = strings.text("콘텐츠별 읽기 방식 변경은 Plus 기능입니다.", "Content-specific reading modes are a Plus feature."),
-                        summary = strings.text("앨범, 재생목록, 알고리즘·랜덤 재생의 안내 문장을 각각 선택할 수 있습니다.", "Choose separate announcement formats for albums, playlists, and algorithmic or shuffled playback."),
+                        title = strings.text("기기별 자동화는 Plus 기능입니다.", "Per-device automation is a Plus feature."),
+                        summary = strings.text("Bluetooth·USB·HDMI 기기별로 안내 여부와 자동 켜짐을 설정할 수 있습니다.", "Configure announcements and auto-enable for Bluetooth, USB, and HDMI devices."),
                         onOpenPremium = onOpenPremium,
                     )
                 }
@@ -904,11 +1288,7 @@ private fun GeneralSettingsScreen(
                     SettingSwitchRow(strings.screenOnRestore, strings.screenOnRestoreSummary, settings.restoreEnabledWhenScreenOn) { enabled ->
                         onUpdate { it.copy(restoreEnabledWhenScreenOn = enabled) }
                     }
-                    SettingSwitchRow(
-                        strings.bluetoothOnly,
-                        strings.bluetoothOnlySummary,
-                        settings.bluetoothOnlyForAutoEnable,
-                    ) { enabled ->
+                    SettingSwitchRow(strings.bluetoothOnly, strings.bluetoothOnlySummary, settings.bluetoothOnlyForAutoEnable) { enabled ->
                         onUpdate { it.copy(bluetoothOnlyForAutoEnable = enabled) }
                     }
                 } else {
@@ -920,6 +1300,58 @@ private fun GeneralSettingsScreen(
                 }
             }
         }
+        item {
+            SettingCard(strings.sectionTitle(AppSection.DIAGNOSTICS)) {
+                Text(
+                    strings.diagnosticsSummary,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedButton(onClick = onOpenDiagnostics, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.BugReport, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(strings.openDiagnostics)
+                }
+            }
+        }
+        item {
+            AppInfoCard(onOpenRepository = onOpenRepository)
+        }
+    }
+}
+
+@Composable
+private fun AppInfoCard(onOpenRepository: () -> Unit) {
+    val strings = LocalTrackTalkStrings.current
+    SettingCard(strings.appInfoTitle) {
+        Text(
+            strings.appInfoSummary,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        InfoRow(strings.versionLabel, "v${BuildConfig.VERSION_NAME}")
+        InfoRow(strings.buildNumberLabel, BuildConfig.VERSION_CODE.toString())
+        InfoRow(strings.developerLabel, strings.developerName)
+        OutlinedButton(onClick = onOpenRepository, modifier = Modifier.fillMaxWidth()) {
+            Text(strings.openRepository)
+        }
+    }
+}
+
+@Composable
+private fun InfoRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            label,
+            modifier = Modifier.width(88.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(value, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -933,7 +1365,12 @@ private fun AppSettingsScreen(
 ) {
     val strings = LocalTrackTalkStrings.current
     var selectedCategoryNames by rememberSaveable {
-        mutableStateOf(AppCategory.values().map { it.name })
+        mutableStateOf(
+            listOf(
+                AppCategory.MUSIC_STREAMING.name,
+                AppCategory.MUSIC_VIDEO.name,
+            ),
+        )
     }
     val appsByCategory = remember(apps) {
         apps.groupBy { app -> categorizeApp(app.packageName, app.appName) }
@@ -1094,7 +1531,6 @@ private fun AppSettingsCard(
     onOpenPremium: () -> Unit,
 ) {
     val strings = LocalTrackTalkStrings.current
-    var expanded by rememberSaveable(app.packageName) { mutableStateOf(false) }
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = TrackVoiceCardShape,
@@ -1122,31 +1558,31 @@ private fun AppSettingsCard(
                     )
                 }
                 Switch(
-                    checked = app.enabled,
+                    checked = app.enabled && !app.alwaysExclude,
+                    enabled = !app.alwaysExclude,
                     onCheckedChange = { onUpdate(app.copy(enabled = it, alwaysExclude = false)) },
                 )
             }
             if (isPremium) {
+                HorizontalDivider()
                 SettingSwitchRow(
                     strings.appCustomGuideSettings,
                     strings.appCustomGuideSummary(app.useCustomGuideSettings),
                     app.useCustomGuideSettings,
                 ) { custom ->
-                    expanded = custom
                     onUpdate(app.copy(useCustomGuideSettings = custom))
                 }
-                CheckRow(strings.appAlwaysExclude, app.alwaysExclude) {
+                SettingSwitchRow(
+                    strings.appAlwaysExclude,
+                    strings.appAlwaysExcludeSummary,
+                    app.alwaysExclude,
+                ) { excluded ->
                     onUpdate(
                         app.copy(
-                            alwaysExclude = it,
-                            enabled = if (it) false else app.enabled,
+                            alwaysExclude = excluded,
+                            enabled = if (excluded) false else true,
                         ),
                     )
-                }
-                if (app.useCustomGuideSettings) {
-                    TextButton(onClick = { expanded = !expanded }) {
-                        Text(if (expanded) strings.collapseDetails else strings.expandDetails)
-                    }
                 }
             } else {
                 PremiumLockedContent(
@@ -1155,7 +1591,8 @@ private fun AppSettingsCard(
                     onOpenPremium = onOpenPremium,
                 )
             }
-            if (expanded && isPremium && app.useCustomGuideSettings) {
+            if (isPremium && app.useCustomGuideSettings) {
+                HorizontalDivider()
                 Text(
                     strings.appOverrideDetails,
                     style = MaterialTheme.typography.labelLarge,
@@ -1175,7 +1612,7 @@ private fun AppSettingsCard(
                 OptionDropdown(
                     strings.appAnnouncementTiming,
                     app.timing,
-                    listOf(null) + AnnouncementTiming.values().toList(),
+                    listOf(null, AnnouncementTiming.IMMEDIATE, AnnouncementTiming.DELAYED),
                     { it?.let(strings::announcementTiming) ?: strings.text("기본 설정 사용", "Use default") },
                 ) { onUpdate(app.copy(timing = it)) }
                 HorizontalDivider()
@@ -1296,13 +1733,13 @@ private fun VoiceSettingsScreen(
         item {
             SettingCard(strings.speechControls) {
                 if (isPremium) {
-                    SliderSetting(strings.speechRate, settings.speechRate, 0.5f..2f, "${"%.1f".format(Locale.getDefault(), settings.speechRate)}x") { value ->
+                    SliderSetting(strings.speechRate, settings.speechRate, 0.5f..2f, { value -> "${"%.1f".format(Locale.getDefault(), value)}x" }) { value ->
                         onUpdate { current -> current.copy(speechRate = value) }
                     }
-                    SliderSetting(strings.pitch, settings.pitch, 0.5f..2f, "${"%.1f".format(Locale.getDefault(), settings.pitch)}x") { value ->
+                    SliderSetting(strings.pitch, settings.pitch, 0.5f..2f, { value -> "${"%.1f".format(Locale.getDefault(), value)}x" }) { value ->
                         onUpdate { current -> current.copy(pitch = value) }
                     }
-                    SliderSetting(strings.voiceVolumeSeparate, settings.volume, 0f..1f, "${(settings.volume * 100).toInt()}%") { value ->
+                    SliderSetting(strings.voiceVolumeSeparate, settings.volume, 0f..1f, { value -> "${(value * 100).toInt()}%" }) { value ->
                         onUpdate { current -> current.copy(volume = value) }
                     }
                     Text(
@@ -1332,6 +1769,7 @@ private fun VoiceSettingsScreen(
 private fun DiagnosticsScreen(
     diagnostics: com.trackvoice.DiagnosticsState,
     event: PlaybackEvent?,
+    onBack: () -> Unit,
 ) {
     val strings = LocalTrackTalkStrings.current
     LazyColumn(
@@ -1339,6 +1777,11 @@ private fun DiagnosticsScreen(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        item {
+            TextButton(onClick = onBack) {
+                Text(strings.backToDevices)
+            }
+        }
         item {
             SettingCard(strings.connectionStatus) {
                 DiagnosticRow(strings.notificationAccess, if (diagnostics.notificationListenerConnected) strings.connected else strings.notConnected, diagnostics.notificationListenerConnected)
@@ -1427,10 +1870,10 @@ private fun BasicPlaybackDefaults(musicDuckPercent: Int) {
     val strings = LocalTrackTalkStrings.current
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(strings.text("무료 기본값", "Free defaults"), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-        Text(strings.text("새 트랙이 시작되면 음악과 함께 음성 안내", "Guide with music when a new track starts"))
+        Text(strings.freeGuideWithMusic)
         Text(strings.freeMusicDuckSummary(musicDuckPercent))
-        Text(strings.text("음성 기본 음량 65%", "Default voice volume 65%"))
-        Text(strings.text("음성 음량은 음악과 분리된 기본 음량으로 출력", "Voice volume is output separately from music"))
+        Text(strings.defaultVoiceVolumeSummary(DEFAULT_TTS_VOLUME_PERCENT))
+        Text(strings.separateVoiceVolumeSummary)
     }
 }
 
@@ -1497,6 +1940,60 @@ private fun AnnouncementMode.toReadFields(defaultFields: Set<AnnouncementReadFie
     AnnouncementMode.SMART -> defaultFields
 }
 
+private val CONTENT_READ_PRESET_OPTIONS = listOf(
+    ContentReadPreset.DEFAULT,
+    ContentReadPreset.TITLE_AND_ARTIST,
+    ContentReadPreset.TITLE_ONLY,
+)
+
+private fun Set<AnnouncementReadField>.toContentReadPreset(defaultFields: Set<AnnouncementReadField>): ContentReadPreset = when {
+    this == defaultFields -> ContentReadPreset.DEFAULT
+    this == setOf(AnnouncementReadField.TITLE, AnnouncementReadField.ARTIST) -> ContentReadPreset.TITLE_AND_ARTIST
+    this == setOf(AnnouncementReadField.TITLE) -> ContentReadPreset.TITLE_ONLY
+    else -> ContentReadPreset.CUSTOM
+}
+
+private fun ContentReadPreset.toAnnouncementMode(defaultMode: AnnouncementMode): AnnouncementMode = when (this) {
+    ContentReadPreset.DEFAULT -> defaultMode
+    ContentReadPreset.TITLE_AND_ARTIST -> AnnouncementMode.TITLE_AND_ARTIST
+    ContentReadPreset.TITLE_ONLY -> AnnouncementMode.TITLE_ONLY
+    ContentReadPreset.CUSTOM -> defaultMode
+}
+
+private fun UserSettings.withAlbumReadPreset(preset: ContentReadPreset): UserSettings = copy(
+    albumMode = preset.toAnnouncementMode(AnnouncementMode.ALBUM),
+    albumReadFields = preset.toReadFields(DEFAULT_ALBUM_READ_FIELDS),
+)
+
+private fun UserSettings.withPlaylistReadPreset(preset: ContentReadPreset): UserSettings = copy(
+    playlistMode = preset.toAnnouncementMode(AnnouncementMode.PLAYLIST),
+    playlistReadFields = preset.toReadFields(DEFAULT_PLAYLIST_READ_FIELDS),
+)
+
+private fun UserSettings.withAlgorithmReadPreset(preset: ContentReadPreset): UserSettings = copy(
+    algorithmMode = preset.toAnnouncementMode(AnnouncementMode.TITLE_AND_ARTIST),
+    algorithmReadFields = preset.toReadFields(DEFAULT_ALGORITHMIC_READ_FIELDS),
+)
+
+private fun Set<AnnouncementReadField>.toAlgorithmAnnouncementMode(): AnnouncementMode = when {
+    AnnouncementReadField.ALBUM in this || AnnouncementReadField.TRACK_NUMBER in this -> AnnouncementMode.ALBUM
+    AnnouncementReadField.TITLE in this && AnnouncementReadField.ARTIST in this -> AnnouncementMode.TITLE_AND_ARTIST
+    AnnouncementReadField.TITLE in this -> AnnouncementMode.TITLE_ONLY
+    else -> AnnouncementMode.TITLE_AND_ARTIST
+}
+
+private fun UserSettings.withGlobalReadPreset(preset: ContentReadPreset): UserSettings = copy(
+    defaultMode = preset.toAnnouncementMode(AnnouncementMode.SMART),
+    defaultReadFields = preset.toReadFields(DEFAULT_GLOBAL_READ_FIELDS),
+)
+
+private fun ContentReadPreset.toReadFields(defaultFields: Set<AnnouncementReadField>): Set<AnnouncementReadField> = when (this) {
+    ContentReadPreset.DEFAULT -> defaultFields
+    ContentReadPreset.TITLE_AND_ARTIST -> setOf(AnnouncementReadField.TITLE, AnnouncementReadField.ARTIST)
+    ContentReadPreset.TITLE_ONLY -> setOf(AnnouncementReadField.TITLE)
+    ContentReadPreset.CUSTOM -> defaultFields
+}
+
 @Composable
 private fun SettingSwitchRow(title: String, summary: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
     Row(
@@ -1526,10 +2023,14 @@ private fun <T> OptionDropdown(
     selected: T,
     options: List<T>,
     optionLabel: (T) -> String,
+    modifier: Modifier = Modifier,
     onSelected: (T) -> Unit,
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(
+        modifier = Modifier.fillMaxWidth().then(modifier),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
         Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Box {
             OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
@@ -1560,13 +2061,13 @@ private fun SliderSetting(
     label: String,
     value: Float,
     range: ClosedFloatingPointRange<Float>,
-    valueLabel: String,
+    valueLabel: (Float) -> String,
     onValueChange: (Float) -> Unit,
 ) {
     var sliderValue by remember(value) { mutableFloatStateOf(value) }
     Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
         Text(label)
-        Text(valueLabel, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(valueLabel(sliderValue), color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     Slider(
         value = sliderValue,
@@ -1649,6 +2150,13 @@ private fun PlaybackCollection.label(): String = when (this) {
     PlaybackCollection.PLAYLIST -> "재생목록 재생"
     PlaybackCollection.ALGORITHMIC -> "알고리즘·랜덤 재생"
     PlaybackCollection.UNKNOWN -> "콘텐츠 유형 확인 중"
+}
+
+private fun PlaybackCollection.toGeneralSettingsTarget(): GeneralSettingsTarget? = when (this) {
+    PlaybackCollection.ALBUM -> GeneralSettingsTarget.ALBUM
+    PlaybackCollection.PLAYLIST -> GeneralSettingsTarget.PLAYLIST
+    PlaybackCollection.ALGORITHMIC -> GeneralSettingsTarget.ALGORITHMIC
+    PlaybackCollection.UNKNOWN -> null
 }
 
 private fun formatTime(timestamp: Long): String = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(timestamp))

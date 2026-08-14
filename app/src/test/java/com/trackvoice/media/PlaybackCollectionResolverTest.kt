@@ -5,15 +5,94 @@ import org.junit.Test
 
 class PlaybackCollectionResolverTest {
     @Test
-    fun albumMetadataIdentifiesAlbum() {
+    fun albumAndTrackMetadataAloneDoesNotIdentifyDirectTrackAsAlbum() {
         assertEquals(
-            PlaybackCollection.ALBUM,
+            PlaybackCollection.UNKNOWN,
             PlaybackCollectionResolver.resolve(event(album = "Album", trackNumber = 2, totalTracks = 10)),
         )
     }
 
     @Test
-    fun albumMetadataWithOnlyQueuePositionRemainsUnknown() {
+    fun oneItemQueueWithAlbumMetadataDoesNotIdentifyDirectTrackAsAlbum() {
+        assertEquals(
+            PlaybackCollection.UNKNOWN,
+            PlaybackCollectionResolver.resolve(
+                event(
+                    album = "Album",
+                    trackNumber = 2,
+                    totalTracks = 10,
+                    queueTitle = "다음 트랙",
+                    queueSize = 1,
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun oneItemQueueWithAlbumItemMetadataDoesNotIdentifyDirectTrackAsAlbum() {
+        assertEquals(
+            PlaybackCollection.UNKNOWN,
+            PlaybackCollectionResolver.resolve(
+                event(
+                    album = "Album",
+                    queueTitle = "다음 트랙",
+                    queueSize = 1,
+                ).copy(
+                    queue = listOf(
+                        QueueItemSnapshot(
+                            mediaId = "song-1",
+                            title = "Song",
+                            artist = "Artist",
+                            album = "Album",
+                        ),
+                    ),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun directTrackAfterAlbumDoesNotInheritThePreviousAlbumContext() {
+        val previous = event(
+            album = "Album",
+            trackNumber = 1,
+            totalTracks = 10,
+            queueTitle = "Album",
+            queueSize = 10,
+        )
+        val current = event(
+            album = "Another Album",
+            trackNumber = 1,
+            totalTracks = 12,
+        ).copy(mediaId = "single-track")
+
+        assertEquals(
+            PlaybackCollection.UNKNOWN,
+            PlaybackCollectionResolver.resolve(
+                event = current,
+                previousEvent = previous,
+                previousCollection = PlaybackCollection.ALBUM,
+            ),
+        )
+    }
+
+    @Test
+    fun genericMultiItemQueueWithAlbumMetadataIdentifiesAlbum() {
+        assertEquals(
+            PlaybackCollection.ALBUM,
+            PlaybackCollectionResolver.resolve(
+                event(
+                    album = "Album",
+                    queueTitle = "다음 트랙",
+                    activeQueuePosition = 2,
+                    queueSize = 10,
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun albumMetadataWithOnlyQueuePositionRemainsUnknownWithoutGenericQueueContext() {
         assertEquals(
             PlaybackCollection.UNKNOWN,
             PlaybackCollectionResolver.resolve(
@@ -23,7 +102,110 @@ class PlaybackCollectionResolverTest {
     }
 
     @Test
-    fun queuePositionWithGenericNextTitleDoesNotPretendToBePlaylist() {
+    fun algorithmicQueueTitleStillIdentifiesAlgorithmicPlayback() {
+        val event = event(
+            album = "Album",
+            queueTitle = "Daily Mix 1",
+            queueSize = 10,
+        ).copy(
+            queue = List(10) { index ->
+                QueueItemSnapshot(
+                    mediaId = "track-$index",
+                    title = "Song $index",
+                    artist = "Artist",
+                    album = "Album",
+                )
+            },
+        )
+        assertEquals(
+            PlaybackCollection.ALGORITHMIC,
+            PlaybackCollectionResolver.resolve(event),
+        )
+    }
+
+    @Test
+    fun lastAlbumTrackFollowedByAutoRecommendationBecomesAlgorithmic() {
+        val previous = event(
+            album = "Album",
+            trackNumber = 10,
+            totalTracks = 10,
+            queueTitle = "다음 트랙",
+            queueSize = 10,
+        )
+        val current = event(
+            album = "Recommended Album",
+            trackNumber = 2,
+            totalTracks = 12,
+            queueTitle = "다음 트랙",
+            queueSize = 8,
+        ).copy(mediaId = "recommended-song")
+
+        assertEquals(
+            PlaybackCollection.ALGORITHMIC,
+            PlaybackCollectionResolver.resolve(
+                event = current,
+                previousEvent = previous,
+                previousCollection = PlaybackCollection.ALBUM,
+            ),
+        )
+    }
+
+    @Test
+    fun staleAlbumQueueTitleDoesNotHideAutoRecommendationTransition() {
+        val previous = event(
+            album = "Album",
+            trackNumber = 10,
+            totalTracks = 10,
+            queueTitle = "Album",
+            queueSize = 10,
+        )
+        val current = event(
+            album = "Recommended Album",
+            trackNumber = 1,
+            totalTracks = 8,
+            queueTitle = "Album",
+            queueSize = 5,
+        ).copy(mediaId = "recommended-song")
+
+        assertEquals(
+            PlaybackCollection.ALGORITHMIC,
+            PlaybackCollectionResolver.resolve(
+                event = current,
+                previousEvent = previous,
+                previousCollection = PlaybackCollection.ALBUM,
+            ),
+        )
+    }
+
+    @Test
+    fun explicitPlaylistAfterAlbumRemainsPlaylist() {
+        val previous = event(
+            album = "Album",
+            trackNumber = 10,
+            totalTracks = 10,
+            queueTitle = "다음 트랙",
+            queueSize = 10,
+        )
+        val current = event(
+            album = "Recommended Album",
+            trackNumber = 2,
+            totalTracks = 12,
+            queueTitle = "Workout playlist",
+            queueSize = 8,
+        ).copy(mediaId = "playlist-song")
+
+        assertEquals(
+            PlaybackCollection.PLAYLIST,
+            PlaybackCollectionResolver.resolve(
+                event = current,
+                previousEvent = previous,
+                previousCollection = PlaybackCollection.ALBUM,
+            ),
+        )
+    }
+
+    @Test
+    fun albumMetadataWithoutARealQueueRemainsUnknown() {
         assertEquals(
             PlaybackCollection.UNKNOWN,
             PlaybackCollectionResolver.resolve(
@@ -31,7 +213,6 @@ class PlaybackCollectionResolverTest {
                     album = "Album",
                     queueTitle = "다음 트랙",
                     activeQueuePosition = 2,
-                    queueSize = 10,
                 ),
             ),
         )
@@ -104,6 +285,110 @@ class PlaybackCollectionResolverTest {
     }
 
     @Test
+    fun shuffleStateAloneDoesNotIdentifyAlgorithmicPlayback() {
+        assertEquals(
+            PlaybackCollection.UNKNOWN,
+            PlaybackCollectionResolver.resolve(
+                event(queueTitle = "Up next", shuffleState = ShuffleState.ON),
+            ),
+        )
+    }
+
+    @Test
+    fun genericShuffleTitleDoesNotInferAlgorithmicPlayback() {
+        assertEquals(
+            PlaybackCollection.UNKNOWN,
+            PlaybackCollectionResolver.resolve(
+                event(queueTitle = "Shuffle", shuffleState = ShuffleState.ON),
+            ),
+        )
+    }
+
+    @Test
+    fun genericShuffleTitleWithQueueItemsIsNotMistakenForPlaylist() {
+        assertEquals(
+            PlaybackCollection.UNKNOWN,
+            PlaybackCollectionResolver.resolve(
+                event(queueTitle = "Mix", queueSize = 8, shuffleState = ShuffleState.UNKNOWN),
+            ),
+        )
+    }
+
+    @Test
+    fun explicitPlaylistStillWinsWhenPlaylistIsShuffled() {
+        assertEquals(
+            PlaybackCollection.PLAYLIST,
+            PlaybackCollectionResolver.resolve(
+                event(queueTitle = "Workout playlist", shuffleState = ShuffleState.ON),
+            ),
+        )
+    }
+
+    @Test
+    fun shuffledAlbumMetadataStillIdentifiesAlbum() {
+        assertEquals(
+            PlaybackCollection.ALBUM,
+            PlaybackCollectionResolver.resolve(
+                event(
+                    album = "Album",
+                    trackNumber = 2,
+                    totalTracks = 10,
+                    queueTitle = "Up next",
+                    queueSize = 10,
+                    shuffleState = ShuffleState.ON,
+                ).copy(
+                    queue = List(10) { index ->
+                        QueueItemSnapshot(
+                            mediaId = "track-$index",
+                            title = "Song $index",
+                            artist = "Artist",
+                            album = "Album",
+                        )
+                    },
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun albumMetadataIdentifiesAlbumWhenQueueItemsOmitAlbumExtras() {
+        assertEquals(
+            PlaybackCollection.ALBUM,
+            PlaybackCollectionResolver.resolve(
+                event(
+                    album = "Album",
+                    trackNumber = 2,
+                    totalTracks = 10,
+                    queueTitle = "Up next",
+                    queueSize = 10,
+                    shuffleState = ShuffleState.ON,
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun shuffledPlaylistMetadataStillIdentifiesPlaylist() {
+        assertEquals(
+            PlaybackCollection.PLAYLIST,
+            PlaybackCollectionResolver.resolve(
+                event(
+                    album = "Album",
+                    queueTitle = "Up next",
+                    queueSize = 3,
+                    shuffleState = ShuffleState.ON,
+                ).copy(
+                    queue = listOf(
+                        QueueItemSnapshot("track-1", "Song 1", "Artist", album = "Album"),
+                        QueueItemSnapshot("track-2", "Song 2", "Artist", album = "Other Album"),
+                        QueueItemSnapshot("track-3", "Song 3", "Artist", album = "Album"),
+                    ),
+                ),
+            ),
+        )
+    }
+
+    @Test
     fun noCollectionSignalRemainsUnknown() {
         assertEquals(PlaybackCollection.UNKNOWN, PlaybackCollectionResolver.resolve(event()))
     }
@@ -115,6 +400,7 @@ class PlaybackCollectionResolverTest {
         queueTitle: String? = null,
         activeQueuePosition: Int? = null,
         queueSize: Int = 0,
+        shuffleState: ShuffleState = ShuffleState.UNKNOWN,
     ) = PlaybackEvent(
         sourcePackageName = "com.example.player",
         sourceAppName = "Player",
@@ -133,5 +419,6 @@ class PlaybackCollectionResolverTest {
         observedAt = 1L,
         queueTitle = queueTitle,
         activeQueuePosition = activeQueuePosition,
+        shuffleState = shuffleState,
     )
 }

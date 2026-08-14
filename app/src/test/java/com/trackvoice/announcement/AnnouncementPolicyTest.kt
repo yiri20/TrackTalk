@@ -1,7 +1,9 @@
-package com.trackvoice.announcement
+﻿package com.trackvoice.announcement
 
 import com.trackvoice.data.AnnouncementMode
+import com.trackvoice.data.AnnouncementOrder
 import com.trackvoice.data.AnnouncementReadField
+import com.trackvoice.data.AnnouncementTiming
 import com.trackvoice.data.AppSettings
 import com.trackvoice.data.CollectionFallback
 import com.trackvoice.data.VoiceLanguage
@@ -18,7 +20,11 @@ class AnnouncementPolicyTest {
     fun appChecklistTakesPriorityOverLegacyAppMode() {
         val decision = AnnouncementPolicy.decide(
             event = event(),
-            userSettings = UserSettings(defaultMode = AnnouncementMode.TITLE_ONLY, suppressDuringSpeakerPlayback = false),
+            userSettings = UserSettings(
+                defaultMode = AnnouncementMode.TITLE_ONLY,
+                useContentTypeSettings = false,
+                suppressDuringSpeakerPlayback = false,
+            ),
             appSettings = AppSettings(
                 "com.youtube.music",
                 "YouTube Music",
@@ -30,7 +36,7 @@ class AnnouncementPolicyTest {
             externalAudioOutput = true,
         )
         assertTrue(decision.shouldAnnounce)
-        assertEquals("앨범 A Moon Shaped Pool, 트랙 3번, Glass Eyes.", decision.text)
+        assertEquals("A Moon Shaped Pool, 트랙 3번, Glass Eyes.", decision.text)
     }
 
     @Test
@@ -45,11 +51,11 @@ class AnnouncementPolicyTest {
             externalAudioOutput = true,
         )
 
-        assertEquals("Album A Moon Shaped Pool, Track 3, Glass Eyes, Radiohead.", decision.text)
+        assertEquals("A Moon Shaped Pool, Track 3, Glass Eyes, Radiohead.", decision.text)
     }
 
     @Test
-    fun appUsesGlobalModeUntilCustomGuideSettingsAreEnabled() {
+    fun typeSpecificFieldsStayActiveWhenTheOldGlobalModeIsStillStored() {
         val decision = AnnouncementPolicy.decide(
             event = event(),
             userSettings = UserSettings(defaultMode = AnnouncementMode.TITLE_ONLY, suppressDuringSpeakerPlayback = false),
@@ -61,7 +67,7 @@ class AnnouncementPolicyTest {
             externalAudioOutput = true,
         )
 
-        assertEquals("Glass Eyes.", decision.text)
+        assertEquals("A Moon Shaped Pool, 트랙 3번, Glass Eyes, Radiohead.", decision.text)
     }
 
     @Test
@@ -78,8 +84,8 @@ class AnnouncementPolicyTest {
             null,
             externalAudioOutput = true,
         )
-        assertEquals("앨범 A Moon Shaped Pool, 트랙 3번, Glass Eyes, Radiohead.", smart.text)
-        assertEquals("Glass Eyes, Radiohead.", noAlbum.text)
+        assertEquals("A Moon Shaped Pool, 트랙 3번, Glass Eyes, Radiohead.", smart.text)
+        assertEquals("트랙 3번, Glass Eyes, Radiohead.", noAlbum.text)
     }
 
     @Test
@@ -90,7 +96,28 @@ class AnnouncementPolicyTest {
             null,
             externalAudioOutput = true,
         )
-        assertEquals("재생목록 출근길 재생목록, Glass Eyes, Radiohead.", decision.text)
+        assertEquals("재생목록 출근길 재생목록, A Moon Shaped Pool, 트랙 3번, Glass Eyes, Radiohead.", decision.text)
+    }
+
+    @Test
+    fun playlistChecklistCanReadAlbumAndTrackNumber() {
+        val decision = AnnouncementPolicy.decide(
+            event().copy(queueTitle = "출근길 재생목록"),
+            UserSettings(
+                suppressDuringSpeakerPlayback = false,
+                playlistReadFields = setOf(
+                    AnnouncementReadField.COLLECTION,
+                    AnnouncementReadField.ALBUM,
+                    AnnouncementReadField.TRACK_NUMBER,
+                    AnnouncementReadField.TITLE,
+                    AnnouncementReadField.ARTIST,
+                ),
+            ),
+            null,
+            externalAudioOutput = true,
+        )
+
+        assertEquals("재생목록 출근길 재생목록, A Moon Shaped Pool, 트랙 3번, Glass Eyes, Radiohead.", decision.text)
     }
 
     @Test
@@ -112,7 +139,7 @@ class AnnouncementPolicyTest {
             externalAudioOutput = true,
         )
 
-        assertEquals("앨범 A Moon Shaped Pool, 트랙 3번, Glass Eyes, Radiohead.", decision.text)
+        assertEquals("A Moon Shaped Pool, 트랙 3번, Glass Eyes, Radiohead.", decision.text)
     }
 
     @Test
@@ -122,12 +149,104 @@ class AnnouncementPolicyTest {
             UserSettings(
                 suppressDuringSpeakerPlayback = false,
                 algorithmMode = AnnouncementMode.TITLE_ONLY,
+                algorithmReadFields = setOf(AnnouncementReadField.TITLE),
             ),
             null,
             externalAudioOutput = true,
         )
 
         assertEquals("Glass Eyes.", decision.text)
+    }
+
+    @Test
+    fun algorithmicDefaultIncludesSongAlbumAndTrackMetadata() {
+        val decision = AnnouncementPolicy.decide(
+            event = event().copy(queueTitle = "Daily Mix 1"),
+            userSettings = UserSettings(suppressDuringSpeakerPlayback = false),
+            appSettings = null,
+            externalAudioOutput = true,
+        )
+
+        assertEquals("A Moon Shaped Pool, 트랙 3번, Glass Eyes, Radiohead.", decision.text)
+    }
+
+    @Test
+    fun algorithmicChecklistCanReadAlbumAndTrackNumber() {
+        val decision = AnnouncementPolicy.decide(
+            event = event().copy(queueTitle = "Daily Mix 1"),
+            userSettings = UserSettings(
+                suppressDuringSpeakerPlayback = false,
+                algorithmMode = AnnouncementMode.ALBUM,
+                algorithmReadFields = setOf(
+                    AnnouncementReadField.TITLE,
+                    AnnouncementReadField.ARTIST,
+                    AnnouncementReadField.ALBUM,
+                    AnnouncementReadField.TRACK_NUMBER,
+                ),
+            ),
+            appSettings = null,
+            externalAudioOutput = true,
+        )
+
+        assertEquals("A Moon Shaped Pool, 트랙 3번, Glass Eyes, Radiohead.", decision.text)
+    }
+
+    @Test
+    fun algorithmicChecklistCanReadOnlyAlbumName() {
+        val decision = AnnouncementPolicy.decide(
+            event = event().copy(queueTitle = "Daily Mix 1"),
+            userSettings = UserSettings(
+                suppressDuringSpeakerPlayback = false,
+                algorithmMode = AnnouncementMode.ALBUM,
+                algorithmReadFields = setOf(AnnouncementReadField.ALBUM),
+            ),
+            appSettings = null,
+            externalAudioOutput = true,
+        )
+
+        assertEquals("A Moon Shaped Pool.", decision.text)
+    }
+
+    @Test
+    fun globalReadFieldsApplyToEveryCollectionWhenTypeSpecificSettingsAreOff() {
+        val decision = AnnouncementPolicy.decide(
+            event = event(),
+            userSettings = UserSettings(
+                suppressDuringSpeakerPlayback = false,
+                useContentTypeSettings = false,
+                defaultReadFields = setOf(
+                    AnnouncementReadField.TITLE,
+                    AnnouncementReadField.ARTIST,
+                ),
+            ),
+            appSettings = null,
+            externalAudioOutput = true,
+        )
+
+        assertEquals("Glass Eyes, Radiohead.", decision.text)
+    }
+
+    @Test
+    fun typeSpecificFieldsTakePriorityOverAnOldExplicitDefaultMode() {
+        val decision = AnnouncementPolicy.decide(
+            event = event(),
+            userSettings = UserSettings(
+                suppressDuringSpeakerPlayback = false,
+                defaultMode = AnnouncementMode.TITLE_ONLY,
+                useContentTypeSettings = true,
+                defaultReadFields = setOf(AnnouncementReadField.TITLE),
+                albumReadFields = setOf(
+                    AnnouncementReadField.ALBUM,
+                    AnnouncementReadField.TRACK_NUMBER,
+                    AnnouncementReadField.TITLE,
+                    AnnouncementReadField.ARTIST,
+                ),
+            ),
+            appSettings = null,
+            externalAudioOutput = true,
+        )
+
+        assertEquals("A Moon Shaped Pool, 트랙 3번, Glass Eyes, Radiohead.", decision.text)
     }
 
     @Test
@@ -146,7 +265,68 @@ class AnnouncementPolicyTest {
             externalAudioOutput = true,
         )
 
-        assertEquals("앨범 A Moon Shaped Pool, Glass Eyes, Radiohead.", decision.text)
+        assertEquals("A Moon Shaped Pool, Glass Eyes, Radiohead.", decision.text)
+    }
+
+    @Test
+    fun albumChecklistReadsTitleAndTrackNumberWhenThoseAreTheOnlyCheckedFields() {
+        val decision = AnnouncementPolicy.decide(
+            event = event(),
+            userSettings = UserSettings(
+                suppressDuringSpeakerPlayback = false,
+                albumMode = AnnouncementMode.ALBUM,
+                albumReadFields = setOf(
+                    AnnouncementReadField.TITLE,
+                    AnnouncementReadField.TRACK_NUMBER,
+                ),
+            ),
+            appSettings = null,
+            externalAudioOutput = true,
+        )
+
+        assertEquals("트랙 3번, Glass Eyes.", decision.text)
+        assertTrue(decision.formatOptions.readTrackNumber)
+        assertFalse(decision.formatOptions.readAlbum)
+        assertFalse(decision.formatOptions.readArtist)
+    }
+
+    @Test
+    fun announcementOrderFlowsFromPremiumSettingsIntoPolicy() {
+        val decision = AnnouncementPolicy.decide(
+            event = event(),
+            userSettings = UserSettings(
+                suppressDuringSpeakerPlayback = false,
+                announcementOrder = AnnouncementOrder.TRACK_NUMBER_FIRST,
+            ),
+            appSettings = null,
+            externalAudioOutput = true,
+        )
+
+        assertEquals("트랙 3번, A Moon Shaped Pool, Glass Eyes, Radiohead.", decision.text)
+        assertEquals(AnnouncementOrder.TRACK_NUMBER_FIRST, decision.formatOptions.announcementOrder)
+    }
+
+    @Test
+    fun albumNameFirstTrackOnlySettingIsAppliedByPolicy() {
+        val settings = UserSettings(
+            suppressDuringSpeakerPlayback = false,
+            albumNameFirstTrackOnly = true,
+        )
+        val first = AnnouncementPolicy.decide(
+            event = event().copy(trackNumber = 1),
+            userSettings = settings,
+            appSettings = null,
+            externalAudioOutput = true,
+        )
+        val second = AnnouncementPolicy.decide(
+            event = event().copy(trackNumber = 2, title = "Second Song"),
+            userSettings = settings,
+            appSettings = null,
+            externalAudioOutput = true,
+        )
+
+        assertEquals("A Moon Shaped Pool, 트랙 1번, Glass Eyes, Radiohead.", first.text)
+        assertEquals("트랙 2번, Second Song, Radiohead.", second.text)
     }
 
     @Test
@@ -156,6 +336,7 @@ class AnnouncementPolicyTest {
             userSettings = UserSettings(
                 suppressDuringSpeakerPlayback = false,
                 albumMode = AnnouncementMode.TITLE_AND_ARTIST,
+                useContentTypeSettings = false,
             ),
             appSettings = AppSettings(
                 "com.youtube.music",
@@ -188,7 +369,7 @@ class AnnouncementPolicyTest {
             externalAudioOutput = true,
         )
 
-        assertEquals("앨범 A Moon Shaped Pool, 트랙 3번, Glass Eyes, Radiohead.", decision.text)
+        assertEquals("A Moon Shaped Pool, 트랙 3번, Glass Eyes, Radiohead.", decision.text)
     }
 
     private fun queueItem(title: String = "Glass Eyes", album: String? = null) = com.trackvoice.media.QueueItemSnapshot(
@@ -216,6 +397,7 @@ class AnnouncementPolicyTest {
             event().copy(playbackPosition = 2_000L),
             UserSettings(
                 suppressDuringSpeakerPlayback = false,
+                timing = AnnouncementTiming.DELAYED,
                 minimumPlaybackSeconds = 5,
             ),
             null,
@@ -224,6 +406,40 @@ class AnnouncementPolicyTest {
 
         assertTrue(decision.shouldAnnounce)
         assertEquals(3_000L, decision.delayMs)
+    }
+
+    @Test
+    fun immediateTimingIgnoresMinimumPlaybackTime() {
+        val decision = AnnouncementPolicy.decide(
+            event().copy(playbackPosition = 2_000L),
+            UserSettings(
+                suppressDuringSpeakerPlayback = false,
+                timing = AnnouncementTiming.IMMEDIATE,
+                minimumPlaybackSeconds = 5,
+            ),
+            null,
+            externalAudioOutput = true,
+        )
+
+        assertTrue(decision.shouldAnnounce)
+        assertEquals(0L, decision.delayMs)
+    }
+
+    @Test
+    fun announceBeforePlaybackIgnoresMinimumPlaybackTime() {
+        val decision = AnnouncementPolicy.decide(
+            event().copy(playbackPosition = 2_000L),
+            UserSettings(
+                suppressDuringSpeakerPlayback = false,
+                trackStartBehavior = com.trackvoice.data.TrackStartBehavior.ANNOUNCE_THEN_PLAY,
+                minimumPlaybackSeconds = 5,
+            ),
+            null,
+            externalAudioOutput = true,
+        )
+
+        assertTrue(decision.shouldAnnounce)
+        assertEquals(0L, decision.delayMs)
     }
 
     private fun event() = PlaybackEvent(
@@ -242,5 +458,9 @@ class AnnouncementPolicyTest {
         playbackPosition = 2_000L,
         observedAt = 1L,
         queue = emptyList(),
+        // The policy fixtures that use this helper describe an actual album
+        // queue. Direct-track classification is covered by the resolver tests
+        // with no queue signal.
+        queueTitle = "Album",
     )
 }
