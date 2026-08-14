@@ -41,7 +41,6 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
@@ -231,13 +230,6 @@ fun TrackVoiceApp(viewModel: TrackVoiceViewModel, activity: Activity) {
                 TopAppBar(
                     title = { Text(strings.sectionTitle(selectedSection)) },
                     actions = {
-                        if (!premiumState.isPremium) {
-                            TextButton(onClick = { showPremiumDialog = true }) {
-                                Icon(Icons.Default.Star, contentDescription = null)
-                                Spacer(Modifier.width(4.dp))
-                                Text(strings.plus)
-                            }
-                        }
                         StatusBadge(
                             enabled = mediaState.effectiveEnabled,
                             notificationAccess = diagnostics.notificationListenerConnected,
@@ -509,6 +501,7 @@ private fun PremiumDialog(
     val strings = LocalTrackTalkStrings.current
     var promoCode by rememberSaveable { mutableStateOf("") }
     var promoCodeError by rememberSaveable { mutableStateOf(false) }
+    var showPromoCode by rememberSaveable { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Default.Star, contentDescription = null) },
@@ -518,7 +511,6 @@ private fun PremiumDialog(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Text(strings.basicMusicDetection)
                 PremiumBenefit(strings.premiumVoiceBenefit)
                 PremiumBenefit(strings.premiumDeviceBenefit)
                 PremiumBenefit(strings.premiumFutureBenefit)
@@ -530,7 +522,7 @@ private fun PremiumDialog(
                     )
                     state.price != null -> Text(strings.oneTimePrice(state.price.orEmpty()))
                     else -> Text(
-                        state.message?.let(strings::premiumMessage) ?: strings.playProductPreparing,
+                        state.message?.let(strings::premiumMessage) ?: strings.purchaseUnavailable,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -544,52 +536,61 @@ private fun PremiumDialog(
                 }
                 if (!state.isPremium) {
                     HorizontalDivider()
-                    Text(
-                        strings.promoDescription,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    OutlinedTextField(
-                        value = promoCode,
-                        onValueChange = {
-                            promoCode = it.take(64)
-                            promoCodeError = false
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text(strings.promoCode) },
-                        singleLine = true,
-                        isError = promoCodeError,
-                        supportingText = if (promoCodeError) {
-                            { Text(strings.promoCodeFormatError) }
-                        } else {
-                            null
-                        },
-                    )
-                    OutlinedButton(
-                        onClick = {
-                            if (onRedeemLocalCode(promoCode)) {
-                                promoCode = ""
-                                promoCodeError = false
-                            } else {
-                                promoCodeError = true
-                            }
-                        },
-                        enabled = promoCode.isNotBlank(),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(strings.applyFriendCode)
-                    }
                     TextButton(
-                        onClick = {
-                            val url = promoCodeRedeemUrl(promoCode)
-                            if (url == null) {
-                                promoCodeError = true
-                            } else {
-                                onOpenPromoCode(url)
-                            }
-                        },
-                        enabled = promoCode.isNotBlank(),
+                        onClick = { showPromoCode = !showPromoCode },
+                        modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text(strings.useGooglePlayCode)
+                        Text(if (showPromoCode) strings.closePromoCode else strings.promoCodeSection)
+                    }
+                    if (showPromoCode) {
+                        Text(
+                            strings.promoDescription,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        OutlinedTextField(
+                            value = promoCode,
+                            onValueChange = {
+                                promoCode = it.take(64)
+                                promoCodeError = false
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text(strings.promoCode) },
+                            singleLine = true,
+                            isError = promoCodeError,
+                            supportingText = if (promoCodeError) {
+                                { Text(strings.promoCodeFormatError) }
+                            } else {
+                                null
+                            },
+                        )
+                        OutlinedButton(
+                            onClick = {
+                                if (onRedeemLocalCode(promoCode)) {
+                                    promoCode = ""
+                                    promoCodeError = false
+                                } else {
+                                    promoCodeError = true
+                                }
+                            },
+                            enabled = promoCode.isNotBlank(),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(strings.applyFriendCode)
+                        }
+                        TextButton(
+                            onClick = {
+                                val url = promoCodeRedeemUrl(promoCode)
+                                if (url == null) {
+                                    promoCodeError = true
+                                } else {
+                                    onOpenPromoCode(url)
+                                }
+                            },
+                            enabled = promoCode.isNotBlank(),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(strings.useGooglePlayCode)
+                        }
                     }
                 }
             }
@@ -1152,7 +1153,6 @@ private fun GeneralSettingsScreen(
                         )
                     }
                 } else {
-                    Text(strings.freeAlbumPlaylistDefaults)
                     PremiumLockedContent(
                         title = strings.contentReadingPlusTitle,
                         summary = strings.contentSpecificPlusSummary,
@@ -1257,9 +1257,9 @@ private fun DeviceSettingsScreen(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        item {
-            SettingCard(strings.connectedDevices) {
-                if (isPremium) {
+        if (isPremium) {
+            item {
+                SettingCard(strings.connectedDevices) {
                     Text(strings.deviceAutomationSummary, style = MaterialTheme.typography.bodySmall)
                     if (connectedDevices.isEmpty()) {
                         Text(strings.noConnectedDevices, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1276,18 +1276,10 @@ private fun DeviceSettingsScreen(
                         }
                         HorizontalDivider()
                     }
-                } else {
-                    PremiumLockedContent(
-                        title = strings.text("기기별 자동화는 Plus 기능입니다.", "Per-device automation is a Plus feature."),
-                        summary = strings.text("Bluetooth·USB·HDMI 기기별로 안내 여부와 자동 켜짐을 설정할 수 있습니다.", "Configure announcements and auto-enable for Bluetooth, USB, and HDMI devices."),
-                        onOpenPremium = onOpenPremium,
-                    )
                 }
             }
-        }
-        item {
-            SettingCard(strings.autoEnable) {
-                if (isPremium) {
+            item {
+                SettingCard(strings.autoEnable) {
                     SettingSwitchRow(strings.screenOffEnable, strings.screenOffEnableSummary, settings.autoEnableOnScreenOff) { enabled ->
                         onUpdate { it.copy(autoEnableOnScreenOff = enabled) }
                     }
@@ -1297,10 +1289,14 @@ private fun DeviceSettingsScreen(
                     SettingSwitchRow(strings.bluetoothOnly, strings.bluetoothOnlySummary, settings.bluetoothOnlyForAutoEnable) { enabled ->
                         onUpdate { it.copy(bluetoothOnlyForAutoEnable = enabled) }
                     }
-                } else {
+                }
+            }
+        } else {
+            item {
+                SettingCard(strings.automationPlusTitle) {
                     PremiumLockedContent(
-                        title = strings.text("화면 꺼짐 자동 활성화는 Plus 기능입니다.", "Screen-off auto enable is a Plus feature."),
-                        summary = strings.text("화면을 끈 뒤에도 음악 안내를 계속 유지할 수 있습니다.", "Keep music announcements active after turning off the screen."),
+                        title = strings.automationPlusDetailsTitle,
+                        summary = strings.automationPlusSummary,
                         onOpenPremium = onOpenPremium,
                     )
                 }
@@ -1382,6 +1378,7 @@ private fun AppSettingsScreen(
     val visibleAppCount = selectedCategoryNames.sumOf { name ->
         appsByCategory[AppCategory.valueOf(name)].orEmpty().size
     }
+    val categoryScrollState = rememberScrollState()
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -1394,19 +1391,26 @@ private fun AppSettingsScreen(
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
             ) {
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    Icon(Icons.Default.MusicNote, contentDescription = null)
-                    Spacer(Modifier.width(12.dp))
-                    Text(
-                        strings.appsIntro,
-                        modifier = Modifier.weight(1f),
-                    )
-                    TextButton(onClick = onRefresh) { Text(strings.refresh) }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Default.MusicNote, contentDescription = null)
+                        Spacer(Modifier.width(12.dp))
+                        Text(strings.appsIntro, modifier = Modifier.weight(1f))
+                    }
+                    TextButton(
+                        onClick = onRefresh,
+                        modifier = Modifier.align(Alignment.End),
+                    ) {
+                        Text(strings.refresh)
+                    }
                 }
             }
         }
@@ -1418,27 +1422,42 @@ private fun AppSettingsScreen(
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                     )
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        AppCategory.values().forEach { category ->
-                            val selected = category.name in selectedCategoryNames
-                            FilterChip(
-                                selected = selected,
-                                onClick = {
-                                    selectedCategoryNames = if (selected) {
-                                        selectedCategoryNames - category.name
-                                    } else {
-                                        selectedCategoryNames + category.name
-                                    }
-                                },
-                                label = { Text(strings.categoryTitle(category)) },
-                                leadingIcon = if (selected) {
-                                    { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
-                                } else null,
+                    Box(Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(categoryScrollState)
+                                .padding(end = 32.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            AppCategory.values().forEach { category ->
+                                val selected = category.name in selectedCategoryNames
+                                FilterChip(
+                                    selected = selected,
+                                    onClick = {
+                                        selectedCategoryNames = if (selected) {
+                                            selectedCategoryNames - category.name
+                                        } else {
+                                            selectedCategoryNames + category.name
+                                        }
+                                    },
+                                    label = { Text(strings.categoryTitle(category)) },
+                                    leadingIcon = if (selected) {
+                                        { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                                    } else null,
+                                )
+                            }
+                        }
+                        if (categoryScrollState.maxValue > categoryScrollState.value) {
+                            Icon(
+                                Icons.Default.ChevronRight,
+                                contentDescription = strings.scrollMore,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier
+                                    .align(Alignment.CenterEnd)
+                                    .size(32.dp)
+                                    .background(MaterialTheme.colorScheme.background.copy(alpha = 0.94f))
+                                    .padding(4.dp),
                             )
                         }
                     }
@@ -1540,11 +1559,11 @@ private fun AppSettingsCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 InstalledAppIcon(app.packageName)
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -1562,12 +1581,6 @@ private fun AppSettingsCard(
                     },
                 )
             }
-            HorizontalDivider()
-            Text(
-                strings.appSettingsSummary,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
     }
 }
@@ -1781,7 +1794,6 @@ private fun PremiumLockedContent(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Icon(Icons.Default.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(title, fontWeight = FontWeight.SemiBold)
             Text(
@@ -1790,7 +1802,7 @@ private fun PremiumLockedContent(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        TextButton(onClick = onOpenPremium) { Text(strings.plusView) }
+        TextButton(onClick = onOpenPremium) { Text(strings.plus) }
     }
 }
 
@@ -1798,7 +1810,6 @@ private fun PremiumLockedContent(
 private fun BasicPlaybackDefaults(musicDuckPercent: Int) {
     val strings = LocalTrackTalkStrings.current
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(strings.text("무료 기본값", "Free defaults"), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         Text(strings.freeGuideWithMusic)
         Text(strings.freeMusicDuckSummary(musicDuckPercent))
         Text(strings.defaultVoiceVolumeSummary(DEFAULT_TTS_VOLUME_PERCENT))

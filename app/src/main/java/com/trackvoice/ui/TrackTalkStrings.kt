@@ -38,7 +38,7 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
         AppSection.HOME -> "TrackTalk"
         AppSection.GENERAL -> t("안내·음성 설정", "Guide & voice settings")
         AppSection.APPS -> t("앱 설정", "App settings")
-        AppSection.DEVICES -> t("기기 설정", "Device settings")
+        AppSection.DEVICES -> t("기기·진단", "Devices & diagnostics")
         AppSection.DIAGNOSTICS -> t("진단", "Diagnostics")
     }
 
@@ -123,21 +123,22 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     fun lastDetected(time: String): String = t("마지막 감지 $time", "Last detected $time")
 
     val premiumTitle: String get() = "TrackTalk Plus"
-    val plusView: String get() = t("Plus 보기", "View Plus")
     val premiumEnabledSummary: String get() = t("Plus가 활성화되어 모든 고급 기능을 사용할 수 있습니다.", "Plus is active. All advanced features are available.")
     val premiumLockedSummary: String get() = t("음성 속도·높이·음량과 기기별 자동화 기능을 한 번의 결제로 이용할 수 있습니다.", "Unlock detailed voice controls and per-device automation with a one-time purchase.")
     val view: String get() = t("보기", "View")
-    val basicMusicDetection: String get() = t("곡 감지와 기본 안내 기능은 계속 무료로 제공됩니다.", "Track detection and basic announcements remain free.")
     val premiumVoiceBenefit: String get() = t("음성 속도·높이·음량 세부 조절", "Fine-tune voice speed, pitch, and volume")
     val premiumDeviceBenefit: String get() = t("기기별 안내와 자동 활성화", "Per-device announcements and auto-enable")
     val premiumFutureBenefit: String get() = t("추가 예정인 고급 음성·자동화 기능", "Future advanced voice and automation features")
     val premiumActive: String get() = t("Plus가 활성화되어 있습니다.", "Plus is active.")
     fun oneTimePrice(price: String): String = t("일회성 결제 · $price", "One-time purchase · $price")
-    val playProductPreparing: String get() = t("Plus 구매 기능을 준비 중입니다. 잠시 후 다시 시도해 주세요.", "Plus purchases aren't ready yet. Please try again later.")
+    val purchaseUnavailable: String get() = t(
+        "현재 설치 환경에서는 구매 정보를 확인할 수 없습니다. Google Play에서 설치한 앱에서 다시 확인해 주세요.",
+        "Purchase details aren't available in this installation. Check the Google Play version of the app.",
+    )
     fun premiumMessage(message: PremiumMessage): String = when (message) {
         PremiumMessage.BILLING_UNAVAILABLE -> t("Google Play 결제를 사용할 수 없습니다.", "Google Play billing is unavailable.")
         PremiumMessage.SERVICE_DISCONNECTED -> t("Google Play 연결이 끊겼습니다. 잠시 후 다시 시도해 주세요.", "The Google Play connection was lost. Please try again later.")
-        PremiumMessage.PRODUCT_UNAVAILABLE -> playProductPreparing
+        PremiumMessage.PRODUCT_UNAVAILABLE -> purchaseUnavailable
         PremiumMessage.PRODUCT_LOAD_FAILED -> t("구매 상품을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.", "We couldn't load the purchase product. Please try again later.")
         PremiumMessage.PURCHASE_UNAVAILABLE -> t("구매 상품을 아직 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.", "The purchase product isn't available yet. Please try again later.")
         PremiumMessage.PURCHASE_FLOW_FAILED -> t("구매 화면을 열지 못했습니다. 잠시 후 다시 시도해 주세요.", "We couldn't open the purchase screen. Please try again later.")
@@ -151,6 +152,8 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     val promoDescription: String
         get() = t("지인용 코드는 이 기기에서 Plus를 바로 활성화합니다. Google Play 프로모션 코드는 아래 버튼을 눌러 사용하세요.", "A friend code activates Plus on this device. Use a Google Play promo code with the button below.")
     val promoCode: String get() = t("코드 입력", "Enter a code")
+    val promoCodeSection: String get() = t("프로모션 코드", "Promo code")
+    val closePromoCode: String get() = t("프로모션 코드 닫기", "Hide promo code")
     val promoCodeFormatError: String get() = t("영문, 숫자, 하이픈(-)만 입력할 수 있습니다.", "Use letters, numbers, and hyphens (-) only.")
     val applyFriendCode: String get() = t("지인용 코드 적용", "Apply friend code")
     val useGooglePlayCode: String get() = t("Google Play 프로모션 코드 사용", "Redeem on Google Play")
@@ -180,11 +183,17 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     val statusShortcut: String get() = t("상단바 바로가기", "Notification shortcut")
     val statusShortcutSummary: String get() = t("알림을 눌러 앱으로 바로 이동합니다.", "Tap the notification to open the app.")
     val connectedDevices: String get() = t("연결 기기", "Connected devices")
+    val automationPlusTitle: String get() = t("자동화 · Plus", "Automation · Plus")
+    val automationPlusDetailsTitle: String get() = t("기기별 동작과 화면 꺼짐 자동 활성화", "Device behavior and screen-off auto-enable")
+    val automationPlusSummary: String get() = t(
+        "Bluetooth·USB·HDMI 기기별 동작과 화면 꺼짐 자동 활성화를 설정할 수 있습니다.",
+        "Configure Bluetooth, USB, and HDMI behavior plus screen-off auto-enable.",
+    )
     val deviceAutomationSummary: String get() = t("기기별로 안내 사용과 자동 켜짐을 정할 수 있습니다.", "Choose announcement and auto-enable behavior per device.")
     val noConnectedDevices: String get() = t("연결된 이어폰이나 Bluetooth 기기가 없습니다.", "No headphones or Bluetooth devices are connected.")
     val diagnosticsSummary: String get() = t("알림 접근, 미디어 감지, 음성 엔진 상태를 확인합니다.", "Check notification access, media detection, and the voice engine.")
     val openDiagnostics: String get() = t("진단 열기", "Open diagnostics")
-    val backToDevices: String get() = t("기기 설정으로 돌아가기", "Back to device settings")
+    val backToDevices: String get() = t("기기·진단으로 돌아가기", "Back to devices & diagnostics")
     val useOnThisDevice: String get() = t("이 기기에서 사용", "Use on this device")
     val useOnThisDeviceSummary: String get() = t("연결 중인 이 기기에 안내합니다.", "Announce through this connected device.")
     val autoEnableOnConnect: String get() = t("연결하면 자동 켜기", "Enable when connected")
@@ -221,8 +230,8 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     )
     val separateVoiceVolumeSummary: String get() = t("음성 음량은 음악과 따로 조절합니다.", "Voice volume is separate from music.")
     val freeGuideDetailsSummary: String get() = t(
-        "무료: 새 곡 즉시 안내 · 음악 음량 기본값",
-        "Free: announce immediately · default music volume",
+        "안내 시점과 음량을 세밀하게 조절합니다.",
+        "Fine-tune announcement timing and volume.",
     )
     val announcementTiming: String get() = t("언제 읽을까요?", "When to read")
     val globalReadContent: String get() = t("기본 읽기 형식", "Default reading format")
@@ -275,8 +284,8 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     val repeatTrackSummary: String get() = t("기본값은 같은 곡을 한 번만 안내합니다.", "By default, each track is announced once.")
     val albumPlaylistReading: String get() = t("콘텐츠 유형별 읽기", "Content-type reading")
     val albumPlaylistSummary: String get() = t(
-        "기본 설정과 유형별 설정의 적용 순서를 정합니다.",
-        "Choose how default and type-specific settings are applied.",
+        "앨범·재생목록·추천 재생에 맞게 자동으로 안내합니다.",
+        "Automatically adapts announcements for albums, playlists, and recommended or shuffle playback.",
     )
     val contentReadPresetHint: String get() = t(
         "유형별 설정을 켜면 감지된 유형은 아래 설정을 우선 사용합니다. 기본 설정은 유형을 알 수 없을 때 적용합니다.",
@@ -332,7 +341,6 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     val playlistReadItems: String get() = t("재생목록에서 읽기", "Read from playlists")
     val algorithmReadItems: String get() = t("추천·랜덤에서 읽기", "Read from recommended / shuffle")
     val contentReadChecklistHint: String get() = t("체크한 항목만 읽습니다.", "Only checked items are read.")
-    val freeAlbumPlaylistDefaults: String get() = t("무료 기본값 · 앨범: 앨범·트랙·아티스트 · 재생목록: 이름·앨범·트랙·곡·아티스트 · 추천·랜덤: 앨범·트랙·곡·아티스트", "Free defaults · Album: album, track, artist · Playlist: name, album, track, title, artist · Recommended / shuffle: album, track, title, artist")
     val contentSpecificPlusSummary: String get() = t(
         "콘텐츠별 읽기 항목과 안내 순서를 따로 설정합니다.",
         "Set reading fields and announcement order for each content type.",
@@ -347,9 +355,13 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     val bluetoothOnly: String get() = t("화면이 꺼지면 Bluetooth에서만 켜기", "Screen-off enable on Bluetooth only")
     val bluetoothOnlySummary: String get() = t("화면이 꺼질 때 Bluetooth 오디오가 연결된 경우에만 안내를 자동으로 켭니다.", "Enable only when Bluetooth audio is connected as the screen turns off.")
 
-    val appsIntro: String get() = t("기기에서 미디어 재생을 지원하는 앱과 감지된 앱입니다.", "Media-capable and detected apps on this device.")
+    val appsIntro: String get() = t(
+        "앱별로 TrackTalk 사용 여부만 설정합니다. 안내 내용과 시점은 안내 설정을 따릅니다.",
+        "Choose which apps use TrackTalk. Announcement content and timing follow Guide settings.",
+    )
     val refresh: String get() = t("새로 고침", "Refresh")
     val visibleCategories: String get() = t("표시할 카테고리", "Visible categories")
+    val scrollMore: String get() = t("카테고리 더 보기", "Scroll for more categories")
     fun appCountSummary(appCount: Int, categoryCount: Int): String =
         if (english) "$appCount apps shown · $categoryCount categories selected" else "${appCount}개 앱 표시 · ${categoryCount}개 카테고리 선택"
     val noSupportedApps: String get() = t("지원되는 음악 앱을 찾지 못했습니다.", "No supported music apps found.")
@@ -373,10 +385,6 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     val alwaysExclude: String get() = t("안내에서 제외", "Excluded from guide")
     val appGuideEnabled: String get() = t("안내 사용 중", "Guide on")
     val appGuideDisabled: String get() = t("안내 꺼짐", "Guide off")
-    val appSettingsSummary: String get() = t(
-        "앱별로는 안내 사용 여부만 정합니다. 안내 내용과 시점은 안내 설정을 따릅니다.",
-        "Choose only whether this app uses TrackTalk. Content and timing follow Guide settings.",
-    )
     val appDetailsPlusTitle: String get() = t("앱별 설정은 Plus 기능입니다.", "Per-app settings are a Plus feature.")
     val appDetailsFreeSummary: String get() = t("이 앱은 안내 탭 기본값을 사용합니다.", "This app uses Guide defaults.")
     val appCustomGuideSettings: String get() = t("앱별 설정 사용", "Use app-specific settings")

@@ -7,6 +7,7 @@ import com.trackvoice.data.AnnouncementMode
 import com.trackvoice.data.resolve
 import com.trackvoice.monetization.PremiumMessage
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class AppLanguageTest {
@@ -39,15 +40,28 @@ class AppLanguageTest {
     @Test
     fun premiumMessagesFollowSelectedLanguage() {
         assertEquals(
-            "Plus 구매 기능을 준비 중입니다. 잠시 후 다시 시도해 주세요.",
+            "현재 설치 환경에서는 구매 정보를 확인할 수 없습니다. Google Play에서 설치한 앱에서 다시 확인해 주세요.",
             TrackTalkStrings.forLanguage(AppLanguage.KOREAN, "en")
                 .premiumMessage(PremiumMessage.PRODUCT_UNAVAILABLE),
         )
         assertEquals(
-            "Plus purchases aren't ready yet. Please try again later.",
+            "Purchase details aren't available in this installation. Check the Google Play version of the app.",
             TrackTalkStrings.forLanguage(AppLanguage.ENGLISH, "ko")
                 .premiumMessage(PremiumMessage.PRODUCT_UNAVAILABLE),
         )
+    }
+
+    @Test
+    fun freeTierCopyDescribesBehaviorWithoutTierLabels() {
+        val korean = TrackTalkStrings.forLanguage(AppLanguage.KOREAN, "en")
+        val english = TrackTalkStrings.forLanguage(AppLanguage.ENGLISH, "ko")
+
+        assertEquals("안내 시점과 음량을 세밀하게 조절합니다.", korean.freeGuideDetailsSummary)
+        assertEquals("Fine-tune announcement timing and volume.", english.freeGuideDetailsSummary)
+        assertFalse(korean.albumPlaylistSummary.contains("무료"))
+        assertFalse(english.albumPlaylistSummary.contains("Free", ignoreCase = true))
+        assertEquals("기기·진단", korean.sectionTitle(AppSection.DEVICES))
+        assertEquals("Devices & diagnostics", english.sectionTitle(AppSection.DEVICES))
     }
 
     @Test
