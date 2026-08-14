@@ -5,6 +5,7 @@ import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
+import com.trackvoice.diagnostics.TrackTalkDebugLog
 
 class TrackMetadataMapper(
     private val appNameForPackage: (String) -> String,
@@ -23,14 +24,12 @@ class TrackMetadataMapper(
         // DISPLAY_TITLE while leaving TITLE empty. Resolve the canonical
         // fields once so the UI and announcement pipeline receive the same
         // value.
-        val metadataTitle = metadata.firstText(
-            MediaMetadata.METADATA_KEY_TITLE,
-            MediaMetadata.METADATA_KEY_DISPLAY_TITLE,
-        )
-        val metadataArtist = metadata.firstText(
-            MediaMetadata.METADATA_KEY_ARTIST,
-            MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE,
-        )
+        val canonicalTitle = metadata.firstText(MediaMetadata.METADATA_KEY_TITLE)
+        val displayTitle = metadata.firstText(MediaMetadata.METADATA_KEY_DISPLAY_TITLE)
+        val metadataTitle = canonicalTitle ?: displayTitle
+        val canonicalArtist = metadata.firstText(MediaMetadata.METADATA_KEY_ARTIST)
+        val displayArtist = metadata.firstText(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE)
+        val metadataArtist = canonicalArtist ?: displayArtist
         val metadataAlbum = metadata.firstText(MediaMetadata.METADATA_KEY_ALBUM)
         val stateActiveQueuePosition = state?.activeQueueItemId
             ?.takeIf { it >= 0L }
@@ -74,6 +73,27 @@ class TrackMetadataMapper(
         if (trackKey != null && resolvedTrackNumber != null && trackNumberReliable) {
             knownTrackNumbers[trackKey] = resolvedTrackNumber
         }
+        TrackTalkDebugLog.event(
+            "metadata_mapped",
+            "source" to controller.packageName,
+            "mediaId" to mediaId,
+            "metadataRevision" to observedAt,
+            "titleSource" to when {
+                canonicalTitle != null -> "canonical"
+                displayTitle != null -> "display"
+                else -> "none"
+            },
+            "titleAvailable" to (metadataTitle != null || activeQueueDescription?.title != null),
+            "artistSource" to when {
+                canonicalArtist != null -> "canonical"
+                displayArtist != null -> "display"
+                else -> "queue_or_none"
+            },
+            "albumAvailable" to (metadataAlbum != null || activeQueueDescription?.extras?.getString(MediaMetadata.METADATA_KEY_ALBUM) != null),
+            "trackNumber" to resolvedTrackNumber,
+            "queueSize" to queue.size,
+            "activeQueuePosition" to activeQueuePosition,
+        )
         return PlaybackEvent(
             sourcePackageName = controller.packageName,
             sourceAppName = appNameForPackage(controller.packageName),

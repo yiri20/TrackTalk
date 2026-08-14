@@ -583,6 +583,13 @@ class TrackVoiceController(
             "skipReason" to decision.skipReason,
             "delayMs" to decision.delayMs,
         )
+        if (decision.shouldAnnounce) {
+            logAnnouncementComponents(
+                event = event,
+                decision = decision,
+                action = if (needsMetadataSettlement(event, decision)) "WAIT_FOR_METADATA" else "READY",
+            )
+        }
         if (!decision.shouldAnnounce || decision.text == null) {
             cancelPendingAnnouncement()
             return
@@ -624,7 +631,20 @@ class TrackVoiceController(
         // prevents a metadata update from cancelling and rescheduling the
         // same announcement before the first one has spoken.
         if (pendingAnnouncementEvent?.let { AnnouncementTrackMatcher.matches(it, event, requireSameSource = false) } == true) {
-            TrackTalkDebugLog.event("duplicate_suppressed", "reason" to "pending_track", "mediaId" to event.mediaId)
+            val previousPending = pendingAnnouncementEvent
+            pendingAnnouncementEvent = event
+            val added = newlyAvailableComponents(previousPending, event, decision)
+            TrackTalkDebugLog.event(
+                "metadata_enriched",
+                "sameTrack" to true,
+                "mediaId" to event.mediaId,
+                "added" to added.joinToString(",", prefix = "[", postfix = "]"),
+            )
+            logAnnouncementComponents(
+                event = event,
+                decision = decision,
+                action = if (needsMetadataSettlement(event, decision)) "WAIT_FOR_METADATA" else "READY",
+            )
             return
         }
         if (fingerprint in pendingFingerprints) {
@@ -714,6 +734,12 @@ class TrackVoiceController(
                 )
                 if (!currentDecision.shouldAnnounce || currentDecision.text == null) return@launch
 
+                logAnnouncementComponents(
+                    event = current,
+                    decision = currentDecision,
+                    action = "FINAL",
+                )
+
                 val announcedAt = System.currentTimeMillis()
                 lastAnnouncedTrack = current
                 lastAnnouncedAt = announcedAt
@@ -747,23 +773,102 @@ class TrackVoiceController(
     private fun needsMetadataSettlement(
         event: PlaybackEvent,
         decision: com.trackvoice.announcement.AnnouncementDecision,
-    ): Boolean {
+    ): Boolean = missingAnnouncementComponents(event, decision).isNotEmpty()
+
+    private fun logAnnouncementComponents(
+        event: PlaybackEvent,
+        decision: com.trackvoice.announcement.AnnouncementDecision,
+        action: String,
+    ) {
+        val required = requiredAnnouncementComponents(event, decision)
+        val available = required.filter { componentAvailable(event, decision, it) }
+        val missing = required.filterNot(available::contains)
+        TrackTalkDebugLog.event(
+            "ANNOUNCEMENT_COMPONENTS",
+            "trackIdentity" to TrackFingerprint.announcementBase(event),
+            "mediaId" to event.mediaId,
+            "collection" to decision.collection,
+            "mode" to decision.mode,
+            "required" to required.joinToString(",", prefix = "[", postfix = "]"),
+            "available" to available.joinToString(",", prefix = "[", postfix = "]"),
+            "missing" to missing.joinToString(",", prefix = "[", postfix = "]"),
+            "action" to action,
+        )
+    }
+
+    private fun missingAnnouncementComponents(
+        event: PlaybackEvent,
+        decision: com.trackvoice.announcement.AnnouncementDecision,
+    ): List<String> {
+        val required = requiredAnnouncementComponents(event, decision)
+        return required.filterNot { componentAvailable(event, decision, it) }
+    }
+
+    private fun newlyAvailableComponents(
+        previous: PlaybackEvent?,
+        current: PlaybackEvent,
+        decision: com.trackvoice.announcement.AnnouncementDecision,
+    ): List<String> {
+        if (previous == null) return emptyList()
+        return requiredAnnouncementComponents(current, decision).filter { component ->
+            !componentAvailable(previous, decision, component) && componentAvailable(current, decision, component)
+        }
+    }
+
+    private fun requiredAnnouncementComponents(
+        event: PlaybackEvent,
+        decision: com.trackvoice.announcement.AnnouncementDecision,
+    ): List<String> {
+        val mode = when (decision.mode) {
+            AnnouncementMode.SMART -> when (decision.collection) {
+                PlaybackCollection.ALBUM -> AnnouncementMode.ALBUM
+                PlaybackCollection.PLAYLIST -> AnnouncementMode.PLAYLIST
+                PlaybackCollection.ALGORITHMIC,
+                PlaybackCollection.UNKNOWN,
+                -> AnnouncementMode.TITLE_AND_ARTIST
+            }
+            else -> decision.mode
+        }
         val options = decision.formatOptions
-        if (options.readArtist && event.artist.isNullOrBlank()) return true
-        if (options.shouldReadAlbum(event, decision.collection) && event.album.isNullOrBlank()) return true
-        if (
-            options.readTrackNumber &&
-            AlbumTrackNumberResolver.resolve(
-                event,
-                allowQueuePositionFallback = decision.collection == PlaybackCollection.ALBUM,
-            ) == null
-        ) return true
-        return options.readCollection &&
-            decision.collection == PlaybackCollection.PLAYLIST &&
-            (
-                event.queueTitle.isNullOrBlank() ||
-                    PlaybackCollectionResolver.isGenericQueueTitle(event.queueTitle)
-                )
+        return when (mode) {
+            AnnouncementMode.TITLE_ONLY -> listOf("TITLE")
+            AnnouncementMode.TITLE_AND_ARTIST -> buildList {
+                if (options.readTitle) add("TITLE")
+                if (options.readArtist) add("ARTIST")
+            }
+            AnnouncementMode.ALBUM -> buildList {
+                if (options.shouldReadAlbum(event, decision.collection)) add("ALBUM")
+                if (options.readTrackNumber) add("TRACK_NUMBER")
+                if (options.readTitle) add("TITLE")
+                if (options.readArtist) add("ARTIST")
+            }
+            AnnouncementMode.PLAYLIST -> buildList {
+                if (options.readCollection) add("COLLECTION")
+                if (options.shouldReadAlbum(event, decision.collection)) add("ALBUM")
+                if (options.readTrackNumber) add("TRACK_NUMBER")
+                if (options.readTitle) add("TITLE")
+                if (options.readArtist) add("ARTIST")
+            }
+            AnnouncementMode.SMART -> error("resolved above")
+        }
+    }
+
+    private fun componentAvailable(
+        event: PlaybackEvent,
+        decision: com.trackvoice.announcement.AnnouncementDecision,
+        component: String,
+    ): Boolean = when (component) {
+        "TITLE" -> event.hasTitle
+        "ARTIST" -> !event.artist.isNullOrBlank()
+        "ALBUM" -> !event.album.isNullOrBlank()
+        "COLLECTION" -> !event.queueTitle.isNullOrBlank() &&
+            !PlaybackCollectionResolver.isGenericQueueTitle(event.queueTitle)
+        "TRACK_NUMBER" -> AlbumTrackNumberResolver.resolve(
+            event,
+            allowQueuePositionFallback = decision.collection == PlaybackCollection.ALBUM ||
+                (decision.mode == AnnouncementMode.ALBUM && decision.collection == PlaybackCollection.UNKNOWN),
+        ) != null
+        else -> false
     }
 
     /**

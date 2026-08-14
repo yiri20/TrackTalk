@@ -5,7 +5,7 @@ object ActiveSessionSelector {
         if (sessions.isEmpty()) return null
 
         val playing = sessions
-            .filter { it.event.isPlaying && it.event.hasTitle }
+            .filter { it.event.isPlaying && it.event.hasTrackMetadata }
         val mediaKeyPlaying = playing
             .filter { it.isMediaKeySession }
             .maxByOrNull { maxOf(it.lastObservedAt, it.lastMetadataChangedAt) }
@@ -16,12 +16,12 @@ object ActiveSessionSelector {
         if (recentPlaying != null) return recentPlaying
 
         val mediaKey = sessions
-            .filter { it.isMediaKeySession && it.event.hasTitle }
+            .filter { it.isMediaKeySession && it.event.hasTrackMetadata }
             .maxByOrNull { it.lastObservedAt }
         if (mediaKey != null) return mediaKey
 
         return sessions
-            .filter { it.event.hasTitle }
+            .filter { it.event.hasTrackMetadata }
             .maxByOrNull { it.lastMetadataChangedAt }
     }
 }

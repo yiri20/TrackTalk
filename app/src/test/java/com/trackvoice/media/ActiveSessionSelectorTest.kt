@@ -80,10 +80,29 @@ class ActiveSessionSelectorTest {
     }
 
     @Test
-    fun sessionsWithoutTitlesAreIgnored() {
+    fun sessionsWithoutTrackMetadataAreIgnored() {
         val noTitle = snapshot(key = "empty", title = null, status = PlaybackStatus.PLAYING)
+        val noMetadata = noTitle.copy(
+            event = noTitle.event.copy(
+                artist = null,
+                album = null,
+                albumArtist = null,
+                trackNumber = null,
+                totalTracks = null,
+                discNumber = null,
+                duration = null,
+                mediaId = null,
+            ),
+        )
 
-        assertNull(ActiveSessionSelector.select(listOf(noTitle)))
+        assertNull(ActiveSessionSelector.select(listOf(noMetadata)))
+    }
+
+    @Test
+    fun playingSessionWithTrackMetadataButLateTitleRemainsSelectable() {
+        val noTitle = snapshot(key = "youtube", title = null, status = PlaybackStatus.PLAYING)
+
+        assertEquals("youtube", ActiveSessionSelector.select(listOf(noTitle))?.sessionKey)
     }
 
     private fun snapshot(

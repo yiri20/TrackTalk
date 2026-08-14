@@ -292,6 +292,26 @@ class AnnouncementPolicyTest {
     }
 
     @Test
+    fun albumAnnouncementRemainsEligibleWhileRequiredTitleIsTemporarilyMissing() {
+        val decision = AnnouncementPolicy.decide(
+            event = event().copy(title = null),
+            userSettings = UserSettings(
+                outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS,
+                albumMode = AnnouncementMode.ALBUM,
+                albumReadFields = setOf(
+                    AnnouncementReadField.TITLE,
+                    AnnouncementReadField.TRACK_NUMBER,
+                ),
+            ),
+            appSettings = null,
+            externalAudioOutput = true,
+        )
+
+        assertTrue(decision.shouldAnnounce)
+        assertEquals("트랙 3번.", decision.text)
+    }
+
+    @Test
     fun announcementOrderFlowsFromPremiumSettingsIntoPolicy() {
         val decision = AnnouncementPolicy.decide(
             event = event(),

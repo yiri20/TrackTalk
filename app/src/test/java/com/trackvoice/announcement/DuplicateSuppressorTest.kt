@@ -46,6 +46,27 @@ class DuplicateSuppressorTest {
     }
 
     @Test
+    fun pendingTrackWithMissingTitleMatchesItsLaterEnrichment() {
+        val early = event().copy(title = null)
+        val enriched = event()
+
+        assertTrue(AnnouncementTrackMatcher.matches(early, enriched))
+        assertTrue(AnnouncementTrackMatcher.matches(enriched, early))
+    }
+
+    @Test
+    fun skippedTrackDoesNotMatchPendingAlbumTrack() {
+        val early = event().copy(title = null)
+        val next = event().copy(
+            title = "Next song",
+            mediaId = "track-4",
+            trackNumber = 4,
+        )
+
+        assertFalse(AnnouncementTrackMatcher.matches(early, next))
+    }
+
+    @Test
     fun trackNumberCorrectionForSameMediaIdDoesNotReadAgain() {
         val suppressor = DuplicateSuppressor()
         val early = event().copy(trackNumber = null)

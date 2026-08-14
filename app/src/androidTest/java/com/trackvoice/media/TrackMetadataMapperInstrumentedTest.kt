@@ -8,6 +8,9 @@ import android.media.session.PlaybackState
 import android.os.Bundle
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.trackvoice.announcement.AnnouncementPolicy
+import com.trackvoice.data.AnnouncementOutputPolicy
+import com.trackvoice.data.UserSettings
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -107,6 +110,40 @@ class TrackMetadataMapperInstrumentedTest {
 
         assertEquals("Display-only song", event.title)
         assertEquals("Display-only artist", event.artist)
+    }
+
+    @Test
+    fun displayTitleFallbackFlowsThroughAlbumAnnouncementPipeline() {
+        session.setMetadata(
+            MediaMetadata.Builder()
+                .putString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE, "Display-only song")
+                .putString(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE, "Display-only artist")
+                .putString(MediaMetadata.METADATA_KEY_ALBUM, "Display-only album")
+                .putString(MediaMetadata.METADATA_KEY_MEDIA_ID, "display-track-3")
+                .putLong(MediaMetadata.METADATA_KEY_TRACK_NUMBER, 3L)
+                .build(),
+        )
+        session.setPlaybackState(
+            PlaybackState.Builder()
+                .setState(PlaybackState.STATE_PLAYING, 0L, 1f)
+                .build(),
+        )
+
+        val event = TrackMetadataMapper { "Test Music" }
+            .map(MediaController(context, session.sessionToken), observedAt = 235L)
+        val decision = AnnouncementPolicy.decide(
+            event = event,
+            userSettings = UserSettings(outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS),
+            appSettings = null,
+            externalAudioOutput = true,
+            collectionOverride = PlaybackCollection.ALBUM,
+        )
+
+        assertTrue(decision.shouldAnnounce)
+        assertEquals(
+            "Display-only album, 트랙 3번, Display-only song, Display-only artist.",
+            decision.text,
+        )
     }
 
     @Test

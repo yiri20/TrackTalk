@@ -72,7 +72,12 @@ object AnnouncementPolicy {
 
         if (!effectiveEnabled) return skipped(mode, delayMs, AnnouncementSkipReason.DISABLED)
         if (appSettings?.enabled == false) return skipped(mode, delayMs, AnnouncementSkipReason.APP_DISABLED)
-        if (!event.hasTitle) return skipped(mode, delayMs, AnnouncementSkipReason.NO_TITLE)
+        // MediaSession metadata is often delivered in more than one callback.
+        // A track with album/queue identity but no title is still a valid
+        // pending candidate; the controller settles it before committing TTS.
+        // Truly empty sessions are still rejected instead of producing a
+        // misleading announcement.
+        if (!event.hasTrackMetadata) return skipped(mode, delayMs, AnnouncementSkipReason.NO_TITLE)
         if (!userSettings.outputPolicy.allows(externalAudioOutput)) {
             return skipped(mode, delayMs, AnnouncementSkipReason.SPEAKER_OUTPUT)
         }

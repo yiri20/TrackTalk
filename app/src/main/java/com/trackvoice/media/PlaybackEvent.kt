@@ -42,6 +42,17 @@ data class PlaybackEvent(
     val trackNumberReliable: Boolean = true,
 ) {
     val hasTitle: Boolean get() = !title.isNullOrBlank()
+    /**
+     * A media session can publish the title after album/queue metadata. Keep
+     * that session selectable while there is still enough track evidence to
+     * wait for the enrichment, but do not select an entirely empty player.
+     */
+    val hasTrackMetadata: Boolean
+        get() = hasTitle ||
+            !mediaId.isNullOrBlank() ||
+            !album.isNullOrBlank() ||
+            trackNumber != null ||
+            activeQueuePosition != null
     val isPlaying: Boolean get() = playbackState == PlaybackStatus.PLAYING
 }
 
