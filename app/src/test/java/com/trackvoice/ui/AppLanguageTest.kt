@@ -1,6 +1,7 @@
 package com.trackvoice.ui
 
 import com.trackvoice.data.AppLanguage
+import com.trackvoice.data.AnnouncementOutputPolicy
 import com.trackvoice.data.AnnouncementTiming
 import com.trackvoice.data.AnnouncementMode
 import com.trackvoice.data.resolve
@@ -84,5 +85,14 @@ class AppLanguageTest {
         assertEquals("기본 설정", korean.announcementBasisValue(appSpecific = false, typeSpecific = false))
         assertEquals("유형별 설정", korean.announcementBasisValue(appSpecific = false, typeSpecific = true))
         assertEquals("앱별 설정", korean.announcementBasisValue(appSpecific = true, typeSpecific = true))
+    }
+
+    @Test
+    fun outputPolicyLabelsMatchSelectedLanguage() {
+        val korean = TrackTalkStrings.forLanguage(AppLanguage.KOREAN, "en")
+        val english = TrackTalkStrings.forLanguage(AppLanguage.ENGLISH, "ko")
+
+        assertEquals("모든 오디오 출력", korean.announcementOutputOption(AnnouncementOutputPolicy.ALL_OUTPUTS))
+        assertEquals("External audio only", english.announcementOutputOption(AnnouncementOutputPolicy.EXTERNAL_ONLY))
     }
 }

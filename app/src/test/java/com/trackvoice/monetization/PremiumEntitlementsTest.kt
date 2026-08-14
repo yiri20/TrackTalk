@@ -70,7 +70,6 @@ class PremiumEntitlementsTest {
             readAlbum = false,
             readCollection = false,
             timing = AnnouncementTiming.DELAYED,
-            alwaysExclude = true,
         ).forPremiumEntitlement(isPremium = false)
 
         assertEquals(AnnouncementMode.SMART, effective.mode)
@@ -79,6 +78,5 @@ class PremiumEntitlementsTest {
         assertTrue(effective.readCollection)
         assertEquals(null, effective.timing)
         assertFalse(effective.useCustomGuideSettings)
-        assertFalse(effective.alwaysExclude)
     }
 }

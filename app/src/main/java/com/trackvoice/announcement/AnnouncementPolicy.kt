@@ -12,7 +12,6 @@ import com.trackvoice.media.PlaybackCollectionResolver
 enum class AnnouncementSkipReason {
     DISABLED,
     APP_DISABLED,
-    APP_EXCLUDED,
     NO_TITLE,
     SPEAKER_OUTPUT,
     TOO_EARLY,
@@ -73,12 +72,8 @@ object AnnouncementPolicy {
 
         if (!effectiveEnabled) return skipped(mode, delayMs, AnnouncementSkipReason.DISABLED)
         if (appSettings?.enabled == false) return skipped(mode, delayMs, AnnouncementSkipReason.APP_DISABLED)
-        if (appSettings?.alwaysExclude == true) return skipped(mode, delayMs, AnnouncementSkipReason.APP_EXCLUDED)
         if (!event.hasTitle) return skipped(mode, delayMs, AnnouncementSkipReason.NO_TITLE)
-        if (userSettings.headphonesOnly && !externalAudioOutput) {
-            return skipped(mode, delayMs, AnnouncementSkipReason.SPEAKER_OUTPUT)
-        }
-        if (userSettings.suppressDuringSpeakerPlayback && !externalAudioOutput) {
+        if (!userSettings.outputPolicy.allows(externalAudioOutput)) {
             return skipped(mode, delayMs, AnnouncementSkipReason.SPEAKER_OUTPUT)
         }
 

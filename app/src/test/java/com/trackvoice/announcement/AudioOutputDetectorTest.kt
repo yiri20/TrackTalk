@@ -52,4 +52,18 @@ class AudioOutputDetectorTest {
             ),
         )
     }
+
+    @Test
+    fun UsbAndHdmiRoutesAreExternal() {
+        assertTrue(
+            AudioOutputDetector.hasExternalOutputType(
+                listOf(AudioDeviceInfo.TYPE_USB_DEVICE),
+            ),
+        )
+        assertTrue(
+            AudioOutputDetector.hasExternalOutputType(
+                listOf(AudioDeviceInfo.TYPE_HDMI),
+            ),
+        )
+    }
 }

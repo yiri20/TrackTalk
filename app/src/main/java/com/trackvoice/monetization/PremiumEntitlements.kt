@@ -54,6 +54,5 @@ fun AppSettings.forPremiumEntitlement(isPremium: Boolean): AppSettings {
         readAlbum = true,
         readCollection = true,
         timing = null,
-        alwaysExclude = false,
     )
 }

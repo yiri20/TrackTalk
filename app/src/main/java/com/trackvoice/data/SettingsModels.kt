@@ -9,6 +9,38 @@ const val YOUTUBE_PACKAGE_NAME = "com.google.android.youtube"
 
 fun defaultAppGuideEnabled(packageName: String): Boolean = packageName != YOUTUBE_PACKAGE_NAME
 
+/**
+ * The single source of truth for which media routes may receive announcements.
+ * Built-in speaker and earpiece are never considered external routes.
+ */
+enum class AnnouncementOutputPolicy {
+    ALL_OUTPUTS,
+    EXTERNAL_ONLY,
+    ;
+
+    fun allows(externalAudioOutput: Boolean): Boolean =
+        this == ALL_OUTPUTS || externalAudioOutput
+
+    companion object {
+        /**
+         * Preserve the old behavior while migrating the two legacy switches:
+         * either old switch enabled meant speaker suppression, while both false
+         * explicitly meant that all routes were allowed. Missing old values use
+         * the previous safe default, which suppressed the built-in speaker.
+         */
+        fun fromLegacy(
+            headphonesOnly: Boolean?,
+            suppressDuringSpeakerPlayback: Boolean?,
+        ): AnnouncementOutputPolicy = if (
+            headphonesOnly == true || suppressDuringSpeakerPlayback != false
+        ) {
+            EXTERNAL_ONLY
+        } else {
+            ALL_OUTPUTS
+        }
+    }
+}
+
 enum class AnnouncementMode(val label: String) {
     SMART("Smart"),
     ALBUM("앨범 정보"),
@@ -127,9 +159,8 @@ data class UserSettings(
     val enabled: Boolean = true,
     val autoEnableOnScreenOff: Boolean = false,
     val restoreEnabledWhenScreenOn: Boolean = true,
-    val headphonesOnly: Boolean = false,
+    val outputPolicy: AnnouncementOutputPolicy = AnnouncementOutputPolicy.EXTERNAL_ONLY,
     val bluetoothOnlyForAutoEnable: Boolean = false,
-    val suppressDuringSpeakerPlayback: Boolean = true,
     val musicTreatment: MusicTreatment = MusicTreatment.DUCK,
     val musicDuckPercent: Int = DEFAULT_MUSIC_DUCK_PERCENT,
     val trackStartBehavior: TrackStartBehavior = TrackStartBehavior.PLAY_IMMEDIATELY,
@@ -179,5 +210,4 @@ data class AppSettings(
     val readAlbum: Boolean = true,
     val readCollection: Boolean = true,
     val timing: AnnouncementTiming? = null,
-    val alwaysExclude: Boolean = false,
 )

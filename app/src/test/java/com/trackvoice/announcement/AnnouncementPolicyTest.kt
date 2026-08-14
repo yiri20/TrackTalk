@@ -2,6 +2,7 @@
 
 import com.trackvoice.data.AnnouncementMode
 import com.trackvoice.data.AnnouncementOrder
+import com.trackvoice.data.AnnouncementOutputPolicy
 import com.trackvoice.data.AnnouncementReadField
 import com.trackvoice.data.AnnouncementTiming
 import com.trackvoice.data.AppSettings
@@ -23,7 +24,7 @@ class AnnouncementPolicyTest {
             userSettings = UserSettings(
                 defaultMode = AnnouncementMode.TITLE_ONLY,
                 useContentTypeSettings = false,
-                suppressDuringSpeakerPlayback = false,
+                outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS,
             ),
             appSettings = AppSettings(
                 "com.youtube.music",
@@ -45,7 +46,7 @@ class AnnouncementPolicyTest {
             event = event(),
             userSettings = UserSettings(
                 voiceLanguage = VoiceLanguage.ENGLISH,
-                suppressDuringSpeakerPlayback = false,
+                outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS,
             ),
             appSettings = null,
             externalAudioOutput = true,
@@ -58,7 +59,7 @@ class AnnouncementPolicyTest {
     fun typeSpecificFieldsStayActiveWhenTheOldGlobalModeIsStillStored() {
         val decision = AnnouncementPolicy.decide(
             event = event(),
-            userSettings = UserSettings(defaultMode = AnnouncementMode.TITLE_ONLY, suppressDuringSpeakerPlayback = false),
+            userSettings = UserSettings(defaultMode = AnnouncementMode.TITLE_ONLY, outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS),
             appSettings = AppSettings(
                 "com.youtube.music",
                 "YouTube Music",
@@ -74,13 +75,13 @@ class AnnouncementPolicyTest {
     fun smartUsesTrackNumberOnlyWhenAlbumContextIsPresent() {
         val smart = AnnouncementPolicy.decide(
             event(),
-            UserSettings(suppressDuringSpeakerPlayback = false),
+            UserSettings(outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS),
             null,
             externalAudioOutput = true,
         )
         val noAlbum = AnnouncementPolicy.decide(
             event().copy(album = null),
-            UserSettings(suppressDuringSpeakerPlayback = false),
+            UserSettings(outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS),
             null,
             externalAudioOutput = true,
         )
@@ -92,7 +93,7 @@ class AnnouncementPolicyTest {
     fun smartUsesPlaylistModeWhenQueueTitleIdentifiesPlaylist() {
         val decision = AnnouncementPolicy.decide(
             event().copy(queueTitle = "출근길 재생목록", queue = listOf(queueItem(), queueItem("Second"))),
-            UserSettings(suppressDuringSpeakerPlayback = false),
+            UserSettings(outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS),
             null,
             externalAudioOutput = true,
         )
@@ -104,7 +105,7 @@ class AnnouncementPolicyTest {
         val decision = AnnouncementPolicy.decide(
             event().copy(queueTitle = "출근길 재생목록"),
             UserSettings(
-                suppressDuringSpeakerPlayback = false,
+                outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS,
                 playlistReadFields = setOf(
                     AnnouncementReadField.COLLECTION,
                     AnnouncementReadField.ALBUM,
@@ -129,7 +130,7 @@ class AnnouncementPolicyTest {
                 activeQueuePosition = 2,
                 queue = List(11) { queueItem("Song $it") },
             ),
-            userSettings = UserSettings(suppressDuringSpeakerPlayback = false),
+            userSettings = UserSettings(outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS),
             appSettings = AppSettings(
                 "com.youtube.music",
                 "YouTube Music",
@@ -147,7 +148,7 @@ class AnnouncementPolicyTest {
         val decision = AnnouncementPolicy.decide(
             event().copy(queueTitle = "Daily Mix 1"),
             UserSettings(
-                suppressDuringSpeakerPlayback = false,
+                outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS,
                 algorithmMode = AnnouncementMode.TITLE_ONLY,
                 algorithmReadFields = setOf(AnnouncementReadField.TITLE),
             ),
@@ -162,7 +163,7 @@ class AnnouncementPolicyTest {
     fun algorithmicDefaultIncludesSongAlbumAndTrackMetadata() {
         val decision = AnnouncementPolicy.decide(
             event = event().copy(queueTitle = "Daily Mix 1"),
-            userSettings = UserSettings(suppressDuringSpeakerPlayback = false),
+            userSettings = UserSettings(outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS),
             appSettings = null,
             externalAudioOutput = true,
         )
@@ -175,7 +176,7 @@ class AnnouncementPolicyTest {
         val decision = AnnouncementPolicy.decide(
             event = event().copy(queueTitle = "Daily Mix 1"),
             userSettings = UserSettings(
-                suppressDuringSpeakerPlayback = false,
+                outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS,
                 algorithmMode = AnnouncementMode.ALBUM,
                 algorithmReadFields = setOf(
                     AnnouncementReadField.TITLE,
@@ -196,7 +197,7 @@ class AnnouncementPolicyTest {
         val decision = AnnouncementPolicy.decide(
             event = event().copy(queueTitle = "Daily Mix 1"),
             userSettings = UserSettings(
-                suppressDuringSpeakerPlayback = false,
+                outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS,
                 algorithmMode = AnnouncementMode.ALBUM,
                 algorithmReadFields = setOf(AnnouncementReadField.ALBUM),
             ),
@@ -212,7 +213,7 @@ class AnnouncementPolicyTest {
         val decision = AnnouncementPolicy.decide(
             event = event(),
             userSettings = UserSettings(
-                suppressDuringSpeakerPlayback = false,
+                outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS,
                 useContentTypeSettings = false,
                 defaultReadFields = setOf(
                     AnnouncementReadField.TITLE,
@@ -231,7 +232,7 @@ class AnnouncementPolicyTest {
         val decision = AnnouncementPolicy.decide(
             event = event(),
             userSettings = UserSettings(
-                suppressDuringSpeakerPlayback = false,
+                outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS,
                 defaultMode = AnnouncementMode.TITLE_ONLY,
                 useContentTypeSettings = true,
                 defaultReadFields = setOf(AnnouncementReadField.TITLE),
@@ -254,7 +255,7 @@ class AnnouncementPolicyTest {
         val decision = AnnouncementPolicy.decide(
             event = event(),
             userSettings = UserSettings(
-                suppressDuringSpeakerPlayback = false,
+                outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS,
                 albumReadFields = setOf(
                     AnnouncementReadField.ALBUM,
                     AnnouncementReadField.TITLE,
@@ -273,7 +274,7 @@ class AnnouncementPolicyTest {
         val decision = AnnouncementPolicy.decide(
             event = event(),
             userSettings = UserSettings(
-                suppressDuringSpeakerPlayback = false,
+                outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS,
                 albumMode = AnnouncementMode.ALBUM,
                 albumReadFields = setOf(
                     AnnouncementReadField.TITLE,
@@ -295,7 +296,7 @@ class AnnouncementPolicyTest {
         val decision = AnnouncementPolicy.decide(
             event = event(),
             userSettings = UserSettings(
-                suppressDuringSpeakerPlayback = false,
+                outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS,
                 announcementOrder = AnnouncementOrder.TRACK_NUMBER_FIRST,
             ),
             appSettings = null,
@@ -309,7 +310,7 @@ class AnnouncementPolicyTest {
     @Test
     fun albumNameFirstTrackOnlySettingIsAppliedByPolicy() {
         val settings = UserSettings(
-            suppressDuringSpeakerPlayback = false,
+            outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS,
             albumNameFirstTrackOnly = true,
         )
         val first = AnnouncementPolicy.decide(
@@ -334,7 +335,7 @@ class AnnouncementPolicyTest {
         val decision = AnnouncementPolicy.decide(
             event = event(),
             userSettings = UserSettings(
-                suppressDuringSpeakerPlayback = false,
+                outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS,
                 albumMode = AnnouncementMode.TITLE_AND_ARTIST,
                 useContentTypeSettings = false,
             ),
@@ -364,7 +365,7 @@ class AnnouncementPolicyTest {
                 activeQueuePosition = 2,
                 queue = List(11) { queueItem("Song $it", album = "A Moon Shaped Pool") },
             ),
-            userSettings = UserSettings(suppressDuringSpeakerPlayback = false),
+            userSettings = UserSettings(outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS),
             appSettings = null,
             externalAudioOutput = true,
         )
@@ -383,7 +384,7 @@ class AnnouncementPolicyTest {
     fun speakerCanBeSuppressedWithoutTouchingPlayback() {
         val decision = AnnouncementPolicy.decide(
             event(),
-            UserSettings(suppressDuringSpeakerPlayback = true),
+            UserSettings(outputPolicy = AnnouncementOutputPolicy.EXTERNAL_ONLY),
             null,
             externalAudioOutput = false,
         )
@@ -392,11 +393,24 @@ class AnnouncementPolicyTest {
     }
 
     @Test
+    fun allOutputsPolicyAllowsSpeakerAnnouncements() {
+        val decision = AnnouncementPolicy.decide(
+            event(),
+            UserSettings(outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS),
+            null,
+            externalAudioOutput = false,
+        )
+
+        assertTrue(decision.shouldAnnounce)
+        assertEquals(null, decision.skipReason)
+    }
+
+    @Test
     fun minimumPlaybackTimeDelaysAnnouncementInsteadOfDroppingIt() {
         val decision = AnnouncementPolicy.decide(
             event().copy(playbackPosition = 2_000L),
             UserSettings(
-                suppressDuringSpeakerPlayback = false,
+                outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS,
                 timing = AnnouncementTiming.DELAYED,
                 minimumPlaybackSeconds = 5,
             ),
@@ -413,7 +427,7 @@ class AnnouncementPolicyTest {
         val decision = AnnouncementPolicy.decide(
             event().copy(playbackPosition = 2_000L),
             UserSettings(
-                suppressDuringSpeakerPlayback = false,
+                outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS,
                 timing = AnnouncementTiming.IMMEDIATE,
                 minimumPlaybackSeconds = 5,
             ),
@@ -430,7 +444,7 @@ class AnnouncementPolicyTest {
         val decision = AnnouncementPolicy.decide(
             event().copy(playbackPosition = 2_000L),
             UserSettings(
-                suppressDuringSpeakerPlayback = false,
+                outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS,
                 trackStartBehavior = com.trackvoice.data.TrackStartBehavior.ANNOUNCE_THEN_PLAY,
                 minimumPlaybackSeconds = 5,
             ),

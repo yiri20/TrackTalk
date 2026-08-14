@@ -127,6 +127,7 @@ class TrackVoiceController(
     init {
         scope.launch(Dispatchers.IO) { repository.migrateTtsVolumeDefault() }
         scope.launch(Dispatchers.IO) { repository.migrateContentReadDefaults() }
+        scope.launch(Dispatchers.IO) { repository.migrateAudioOutputPolicy() }
         scope.launch {
             userSettings.collectLatest { settings ->
                 val effectiveSettings = settings.forPremiumEntitlement(premiumState.value.isPremium)

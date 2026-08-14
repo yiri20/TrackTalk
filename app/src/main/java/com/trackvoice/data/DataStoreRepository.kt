@@ -26,6 +26,7 @@ private fun appKey(packageName: String, suffix: String): Preferences.Key<String>
 
 private const val TTS_VOLUME_DEFAULT_VERSION = 2
 private const val CONTENT_READ_DEFAULT_VERSION = 1
+private const val AUDIO_OUTPUT_POLICY_VERSION = 1
 
 class DataStoreRepository(private val context: Context) {
     private val dataStore = context.trackVoiceDataStore
@@ -93,6 +94,26 @@ class DataStoreRepository(private val context: Context) {
                 preferences[Keys.algorithmReadFields] = DEFAULT_ALGORITHMIC_READ_FIELDS.map(AnnouncementReadField::name).toSet()
             }
             preferences[Keys.contentReadDefaultVersion] = CONTENT_READ_DEFAULT_VERSION
+        }
+    }
+
+    suspend fun migrateAudioOutputPolicy() {
+        dataStore.edit { preferences ->
+            if ((preferences[Keys.audioOutputPolicyVersion] ?: 0) >= AUDIO_OUTPUT_POLICY_VERSION) {
+                return@edit
+            }
+
+            if (preferences[Keys.outputPolicy] == null) {
+                preferences[Keys.outputPolicy] = AnnouncementOutputPolicy.fromLegacy(
+                    headphonesOnly = preferences[Keys.headphonesOnly],
+                    suppressDuringSpeakerPlayback = preferences[Keys.suppressDuringSpeakerPlayback],
+                ).name
+            }
+            // Once the canonical value is present, the two old switches must
+            // not remain writable sources of truth.
+            preferences.remove(Keys.headphonesOnly)
+            preferences.remove(Keys.suppressDuringSpeakerPlayback)
+            preferences[Keys.audioOutputPolicyVersion] = AUDIO_OUTPUT_POLICY_VERSION
         }
     }
 
@@ -167,6 +188,9 @@ class DataStoreRepository(private val context: Context) {
         val appLanguage = stringPreferencesKey("app_language")
         val autoEnableOnScreenOff = booleanPreferencesKey("auto_enable_screen_off")
         val restoreEnabledWhenScreenOn = booleanPreferencesKey("restore_on_screen_on")
+        val outputPolicy = stringPreferencesKey("announcement_output_policy")
+        val audioOutputPolicyVersion = intPreferencesKey("audio_output_policy_version")
+        // Legacy keys are read only during migration/compatibility parsing.
         val headphonesOnly = booleanPreferencesKey("headphones_only")
         val bluetoothOnlyForAutoEnable = booleanPreferencesKey("bluetooth_only_auto")
         val suppressDuringSpeakerPlayback = booleanPreferencesKey("suppress_speaker")
@@ -237,9 +261,14 @@ class DataStoreRepository(private val context: Context) {
             enabled = this[Keys.enabled] ?: true,
             autoEnableOnScreenOff = this[Keys.autoEnableOnScreenOff] ?: false,
             restoreEnabledWhenScreenOn = this[Keys.restoreEnabledWhenScreenOn] ?: true,
-            headphonesOnly = this[Keys.headphonesOnly] ?: false,
+            outputPolicy = enumOrDefault(
+                this[Keys.outputPolicy],
+                AnnouncementOutputPolicy.fromLegacy(
+                    headphonesOnly = this[Keys.headphonesOnly],
+                    suppressDuringSpeakerPlayback = this[Keys.suppressDuringSpeakerPlayback],
+                ),
+            ),
             bluetoothOnlyForAutoEnable = this[Keys.bluetoothOnlyForAutoEnable] ?: false,
-            suppressDuringSpeakerPlayback = this[Keys.suppressDuringSpeakerPlayback] ?: true,
             musicTreatment = musicTreatment,
             musicDuckPercent = (this[Keys.musicDuckPercent] ?: DEFAULT_MUSIC_DUCK_PERCENT)
                 .coerceIn(MIN_MUSIC_DUCK_PERCENT, MAX_MUSIC_DUCK_PERCENT),
@@ -304,7 +333,8 @@ class DataStoreRepository(private val context: Context) {
                 // YouTube is primarily a video app, so keep its first-run
                 // guide disabled. An explicit stored value still wins when
                 // the user turns it on or off from the Apps screen.
-                enabled = this[AppKeys.enabled(packageName)] ?: defaultAppGuideEnabled(packageName),
+                enabled = (this[AppKeys.enabled(packageName)] ?: defaultAppGuideEnabled(packageName)) &&
+                    !(this[AppKeys.alwaysExclude(packageName)] ?: false),
                 useCustomGuideSettings = this[AppKeys.useCustomGuideSettings(packageName)] ?: (
                     mode != AnnouncementMode.SMART ||
                         !readTitle ||
@@ -322,7 +352,6 @@ class DataStoreRepository(private val context: Context) {
                 readAlbum = readAlbum,
                 readCollection = readCollection,
                 timing = timing,
-                alwaysExclude = this[AppKeys.alwaysExclude(packageName)] ?: false,
             )
         }
 
@@ -331,9 +360,11 @@ class DataStoreRepository(private val context: Context) {
         this[Keys.enabled] = settings.enabled
         this[Keys.autoEnableOnScreenOff] = settings.autoEnableOnScreenOff
         this[Keys.restoreEnabledWhenScreenOn] = settings.restoreEnabledWhenScreenOn
-        this[Keys.headphonesOnly] = settings.headphonesOnly
+        this[Keys.outputPolicy] = settings.outputPolicy.name
+        this[Keys.audioOutputPolicyVersion] = AUDIO_OUTPUT_POLICY_VERSION
+        remove(Keys.headphonesOnly)
         this[Keys.bluetoothOnlyForAutoEnable] = settings.bluetoothOnlyForAutoEnable
-        this[Keys.suppressDuringSpeakerPlayback] = settings.suppressDuringSpeakerPlayback
+        remove(Keys.suppressDuringSpeakerPlayback)
         this[Keys.musicTreatment] = settings.musicTreatment.name
         this[Keys.musicDuckPercent] = settings.musicDuckPercent.coerceIn(MIN_MUSIC_DUCK_PERCENT, MAX_MUSIC_DUCK_PERCENT)
         this[Keys.trackStartBehavior] = settings.trackStartBehavior.name
@@ -376,7 +407,9 @@ class DataStoreRepository(private val context: Context) {
         this[AppKeys.readCollection(settings.packageName)] = settings.readCollection
         if (settings.timing == null) remove(AppKeys.timing(settings.packageName))
         else this[AppKeys.timing(settings.packageName)] = settings.timing.name
-        this[AppKeys.alwaysExclude(settings.packageName)] = settings.alwaysExclude
+        // The old exclusion switch had exactly the same runtime effect as
+        // enabled=false. Keep removing it so it cannot disagree with enabled.
+        remove(AppKeys.alwaysExclude(settings.packageName))
     }
 
     private inline fun <reified T : Enum<T>> enumOrDefault(value: String?, default: T): T =

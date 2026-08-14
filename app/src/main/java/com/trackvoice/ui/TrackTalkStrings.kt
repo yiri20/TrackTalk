@@ -2,6 +2,7 @@ package com.trackvoice.ui
 
 import com.trackvoice.data.AnnouncementMode
 import com.trackvoice.data.AnnouncementOrder
+import com.trackvoice.data.AnnouncementOutputPolicy
 import com.trackvoice.data.AnnouncementReadField
 import com.trackvoice.data.AnnouncementTiming
 import com.trackvoice.data.AppCategory
@@ -161,10 +162,21 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     val basicOperation: String get() = t("기본 동작", "Basic behavior")
     val voiceGuide: String get() = t("음성 안내", "Voice guide")
     val voiceGuideSummary: String get() = t("상단바의 안내 타일과 동기화됩니다.", "Syncs with the guide tile in the notification shade.")
-    val headphonesOnly: String get() = t("이어폰에서만 안내", "Guide only on headphones")
-    val headphonesOnlySummary: String get() = t("외부 오디오가 연결될 때만 안내합니다.", "Guide only when external audio is connected.")
-    val suppressSpeaker: String get() = t("스피커에서는 안내하지 않기", "Do not guide on speaker")
-    val suppressSpeakerSummary: String get() = t("스피커로 재생할 때 안내를 건너뜁니다.", "Skip announcements when playing through the speaker.")
+    val announcementOutput: String get() = t("안내 출력", "Announcement output")
+    fun announcementOutputOption(policy: AnnouncementOutputPolicy): String = when (policy) {
+        AnnouncementOutputPolicy.ALL_OUTPUTS -> t("모든 오디오 출력", "All audio outputs")
+        AnnouncementOutputPolicy.EXTERNAL_ONLY -> t("외부 오디오에서만", "External audio only")
+    }
+    fun announcementOutputSummary(policy: AnnouncementOutputPolicy): String = when (policy) {
+        AnnouncementOutputPolicy.ALL_OUTPUTS -> t(
+            "휴대폰 스피커와 외부 오디오에서 모두 안내합니다.",
+            "Announce through the phone speaker and external audio routes.",
+        )
+        AnnouncementOutputPolicy.EXTERNAL_ONLY -> t(
+            "Bluetooth, 유선·USB·HDMI 등 외부 오디오에서만 안내합니다.",
+            "Announce only through Bluetooth, wired, USB, HDMI, and other external routes.",
+        )
+    }
     val statusShortcut: String get() = t("상단바 바로가기", "Notification shortcut")
     val statusShortcutSummary: String get() = t("알림을 눌러 앱으로 바로 이동합니다.", "Tap the notification to open the app.")
     val connectedDevices: String get() = t("연결 기기", "Connected devices")
@@ -361,6 +373,10 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     val alwaysExclude: String get() = t("안내에서 제외", "Excluded from guide")
     val appGuideEnabled: String get() = t("안내 사용 중", "Guide on")
     val appGuideDisabled: String get() = t("안내 꺼짐", "Guide off")
+    val appSettingsSummary: String get() = t(
+        "앱별로는 안내 사용 여부만 정합니다. 안내 내용과 시점은 안내 설정을 따릅니다.",
+        "Choose only whether this app uses TrackTalk. Content and timing follow Guide settings.",
+    )
     val appDetailsPlusTitle: String get() = t("앱별 설정은 Plus 기능입니다.", "Per-app settings are a Plus feature.")
     val appDetailsFreeSummary: String get() = t("이 앱은 안내 탭 기본값을 사용합니다.", "This app uses Guide defaults.")
     val appCustomGuideSettings: String get() = t("앱별 설정 사용", "Use app-specific settings")
