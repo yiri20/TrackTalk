@@ -4,11 +4,18 @@ import com.trackvoice.data.MusicTreatment
 import com.trackvoice.data.TrackStartBehavior
 import com.trackvoice.data.UserSettings
 
+enum class MusicAttenuationStrategy {
+    NONE,
+    SYSTEM_DUCK,
+    MEDIA_PAUSE,
+}
+
 data class AnnouncementPlaybackPlan(
     val musicTreatment: MusicTreatment,
     val pauseBeforeAnnouncement: Boolean,
     val requestAudioFocus: Boolean,
     val shouldDuckMusic: Boolean,
+    val musicAttenuationStrategy: MusicAttenuationStrategy,
 )
 
 object AnnouncementPlaybackPlanner {
@@ -26,6 +33,11 @@ object AnnouncementPlaybackPlanner {
             pauseBeforeAnnouncement = settings.trackStartBehavior == TrackStartBehavior.ANNOUNCE_THEN_PLAY,
             requestAudioFocus = treatment != MusicTreatment.KEEP,
             shouldDuckMusic = treatment == MusicTreatment.DUCK,
+            musicAttenuationStrategy = when (treatment) {
+                MusicTreatment.KEEP -> MusicAttenuationStrategy.NONE
+                MusicTreatment.DUCK -> MusicAttenuationStrategy.SYSTEM_DUCK
+                MusicTreatment.PAUSE -> MusicAttenuationStrategy.MEDIA_PAUSE
+            },
         )
     }
 }

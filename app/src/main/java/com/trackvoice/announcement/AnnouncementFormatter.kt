@@ -42,8 +42,8 @@ fun AnnouncementFormatOptions.shouldReadAlbum(
 
 object AnnouncementFormatter {
     fun testText(voiceLanguage: VoiceLanguage): String = when (voiceLanguage.toAnnouncementTextLanguage()) {
-        AnnouncementTextLanguage.KOREAN -> "트랙 3번, Glass Eyes. Radiohead."
-        AnnouncementTextLanguage.ENGLISH -> "Track 3, Glass Eyes. Radiohead."
+        AnnouncementTextLanguage.KOREAN -> "Glass Eyes. Radiohead."
+        AnnouncementTextLanguage.ENGLISH -> "Glass Eyes. Radiohead."
     }
 
     fun format(

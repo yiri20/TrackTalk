@@ -142,7 +142,7 @@ class TrackMetadataMapperInstrumentedTest {
 
         assertTrue(decision.shouldAnnounce)
         assertEquals(
-            "Display-only album, 트랙 3번, Display-only song, Display-only artist.",
+            "Display-only album, Display-only song, Display-only artist.",
             decision.text,
         )
     }

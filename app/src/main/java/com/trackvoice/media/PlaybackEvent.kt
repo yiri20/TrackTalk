@@ -77,14 +77,14 @@ enum class TrackNumberSource {
     MEDIA_METADATA,
     QUEUE_ITEM_METADATA,
     CACHED_QUEUE_ITEM_METADATA,
+    EXTERNAL_CATALOG,
 }
 
 object AlbumTrackNumberResolver {
     fun resolve(event: PlaybackEvent): Int? {
-        val effectiveTotalTracks = event.totalTracks ?: event.queue.size.takeIf { it > 1 }
         val directTrack = event.trackNumber
             ?.takeIf { event.trackNumberReliable }
-            ?.takeIf { it.isValidTrack(effectiveTotalTracks) }
+            ?.takeIf { it.isValidTrack(event.totalTracks) }
         if (directTrack != null) return directTrack
 
         // A queue position is never an album track number. Providers commonly

@@ -90,6 +90,26 @@ val ALL_ANNOUNCEMENT_READ_FIELDS = listOf(
     AnnouncementReadField.COLLECTION,
 )
 
+/**
+ * The product-level reading configuration. Playback source/context is not a
+ * reliable MediaSession fact, so this is intentionally the only user-facing
+ * field set used by the runtime.
+ */
+val GLOBAL_ANNOUNCEMENT_READ_FIELDS = listOf(
+    AnnouncementReadField.TITLE,
+    AnnouncementReadField.ARTIST,
+    AnnouncementReadField.ALBUM,
+    AnnouncementReadField.TRACK_NUMBER,
+)
+
+/**
+ * Fields exposed by the beta product surface. Track number remains in the
+ * internal/persisted model for a future metadata-backed release, but is not
+ * currently reliable enough to expose or speak by default.
+ */
+val BETA_VISIBLE_ANNOUNCEMENT_READ_FIELDS = GLOBAL_ANNOUNCEMENT_READ_FIELDS
+    .filterNot { it == AnnouncementReadField.TRACK_NUMBER }
+
 /** The canonical default order for album announcements. */
 val DEFAULT_ALBUM_READ_FIELDS = listOf(
     AnnouncementReadField.ALBUM,
@@ -115,9 +135,14 @@ val DEFAULT_ALGORITHMIC_READ_FIELDS = listOf(
     AnnouncementReadField.ARTIST,
 )
 
-// A safe global fallback that works across players even when album or queue
-// metadata is missing.
-val DEFAULT_GLOBAL_READ_FIELDS = DEFAULT_ALGORITHMIC_READ_FIELDS
+// A safe global fallback that works across players even when album metadata
+// is missing. Track number remains available in the internal field model, but
+// is intentionally not part of the beta default.
+val DEFAULT_GLOBAL_READ_FIELDS = listOf(
+    AnnouncementReadField.ALBUM,
+    AnnouncementReadField.TITLE,
+    AnnouncementReadField.ARTIST,
+)
 
 /**
  * Removes duplicates/unsupported values while preserving the user's order.
@@ -140,6 +165,40 @@ fun normalizeAnnouncementReadFields(
         .filter { it in allowed }
         .distinct()
     return fallback.ifEmpty { allowedFields.distinct().take(1) }
+}
+
+/**
+ * Normalizes the beta-visible order without dropping hidden internal fields
+ * from persisted settings. This lets the future track-number feature return
+ * without treating a UI refresh as a destructive migration.
+ */
+fun mergeBetaVisibleAnnouncementReadFields(
+    storedFields: List<AnnouncementReadField>,
+    visibleFields: Iterable<AnnouncementReadField>,
+): List<AnnouncementReadField> {
+    val visible = normalizeAnnouncementReadFields(
+        fields = visibleFields,
+        allowedFields = BETA_VISIBLE_ANNOUNCEMENT_READ_FIELDS,
+        fallbackFields = DEFAULT_GLOBAL_READ_FIELDS,
+    )
+    val hidden = storedFields
+        .filter { it in GLOBAL_ANNOUNCEMENT_READ_FIELDS && it !in BETA_VISIBLE_ANNOUNCEMENT_READ_FIELDS }
+        .distinct()
+    if (hidden.isEmpty()) return visible
+
+    val visibleSet = visible.toSet()
+    val merged = mutableListOf<AnnouncementReadField>()
+    var visibleIndex = 0
+    storedFields.forEach { field ->
+        when {
+            field in hidden -> merged += field
+            field in visibleSet -> {
+                if (visibleIndex < visible.size) merged += visible[visibleIndex++]
+            }
+        }
+    }
+    merged += visible.drop(visibleIndex)
+    return merged.distinct()
 }
 
 /**
@@ -259,7 +318,9 @@ data class UserSettings(
     val timing: AnnouncementTiming = AnnouncementTiming.IMMEDIATE,
     val delaySeconds: Int = 0,
     val defaultMode: AnnouncementMode = AnnouncementMode.SMART,
-    val useContentTypeSettings: Boolean = true,
+    // Playback source context is not a reliable MediaSession fact. The
+    // runtime and UI therefore use one global field order.
+    val useContentTypeSettings: Boolean = false,
     val defaultReadFields: List<AnnouncementReadField> = DEFAULT_GLOBAL_READ_FIELDS,
     val announcementOrder: AnnouncementOrder = AnnouncementOrder.DEFAULT,
     val allowRepeatAnnouncements: Boolean = false,

@@ -37,5 +37,21 @@ class AnnouncementPlaybackPlanTest {
         assertTrue(plan.pauseBeforeAnnouncement)
         assertTrue(plan.requestAudioFocus)
         assertFalse(plan.shouldDuckMusic)
+        assertEquals(MusicAttenuationStrategy.MEDIA_PAUSE, plan.musicAttenuationStrategy)
+    }
+
+    @Test
+    fun playImmediatelyLowerMusicUsesSystemDuckWithoutManualStreamMutation() {
+        val plan = AnnouncementPlaybackPlanner.plan(
+            UserSettings(
+                trackStartBehavior = TrackStartBehavior.PLAY_IMMEDIATELY,
+                musicTreatment = MusicTreatment.DUCK,
+                musicDuckPercent = 50,
+            ),
+        )
+
+        assertEquals(MusicAttenuationStrategy.SYSTEM_DUCK, plan.musicAttenuationStrategy)
+        assertTrue(plan.shouldDuckMusic)
+        assertTrue(plan.requestAudioFocus)
     }
 }

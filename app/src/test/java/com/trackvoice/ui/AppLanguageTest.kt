@@ -61,8 +61,8 @@ class AppLanguageTest {
 
         assertEquals("안내 시점과 음량을 세밀하게 조절합니다.", korean.freeGuideDetailsSummary)
         assertEquals("Fine-tune announcement timing and volume.", english.freeGuideDetailsSummary)
-        assertFalse(korean.albumPlaylistSummary.contains("무료"))
-        assertFalse(english.albumPlaylistSummary.contains("Free", ignoreCase = true))
+        assertFalse(korean.readingFieldsSummary.contains("무료"))
+        assertFalse(english.readingFieldsSummary.contains("Free", ignoreCase = true))
         assertEquals("기기·진단", korean.sectionTitle(AppSection.DEVICES))
         assertEquals("Devices & diagnostics", english.sectionTitle(AppSection.DEVICES))
         assertEquals("PLUS", korean.plusBadge)
@@ -90,7 +90,7 @@ class AppLanguageTest {
     }
 
     @Test
-    fun nowPlayingCardSummarizesTheEffectiveSourceAndFieldOrder() {
+    fun nowPlayingCardSummarizesTheGlobalFieldOrder() {
         val korean = TrackTalkStrings.forLanguage(AppLanguage.KOREAN, "en")
         val english = TrackTalkStrings.forLanguage(AppLanguage.ENGLISH, "ko")
         val defaultConfiguration = EffectiveAnnouncementConfiguration(
@@ -99,17 +99,9 @@ class AppLanguageTest {
             fields = listOf(AnnouncementReadField.TITLE, AnnouncementReadField.ARTIST),
             typeSpecificSettingsEnabled = true,
         )
-        val albumConfiguration = EffectiveAnnouncementConfiguration(
-            source = AnnouncementConfigurationSource.CONTENT_SPECIFIC,
-            collection = PlaybackCollection.ALBUM,
-            fields = listOf(AnnouncementReadField.TRACK_NUMBER, AnnouncementReadField.TITLE),
-            typeSpecificSettingsEnabled = true,
-        )
-
         assertEquals("기본 설정", korean.homeAnnouncementBasis(defaultConfiguration))
-        assertEquals("Album", english.homeAnnouncementBasis(albumConfiguration))
-        assertEquals("트랙 번호 · 곡명", korean.announcementFieldsSummary(albumConfiguration.fields))
-        assertEquals("Track number · Track title", english.announcementFieldsSummary(albumConfiguration.fields))
+        assertEquals("트랙 번호 → 곡명", korean.announcementFieldsSummary(listOf(AnnouncementReadField.TRACK_NUMBER, AnnouncementReadField.TITLE)))
+        assertEquals("Track number → Track title", english.announcementFieldsSummary(listOf(AnnouncementReadField.TRACK_NUMBER, AnnouncementReadField.TITLE)))
     }
 
     @Test

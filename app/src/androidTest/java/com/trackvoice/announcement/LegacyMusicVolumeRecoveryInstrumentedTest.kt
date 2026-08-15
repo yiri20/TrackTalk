@@ -10,40 +10,35 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
-class MusicVolumeManagerInstrumentedTest {
+class LegacyMusicVolumeRecoveryInstrumentedTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
     private val audioManager = context.getSystemService(AudioManager::class.java)
+    private val preferences = context.getSharedPreferences("tracktalk_music_volume", 0)
     private var originalVolume = 0
 
     @Before
     fun setUp() {
         originalVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+        preferences.edit().clear().commit()
     }
 
     @After
     fun tearDown() {
         audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, originalVolume, 0)
-        context.getSharedPreferences("tracktalk_music_volume", 0)
-            .edit()
-            .clear()
-            .commit()
+        preferences.edit().clear().commit()
     }
 
     @Test
-    fun ducksAndRestoresMediaVolumeIncludingInterruptedProcessRecovery() {
-        val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-        val manager = MusicVolumeManager(context)
-        manager.duckTo(50)
+    fun recoversOnlyAStaleVolumeWrittenByAnOlderBuild() {
+        val legacyDuckedVolume = (originalVolume - 1).coerceAtLeast(0)
+        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, legacyDuckedVolume, 0)
+        preferences.edit()
+            .putInt("original_volume", originalVolume)
+            .putInt("ducked_volume", legacyDuckedVolume)
+            .commit()
 
-        assertEquals(
-            MusicVolumeCalculator.targetVolume(originalVolume, maxVolume, 50),
-            audioManager.getStreamVolume(AudioManager.STREAM_MUSIC),
-        )
+        LegacyMusicVolumeRecovery(context)
 
-        // A new manager represents a fresh process after an interrupted announcement.
-        MusicVolumeManager(context)
         assertEquals(originalVolume, audioManager.getStreamVolume(AudioManager.STREAM_MUSIC))
-
-        manager.restore()
     }
 }

@@ -1,14 +1,20 @@
 package com.trackvoice.announcement
 
 import android.content.Context
-import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import com.trackvoice.diagnostics.TrackTalkDebugLog
 
 class AudioFocusManager(context: Context) {
-    private val audioManager = context.applicationContext.getSystemService(AudioManager::class.java)
-    private val focusChangeListener = AudioManager.OnAudioFocusChangeListener { }
+    private val appContext = context.applicationContext
+    private val audioManager = appContext.getSystemService(AudioManager::class.java)
+    private val focusChangeListener = AudioManager.OnAudioFocusChangeListener { change ->
+        TrackTalkDebugLog.event(
+            "audio_focus",
+            "action" to "change",
+            "focusChange" to change,
+        )
+    }
     private var focusRequest: AudioFocusRequest? = null
 
     fun request(duck: Boolean): Boolean {
@@ -19,12 +25,7 @@ class AudioFocusManager(context: Context) {
                 if (duck) AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
                 else AudioManager.AUDIOFOCUS_GAIN_TRANSIENT,
             )
-                .setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .build(),
-                )
+                .setAudioAttributes(TrackTalkAudioAttributes.speech())
                 .setOnAudioFocusChangeListener(focusChangeListener)
                 .setAcceptsDelayedFocusGain(false)
                 .build()
@@ -36,15 +37,48 @@ class AudioFocusManager(context: Context) {
                 "duck" to duck,
                 "granted" to granted,
                 "audioFocusMode" to if (duck) "AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK" else "AUDIOFOCUS_GAIN_TRANSIENT",
-                "usage" to "USAGE_ASSISTANCE_ACCESSIBILITY",
-                "contentType" to "CONTENT_TYPE_SPEECH",
+                "usage" to TrackTalkAudioAttributes.USAGE_LABEL,
+                "contentType" to TrackTalkAudioAttributes.CONTENT_TYPE_LABEL,
+                "musicStreamVolumeBefore" to runCatching {
+                    audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                }.getOrNull(),
+                "musicStreamMaxVolume" to runCatching {
+                    audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                }.getOrNull(),
+                "ttsVolumeControlStream" to TrackTalkAudioAttributes.speech().volumeControlStream,
+                "ttsStreamVolumeBefore" to runCatching {
+                    audioManager.getStreamVolume(TrackTalkAudioAttributes.speech().volumeControlStream)
+                }.getOrNull(),
+                "outputDeviceTypes" to runCatching {
+                    audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+                        .map { it.type }
+                        .distinct()
+                        .sorted()
+                }.getOrNull(),
             )
             granted
         }.getOrDefault(false)
     }
 
     fun abandon() {
-        if (focusRequest != null) TrackTalkDebugLog.event("audio_focus", "action" to "abandon")
+        if (focusRequest != null) {
+            TrackTalkDebugLog.event(
+                "audio_focus",
+                "action" to "abandon",
+                "musicStreamVolumeAfter" to runCatching {
+                    audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                }.getOrNull(),
+                "ttsStreamVolumeAfter" to runCatching {
+                    audioManager.getStreamVolume(TrackTalkAudioAttributes.speech().volumeControlStream)
+                }.getOrNull(),
+                "outputDeviceTypes" to runCatching {
+                    audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+                        .map { it.type }
+                        .distinct()
+                        .sorted()
+                }.getOrNull(),
+            )
+        }
         runCatching { focusRequest?.let(audioManager::abandonAudioFocusRequest) }
         focusRequest = null
     }

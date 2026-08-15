@@ -161,4 +161,74 @@ class AnnouncementReadFieldsTest {
             ),
         )
     }
+
+    @Test
+    fun globalReadingConfigurationExcludesUnreliablePlaybackContextFields() {
+        assertEquals(
+            listOf(AnnouncementReadField.TITLE, AnnouncementReadField.ALBUM),
+            normalizeAnnouncementReadFields(
+                fields = listOf(
+                    AnnouncementReadField.COLLECTION,
+                    AnnouncementReadField.TITLE,
+                    AnnouncementReadField.ALBUM,
+                ),
+                allowedFields = GLOBAL_ANNOUNCEMENT_READ_FIELDS,
+                fallbackFields = DEFAULT_GLOBAL_READ_FIELDS,
+            ),
+        )
+    }
+
+    @Test
+    fun betaVisibleFieldsDoNotExposeTrackNumber() {
+        assertEquals(
+            listOf(
+                AnnouncementReadField.TITLE,
+                AnnouncementReadField.ARTIST,
+                AnnouncementReadField.ALBUM,
+            ),
+            BETA_VISIBLE_ANNOUNCEMENT_READ_FIELDS,
+        )
+        assertEquals(
+            listOf(
+                AnnouncementReadField.ALBUM,
+                AnnouncementReadField.TITLE,
+                AnnouncementReadField.ARTIST,
+            ),
+            normalizeAnnouncementReadFields(
+                fields = listOf(
+                    AnnouncementReadField.ALBUM,
+                    AnnouncementReadField.TRACK_NUMBER,
+                    AnnouncementReadField.TITLE,
+                    AnnouncementReadField.ARTIST,
+                ),
+                allowedFields = BETA_VISIBLE_ANNOUNCEMENT_READ_FIELDS,
+                fallbackFields = DEFAULT_GLOBAL_READ_FIELDS,
+            ),
+        )
+    }
+
+    @Test
+    fun hidingTrackNumberPreservesItsStoredPositionForFutureReenablement() {
+        assertEquals(
+            listOf(
+                AnnouncementReadField.ALBUM,
+                AnnouncementReadField.TRACK_NUMBER,
+                AnnouncementReadField.TITLE,
+                AnnouncementReadField.ARTIST,
+            ),
+            mergeBetaVisibleAnnouncementReadFields(
+                storedFields = listOf(
+                    AnnouncementReadField.ALBUM,
+                    AnnouncementReadField.TRACK_NUMBER,
+                    AnnouncementReadField.TITLE,
+                    AnnouncementReadField.ARTIST,
+                ),
+                visibleFields = listOf(
+                    AnnouncementReadField.ALBUM,
+                    AnnouncementReadField.TITLE,
+                    AnnouncementReadField.ARTIST,
+                ),
+            ),
+        )
+    }
 }

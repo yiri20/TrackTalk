@@ -40,8 +40,8 @@ class AnnouncementFormatterTest {
 
     @Test
     fun testTextUsesSelectedVoiceLanguage() {
-        assertEquals("Track 3, Glass Eyes. Radiohead.", AnnouncementFormatter.testText(VoiceLanguage.ENGLISH))
-        assertEquals("트랙 3번, Glass Eyes. Radiohead.", AnnouncementFormatter.testText(VoiceLanguage.KOREAN))
+        assertEquals("Glass Eyes. Radiohead.", AnnouncementFormatter.testText(VoiceLanguage.ENGLISH))
+        assertEquals("Glass Eyes. Radiohead.", AnnouncementFormatter.testText(VoiceLanguage.KOREAN))
     }
 
     @Test

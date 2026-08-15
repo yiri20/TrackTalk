@@ -7,7 +7,6 @@ import android.os.Handler
 import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
-import android.media.AudioAttributes
 import com.trackvoice.data.UserSettings
 import com.trackvoice.data.VoiceLanguage
 import com.trackvoice.data.GenderFilter
@@ -119,23 +118,15 @@ class TtsEngine(context: Context) : TextToSpeech.OnInitListener {
         }
         val engine = textToSpeech ?: return
         runCatching { engine.setOnUtteranceProgressListener(progressListener) }
-        val audioAttributesApplied = runCatching { engine.setAudioAttributes(
-            AudioAttributes.Builder()
-                // TrackTalk is foreground accessibility speech. Navigation
-                // guidance maps to the music stream on Samsung, so a global
-                // music duck also attenuated TTS. Accessibility keeps the
-                // announcement on the same Bluetooth route with its own
-                // volume group.
-                .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                .build(),
-        ); true }.getOrDefault(false)
+        val audioAttributes = TrackTalkAudioAttributes.speech()
+        val audioAttributesApplied = runCatching { engine.setAudioAttributes(audioAttributes); true }
+            .getOrDefault(false)
         TrackTalkDebugLog.event(
             "TTS_AUDIO_ATTRIBUTES",
             "applied" to audioAttributesApplied,
-            "ttsUsage" to "USAGE_ASSISTANCE_ACCESSIBILITY",
-            "ttsContentType" to "CONTENT_TYPE_SPEECH",
-            "streamType" to "STREAM_ACCESSIBILITY",
+            "ttsUsage" to TrackTalkAudioAttributes.USAGE_LABEL,
+            "ttsContentType" to TrackTalkAudioAttributes.CONTENT_TYPE_LABEL,
+            "volumeControlStream" to audioAttributes.volumeControlStream,
         )
         runCatching { refreshVoices(engine) }
         _state.value = TtsState(TtsStatus.READY, "사용 가능한 TTS 음성을 준비했습니다.")
@@ -235,29 +226,61 @@ class TtsEngine(context: Context) : TextToSpeech.OnInitListener {
 
     private fun logVoiceGainDiagnostic(settings: UserSettings, ttsParamVolume: Float) {
         val audioManager = appContext.getSystemService(AudioManager::class.java)
+        val ttsAttributes = TrackTalkAudioAttributes.speech()
+        val ttsVolumeControlStream = ttsAttributes.volumeControlStream
         val plan = AnnouncementPlaybackPlanner.plan(settings)
         val focusMode = when {
             !plan.requestAudioFocus -> "NONE"
             plan.shouldDuckMusic -> "AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK"
             else -> "AUDIOFOCUS_GAIN_TRANSIENT"
         }
-        val duckImplementation = when {
-            plan.shouldDuckMusic -> "STREAM_MUSIC_SET_STREAM_VOLUME+${focusMode}"
-            plan.pauseBeforeAnnouncement -> "MEDIA_PAUSE+${focusMode}"
-            else -> "NONE"
+        val musicAttenuationMethod = when (plan.musicAttenuationStrategy) {
+            MusicAttenuationStrategy.NONE -> "NONE"
+            MusicAttenuationStrategy.SYSTEM_DUCK -> "AUDIO_FOCUS_AUTO_DUCK"
+            MusicAttenuationStrategy.MEDIA_PAUSE -> "MEDIA_PAUSE"
         }
+        TrackTalkDebugLog.event(
+            "AUDIO_GAIN_STATE",
+            "voiceUiPercent" to (settings.volume * 100f).toInt(),
+            "ttsParamVolume" to ttsParamVolume,
+            "ttsUsage" to TrackTalkAudioAttributes.USAGE_LABEL,
+            "ttsContentType" to TrackTalkAudioAttributes.CONTENT_TYPE_LABEL,
+            "musicUiSetting" to plan.musicTreatment,
+            "musicAttenuationMethod" to musicAttenuationMethod,
+            "mediaStreamVolumeBefore" to runCatching {
+                audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+            }.getOrNull(),
+            "mediaStreamMax" to runCatching {
+                audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+            }.getOrNull(),
+            "ttsVolumeControlStream" to ttsVolumeControlStream,
+            "ttsStreamVolume" to runCatching {
+                audioManager.getStreamVolume(ttsVolumeControlStream)
+            }.getOrNull(),
+            "ttsStreamMax" to runCatching {
+                audioManager.getStreamMaxVolume(ttsVolumeControlStream)
+            }.getOrNull(),
+            "audioFocusGain" to focusMode,
+            "outputDeviceTypes" to runCatching {
+                audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+                    .map { it.type }
+                    .distinct()
+                    .sorted()
+            }.getOrNull(),
+        )
         TrackTalkDebugLog.event(
             "VOICE_GAIN_DIAGNOSTIC",
             "uiVoicePercent" to (settings.volume * 100f).toInt(),
             "effectiveVoicePercent" to (ttsParamVolume * 100f).toInt(),
             "ttsParamVolume" to ttsParamVolume,
-            "musicDuckPercent" to settings.musicDuckPercent.takeIf { plan.shouldDuckMusic },
-            "streamType" to "STREAM_ACCESSIBILITY",
+            "musicTreatment" to plan.musicTreatment,
+            "musicAttenuationMethod" to musicAttenuationMethod,
+            "volumeControlStream" to ttsVolumeControlStream,
             "streamVolume" to runCatching {
-                audioManager.getStreamVolume(AudioManager.STREAM_ACCESSIBILITY)
+                audioManager.getStreamVolume(ttsVolumeControlStream)
             }.getOrNull(),
             "streamMaxVolume" to runCatching {
-                audioManager.getStreamMaxVolume(AudioManager.STREAM_ACCESSIBILITY)
+                audioManager.getStreamMaxVolume(ttsVolumeControlStream)
             }.getOrNull(),
             "musicStreamVolume" to runCatching {
                 audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
@@ -265,10 +288,9 @@ class TtsEngine(context: Context) : TextToSpeech.OnInitListener {
             "musicStreamMaxVolume" to runCatching {
                 audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
             }.getOrNull(),
-            "ttsUsage" to "USAGE_ASSISTANCE_ACCESSIBILITY",
-            "ttsContentType" to "CONTENT_TYPE_SPEECH",
+            "ttsUsage" to TrackTalkAudioAttributes.USAGE_LABEL,
+            "ttsContentType" to TrackTalkAudioAttributes.CONTENT_TYPE_LABEL,
             "audioFocusMode" to focusMode,
-            "duckImplementation" to duckImplementation,
         )
     }
 
@@ -313,6 +335,10 @@ class TtsEngine(context: Context) : TextToSpeech.OnInitListener {
                 batch.remaining -= 1
                 if (batch.remaining == 0 && !batch.completed) {
                     batch.completed = true
+                    TrackTalkDebugLog.event(
+                        "TTS_COMPLETED",
+                        "utteranceId" to utteranceId,
+                    )
                     batch.callback(true, "다국어 음성 안내 완료")
                 }
             }

@@ -10,6 +10,7 @@ import com.trackvoice.data.DEFAULT_ALGORITHMIC_READ_FIELDS
 import com.trackvoice.data.DEFAULT_GLOBAL_READ_FIELDS
 import com.trackvoice.data.DEFAULT_PLAYLIST_READ_FIELDS
 import com.trackvoice.data.ALL_ANNOUNCEMENT_READ_FIELDS
+import com.trackvoice.data.BETA_VISIBLE_ANNOUNCEMENT_READ_FIELDS
 import com.trackvoice.data.AnnouncementTimingPolicy
 import com.trackvoice.data.normalizeAnnouncementReadFields
 import com.trackvoice.data.withLegacyAnnouncementOrder
@@ -91,8 +92,10 @@ object AnnouncementPolicy {
         }
 
         val formatOptions = configuration.fields.toFormatOptions(
-            albumNameFirstTrackOnly = userSettings.albumNameFirstTrackOnly,
-            announcementOrder = userSettings.announcementOrder,
+            // Album/playlist source intent is not reliably exposed by a
+            // normal MediaSession. Do not apply a source-specific shortcut.
+            albumNameFirstTrackOnly = false,
+            announcementOrder = AnnouncementOrder.DEFAULT,
         )
 
         val text = AnnouncementFormatter.format(
@@ -132,79 +135,25 @@ object AnnouncementPolicy {
         userSettings: UserSettings,
     ): AnnouncementMode {
         val configuration = resolveConfiguration(userSettings, collection)
-        // Once type-specific settings are enabled, a detected content type is
-        // the source of truth. This prevents a stale global format from
-        // silently discarding checked album/track fields.
-        if (configuration.source == AnnouncementConfigurationSource.CONTENT_SPECIFIC) {
-            return when (collection) {
-                PlaybackCollection.ALBUM -> configuration.fields.toAlbumMode()
-                PlaybackCollection.PLAYLIST -> configuration.fields.toPlaylistMode()
-                PlaybackCollection.ALGORITHMIC -> configuration.fields
-                    .toConfiguredMode(userSettings.algorithmMode)
-                PlaybackCollection.UNKNOWN -> error("unreachable")
-            }
-        }
-
-        if (!userSettings.useContentTypeSettings) {
-            return if (userSettings.defaultMode == AnnouncementMode.SMART) {
-                configuration.fields.toAnnouncementMode()
-            } else {
-                userSettings.defaultMode
-            }
-        }
-
-        if (userSettings.defaultMode != AnnouncementMode.SMART) return userSettings.defaultMode
-
-        return when (collection) {
-            PlaybackCollection.UNKNOWN -> configuration.fields.toAnnouncementMode()
-            PlaybackCollection.ALBUM,
-            PlaybackCollection.PLAYLIST,
-            PlaybackCollection.ALGORITHMIC,
-            -> configuration.fields.toAnnouncementMode()
-        }
+        // The ordered global field list is the sole source of truth. The
+        // collection argument remains for internal diagnostics only.
+        return configuration.fields.toAnnouncementMode()
     }
 
     fun resolveConfiguration(
         userSettings: UserSettings,
         collection: PlaybackCollection,
     ): EffectiveAnnouncementConfiguration {
-        val typeSpecific = userSettings.useContentTypeSettings && collection != PlaybackCollection.UNKNOWN
         return EffectiveAnnouncementConfiguration(
-            source = if (typeSpecific) {
-                AnnouncementConfigurationSource.CONTENT_SPECIFIC
-            } else {
-                AnnouncementConfigurationSource.DEFAULT
-            },
-            collection = collection,
-            fields = userSettings.readFieldsFor(if (typeSpecific) collection else PlaybackCollection.UNKNOWN),
-            typeSpecificSettingsEnabled = userSettings.useContentTypeSettings,
+            source = AnnouncementConfigurationSource.DEFAULT,
+            collection = PlaybackCollection.UNKNOWN,
+            fields = normalizeAnnouncementReadFields(
+                userSettings.defaultReadFields,
+                BETA_VISIBLE_ANNOUNCEMENT_READ_FIELDS,
+                DEFAULT_GLOBAL_READ_FIELDS,
+            ),
+            typeSpecificSettingsEnabled = false,
         )
-    }
-
-    private fun UserSettings.readFieldsFor(collection: PlaybackCollection): List<AnnouncementReadField> {
-        val rawFields = if (!useContentTypeSettings) {
-            defaultReadFields
-        } else {
-            when (collection) {
-                PlaybackCollection.ALBUM -> albumReadFields
-                PlaybackCollection.PLAYLIST -> playlistReadFields
-                PlaybackCollection.ALGORITHMIC -> algorithmReadFields
-                PlaybackCollection.UNKNOWN -> defaultReadFields
-            }
-        }
-        val allowedFields = when (collection) {
-            PlaybackCollection.ALBUM -> DEFAULT_ALBUM_READ_FIELDS
-            PlaybackCollection.PLAYLIST -> DEFAULT_PLAYLIST_READ_FIELDS
-            PlaybackCollection.ALGORITHMIC -> DEFAULT_ALGORITHMIC_READ_FIELDS
-            PlaybackCollection.UNKNOWN -> ALL_ANNOUNCEMENT_READ_FIELDS
-        }
-        val fallbackFields = when (collection) {
-            PlaybackCollection.ALBUM -> DEFAULT_ALBUM_READ_FIELDS
-            PlaybackCollection.PLAYLIST -> DEFAULT_PLAYLIST_READ_FIELDS
-            PlaybackCollection.ALGORITHMIC -> DEFAULT_ALGORITHMIC_READ_FIELDS
-            PlaybackCollection.UNKNOWN -> DEFAULT_GLOBAL_READ_FIELDS
-        }
-        return normalizeAnnouncementReadFields(rawFields, allowedFields, fallbackFields)
     }
 }
 

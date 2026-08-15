@@ -1,33 +1,21 @@
 package com.trackvoice.ui
 
 import com.trackvoice.data.AnnouncementMode
-import com.trackvoice.data.AnnouncementOrder
 import com.trackvoice.data.AnnouncementOutputPolicy
 import com.trackvoice.data.AnnouncementReadField
 import com.trackvoice.data.AnnouncementTiming
 import com.trackvoice.data.AnnouncementTimingPolicy
 import com.trackvoice.data.AppCategory
 import com.trackvoice.data.AppLanguage
-import com.trackvoice.data.CollectionFallback
 import com.trackvoice.data.GenderFilter
 import com.trackvoice.data.MusicTreatment
 import com.trackvoice.data.TrackStartBehavior
 import com.trackvoice.data.VoiceLanguage
 import com.trackvoice.data.DEFAULT_TTS_VOLUME_PERCENT
 import com.trackvoice.data.resolve
-import com.trackvoice.announcement.AnnouncementConfigurationSource
 import com.trackvoice.announcement.EffectiveAnnouncementConfiguration
-import com.trackvoice.media.PlaybackCollection
-import com.trackvoice.media.PlaybackStatus
 import com.trackvoice.monetization.PremiumMessage
 import androidx.compose.runtime.staticCompositionLocalOf
-
-enum class ContentReadPreset {
-    DEFAULT,
-    TITLE_AND_ARTIST,
-    TITLE_ONLY,
-    CUSTOM,
-}
 
 /** Small, local UI dictionary used by the Compose surface. */
 class TrackTalkStrings private constructor(private val language: AppLanguage) {
@@ -85,17 +73,25 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     }
     fun seconds(value: Int): String = if (english) "${value}s" else "${value}초"
     val currentAnnouncement: String get() = t("현재 안내", "Current announcement")
-    fun homeAnnouncementBasis(configuration: EffectiveAnnouncementConfiguration): String = when {
-        configuration.source == AnnouncementConfigurationSource.CONTENT_SPECIFIC -> {
-            collectionValue(configuration.collection)
+    val announcementLabel: String get() = t("안내", "Announcement")
+    val readingOrderLabel: String get() = t("읽기", "Reading order")
+    val openGuideSettings: String get() = t("안내 설정 열기", "Open guide settings")
+    fun homeAnnouncementBasis(configuration: EffectiveAnnouncementConfiguration): String =
+        t("기본 설정", "Default")
+    fun homeAnnouncementBehavior(
+        trackStartBehavior: TrackStartBehavior,
+        timing: AnnouncementTiming,
+        delaySeconds: Int,
+    ): String {
+        val start = when (trackStartBehavior) {
+            TrackStartBehavior.PLAY_IMMEDIATELY -> t("기본", "Default")
+            TrackStartBehavior.ANNOUNCE_THEN_PLAY -> t("안내 후 재생", "Announce then play")
         }
-        else -> t("기본 설정", "Default")
+        return "$start · ${guideTimingSummary(timing, delaySeconds)}"
     }
-    fun homeAnnouncementBehavior(timing: AnnouncementTiming, delaySeconds: Int): String =
-        guideTimingSummary(timing, delaySeconds)
 
     fun announcementFieldsSummary(fields: List<AnnouncementReadField>): String =
-        fields.joinToString(" · ") { readField(it) }
+        fields.joinToString(" → ") { readField(it) }
 
     val homeVoiceGuide: String get() = t("음성 안내", "Voice guide")
     fun statusSummary(effectiveEnabled: Boolean, enabled: Boolean): String = when {
@@ -142,10 +138,11 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     val premiumTitle: String get() = "TrackTalk Plus"
     val plusBadge: String get() = "PLUS"
     val premiumEnabledSummary: String get() = t("Plus가 활성화되어 모든 고급 기능을 사용할 수 있습니다.", "Plus is active. All advanced features are available.")
-    val premiumLockedSummary: String get() = t("음성 속도·높이·음량과 기기별 자동화 기능을 한 번의 결제로 이용할 수 있습니다.", "Unlock detailed voice controls and per-device automation with a one-time purchase.")
+    val premiumLockedSummary: String get() = t("광고 제거와 세밀한 음성·자동화 설정을 한 번의 결제로 이용할 수 있습니다.", "Remove ads and unlock finer voice and automation controls with a one-time purchase.")
     val view: String get() = t("보기", "View")
     val premiumVoiceBenefit: String get() = t("음성 속도·높이·음량 세부 조절", "Fine-tune voice speed, pitch, and volume")
     val premiumDeviceBenefit: String get() = t("기기별 안내와 자동 활성화", "Per-device announcements and auto-enable")
+    val premiumAdsBenefit: String get() = t("광고 없이 사용", "Use TrackTalk without ads")
     val premiumFutureBenefit: String get() = t("추가 예정인 고급 음성·자동화 기능", "Future advanced voice and automation features")
     val premiumActive: String get() = t("Plus가 활성화되어 있습니다.", "Plus is active.")
     fun oneTimePrice(price: String): String = t("일회성 결제 · $price", "One-time purchase · $price")
@@ -190,12 +187,12 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     }
     fun announcementOutputSummary(policy: AnnouncementOutputPolicy): String = when (policy) {
         AnnouncementOutputPolicy.ALL_OUTPUTS -> t(
-            "휴대폰 스피커와 외부 오디오에서 모두 안내합니다.",
-            "Announce through the phone speaker and external audio routes.",
+            "휴대폰 스피커 · Bluetooth · 유선 · USB · HDMI",
+            "Phone speaker · Bluetooth · wired · USB · HDMI",
         )
         AnnouncementOutputPolicy.EXTERNAL_ONLY -> t(
-            "Bluetooth, 유선·USB·HDMI 등 외부 오디오에서만 안내합니다.",
-            "Announce only through Bluetooth, wired, USB, HDMI, and other external routes.",
+            "Bluetooth · 유선 · USB · HDMI",
+            "Bluetooth · wired · USB · HDMI",
         )
     }
     val statusShortcut: String get() = t("상단바 바로가기", "Notification shortcut")
@@ -233,12 +230,13 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
         "Music pauses during the guide and resumes when it ends.",
     )
     val musicDuringGuide: String get() = t("안내 중 음악", "Music during guide")
-    val musicVolumeSummary: String get() = t("안내 중 음악 음량을 조절합니다.", "Adjust music volume during the guide.")
-    val musicDuckAmount: String get() = t("안내 중 음악 음량", "Music volume during guide")
-    fun musicDuckPercent(percent: Int): String = t("현재 음량의 ${percent}%", "${percent}% of current volume")
-    fun freeMusicDuckSummary(percent: Int): String = t(
-        "안내 중 음악: 현재 음량의 ${percent}%",
-        "Music during guide: ${percent}% of current volume",
+    val musicVolumeSummary: String get() = t(
+        "안내 중 음악은 자동으로 줄어들며, 정도는 기기와 음악 앱에 따라 다를 수 있습니다.",
+        "Music is lowered automatically; the amount can vary by device and music app.",
+    )
+    val freeMusicDuckSummary: String get() = t(
+        "안내 중 음악: 자동으로 줄이기",
+        "Music during guide: lower automatically",
     )
     val freeGuideWithMusic: String get() = t("새 곡: 음악과 함께 안내", "New track: guide with music")
     fun defaultVoiceVolumeSummary(percent: Int = DEFAULT_TTS_VOLUME_PERCENT): String = t(
@@ -251,31 +249,6 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
         "Fine-tune announcement timing and volume.",
     )
     val announcementTiming: String get() = t("언제 읽을까요?", "When to read")
-    val globalReadContent: String get() = t("기본 읽기 형식", "Default reading format")
-    val announcementOrder: String get() = t("안내 항목 순서 (Plus)", "Announcement order (Plus)")
-    val announcementOrderSummary: String get() = t(
-        "체크한 항목 중 선택한 항목을 먼저 읽고, 나머지는 기본 순서로 이어서 읽습니다.",
-        "The selected checked item is read first, followed by the remaining fields in the default order.",
-    )
-    fun announcementOrder(order: AnnouncementOrder): String = when (order) {
-        AnnouncementOrder.DEFAULT -> t("기본 순서", "Default order")
-        AnnouncementOrder.TITLE_FIRST -> t("곡명 먼저", "Title first")
-        AnnouncementOrder.ALBUM_FIRST -> t("앨범명 먼저", "Album first")
-        AnnouncementOrder.TRACK_NUMBER_FIRST -> t("트랙 번호 먼저", "Track number first")
-        AnnouncementOrder.ARTIST_FIRST -> t("아티스트 먼저", "Artist first")
-        AnnouncementOrder.COLLECTION_FIRST -> t("재생목록 이름 먼저", "Playlist name first")
-    }
-    fun globalReadContentSummary(mode: AnnouncementMode, useContentTypeSettings: Boolean): String = if (useContentTypeSettings) {
-        t(
-            "감지된 유형은 유형별 설정을 우선 사용하고, 유형을 알 수 없을 때만 기본 형식을 사용합니다.",
-            "Detected content uses its type-specific settings first; the default format is used only when the type is unknown.",
-        )
-    } else {
-        t(
-            "이 형식과 아래 읽기 항목을 모든 콘텐츠에 적용합니다.",
-            "This format and the fields below apply to all content.",
-        )
-    }
     val announcementDelay: String get() = t("읽기 전 대기", "Wait before reading")
     fun announcementTimingSummary(
         timing: AnnouncementTiming,
@@ -301,86 +274,28 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     val minimumPlayback: String get() = t("최소 재생 시간", "Minimum playback time")
     val repeatTrack: String get() = t("같은 곡 다시 안내", "Repeat the same track")
     val repeatTrackSummary: String get() = t("기본값은 같은 곡을 한 번만 안내합니다.", "By default, each track is announced once.")
-    val albumPlaylistReading: String get() = t("콘텐츠 유형별 읽기", "Content-type reading")
-    val albumPlaylistSummary: String get() = t(
-        "앨범·재생목록·추천 재생에 맞게 자동으로 안내합니다.",
-        "Automatically adapts announcements for albums, playlists, and recommended or shuffle playback.",
+    val readingFieldsSection: String get() = t("읽을 항목", "Reading fields")
+    val readingFieldsTitle: String get() = t("읽기 순서", "Reading order")
+    val readingFieldsSummary: String get() = t(
+        "선택한 항목만 이 순서로 읽습니다.",
+        "Only selected fields are read in this order.",
     )
-    val contentReadPresetHint: String get() = t(
-        "유형별 설정을 켜면 감지된 유형은 아래 설정을 우선 사용합니다. 기본 설정은 유형을 알 수 없을 때 적용합니다.",
-        "When type-specific settings are on, detected content uses the sections below first. Defaults apply when the type is unknown.",
-    )
-    val allContentPresetLabel: String get() = t("기본 읽기 항목", "Default read fields")
-    val allContentReadItems: String get() = t("기본 설정에서 읽기", "Fields in default settings")
-    val contentTypeSettings: String get() = t("유형별 설정 사용", "Use type-specific settings")
-    val contentTypeDetails: String get() = t("유형별 설정", "Type-specific settings")
-    fun contentTypeSettingsSummary(enabled: Boolean, mode: AnnouncementMode): String = if (enabled) {
-        t(
-            "콘텐츠 유형을 확인하면 유형별 설정을 사용합니다.",
-            "Use the matching settings when the content type is known.",
-        )
-    } else {
-        t(
-            "모든 콘텐츠에 기본 설정을 적용합니다.",
-            "Use the default settings for all content.",
-        )
-    }
-    val contentTypeSettingsDisabledSummary: String get() = t(
-        "모든 콘텐츠에 기본 설정을 적용합니다.",
-        "Use the default settings for all content.",
-    )
-    val contentTypeSettingsInactiveSummary: String get() = t(
-        "유형별 설정은 저장되어 있지만 현재 기본 읽기 형식이 우선 적용됩니다. 유형별 설정을 쓰려면 기본 읽기 형식을 자동으로 바꾸세요.",
-        "Type-specific settings are saved but inactive because the default format takes priority. Choose Automatic to use them.",
-    )
-    fun contentPresetLabel(collection: PlaybackCollection): String = when (collection) {
-        PlaybackCollection.ALBUM -> t("앨범 빠른 설정", "Album preset")
-        PlaybackCollection.PLAYLIST -> t("재생목록 빠른 설정", "Playlist preset")
-        PlaybackCollection.ALGORITHMIC -> t("추천·랜덤 빠른 설정", "Recommended / shuffle preset")
-        PlaybackCollection.UNKNOWN -> t("빠른 설정", "Quick preset")
-    }
-    fun contentTypeSectionTitle(collection: PlaybackCollection): String = when (collection) {
-        PlaybackCollection.ALBUM -> t("앨범 재생", "Album playback")
-        PlaybackCollection.PLAYLIST -> t("재생목록 재생", "Playlist playback")
-        PlaybackCollection.ALGORITHMIC -> t("추천·랜덤 재생", "Recommended / shuffle playback")
-        PlaybackCollection.UNKNOWN -> t("콘텐츠 유형", "Content type")
-    }
-    fun contentReadPreset(preset: ContentReadPreset): String = when (preset) {
-        ContentReadPreset.DEFAULT -> t("기본 항목", "Default fields")
-        ContentReadPreset.TITLE_AND_ARTIST -> t("곡명·아티스트", "Track title · artist")
-        ContentReadPreset.TITLE_ONLY -> t("곡명만", "Track title only")
-        ContentReadPreset.CUSTOM -> t("직접 선택", "Custom")
-    }
-    val albumReadItems: String get() = t("앨범에서 읽기", "Read from albums")
-    val albumNameFirstTrackOnly: String get() = t("앨범명은 첫 트랙에서만 안내", "Announce album name on the first track only")
-    val albumNameFirstTrackOnlySummary: String get() = t(
-        "앨범 재생 중 첫 곡에서만 앨범명을 읽고, 다음 곡부터는 생략합니다.",
-        "During album playback, read the album name on the first track and omit it from the rest.",
-    )
-    val playlistReadItems: String get() = t("재생목록에서 읽기", "Read from playlists")
-    val algorithmReadItems: String get() = t("추천·랜덤에서 읽기", "Read from recommended / shuffle")
-    val contentReadSelectionHint: String get() = t("선택한 항목만 읽습니다.", "Only selected items are read.")
     val contentReadOrderHint: String get() = t(
         "탭하여 선택 · 길게 눌러 순서 변경",
         "Tap to select · long-press to reorder",
     )
-    val contentSpecificPlusSummary: String get() = t(
-        "콘텐츠별 읽기 항목과 안내 순서를 따로 설정합니다.",
-        "Set reading fields and announcement order for each content type.",
-    )
     val detailedGuidePlusTitle: String get() = t("상세 안내 설정", "Detailed guide settings")
-    val contentReadingPlusTitle: String get() = t("콘텐츠별 읽기 설정", "Content reading settings")
     val autoEnable: String get() = t("자동 켜기", "Auto enable")
     val screenOffEnable: String get() = t("화면이 꺼지면 켜기", "Enable when screen turns off")
     val screenOffEnableSummary: String get() = t("화면을 끄면 안내를 시작합니다.", "Start announcements when the screen turns off.")
     val screenOnRestore: String get() = t("화면을 켜면 원래대로", "Restore when screen turns on")
     val screenOnRestoreSummary: String get() = t("화면을 켜면 자동 상태를 해제합니다.", "Disable the automatic state when the screen turns on.")
-    val bluetoothOnly: String get() = t("화면이 꺼지면 Bluetooth에서만 켜기", "Screen-off enable on Bluetooth only")
+    val bluetoothOnly: String get() = t("화면이 꺼질 때 Bluetooth에서만 자동 켜기", "Auto-enable on Bluetooth when the screen turns off")
     val bluetoothOnlySummary: String get() = t("화면이 꺼질 때 Bluetooth 오디오가 연결된 경우에만 안내를 자동으로 켭니다.", "Enable only when Bluetooth audio is connected as the screen turns off.")
 
     val appsIntro: String get() = t(
-        "앱별로 TrackTalk 사용 여부만 설정합니다. 안내 내용과 시점은 안내 설정을 따릅니다.",
-        "Choose which apps use TrackTalk. Announcement content and timing follow Guide settings.",
+        "앱별로 TrackTalk 사용 여부만 선택합니다.",
+        "Choose which apps use TrackTalk.",
     )
     val refresh: String get() = t("새로 고침", "Refresh")
     val visibleCategories: String get() = t("표시할 카테고리", "Visible categories")
@@ -434,10 +349,13 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     val speechControls: String get() = t("말하기 조절", "Speech controls")
     val speechRate: String get() = t("속도", "Speed")
     val pitch: String get() = t("높이", "Pitch")
-    val voiceVolumeSeparate: String get() = t("음성 음량 · 음악과 별도", "Voice volume · separate from music")
-    val speechVolumeHint: String get() = t("음악 음량은 안내 탭의 기본 설정에서 정합니다. 줄이기 선택 시 안내가 끝나면 원래 미디어 음량으로 복원합니다.", "Music behavior is set in Guide. When lowering music, the original media volume is restored after the announcement.")
+    val voiceVolumeSeparate: String get() = t("안내 음성 음량", "Speech volume")
+    val speechVolumeHint: String get() = t(
+        "안내 음성 음량은 음악과 별도로 적용됩니다. 음악 줄이기 정도는 기기와 음악 앱에 따라 달라질 수 있습니다.",
+        "Speech volume is independent of music. The amount of music lowering can vary by device and music app.",
+    )
     val testPlayback: String get() = t("테스트 재생", "Test playback")
-    val testExample: String get() = t("예: 트랙 3번, Glass Eyes · Radiohead", "Example: track 3, Glass Eyes · Radiohead")
+    val testExample: String get() = t("예: Glass Eyes · Radiohead", "Example: Glass Eyes · Radiohead")
     val voiceControlsPlusTitle: String get() = t("음성 세밀 조절은 Plus 기능입니다.", "Detailed voice controls are a Plus feature.")
     val voiceControlsFreeSummary: String get() = t("말하기 속도·높이·음량을 음악과 분리해 직접 조절할 수 있습니다.", "Adjust speech speed, pitch, and volume separately from music.")
 
@@ -512,40 +430,6 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
         -> t("자동 선택", "automatic")
         GenderFilter.FEMALE -> t("여성 음성", "female")
         GenderFilter.MALE -> t("남성 음성", "male")
-    }
-
-    fun playbackStatus(status: PlaybackStatus): String = when (status) {
-        PlaybackStatus.PLAYING -> t("재생 중", "Playing")
-        PlaybackStatus.PAUSED -> t("일시정지", "Paused")
-        PlaybackStatus.BUFFERING -> t("버퍼링", "Buffering")
-        PlaybackStatus.STOPPED -> t("정지", "Stopped")
-        PlaybackStatus.NONE -> t("상태 없음", "No status")
-    }
-
-    fun collectionLabel(collection: PlaybackCollection): String = when (collection) {
-        PlaybackCollection.ALBUM -> t("앨범 재생", "Album playback")
-        PlaybackCollection.PLAYLIST -> t("재생목록 재생", "Playlist playback")
-        PlaybackCollection.ALGORITHMIC -> t("알고리즘·랜덤 재생", "Algorithmic / shuffle playback")
-        PlaybackCollection.UNKNOWN -> t("기본 안내", "Basic guide")
-    }
-
-    fun collectionValue(collection: PlaybackCollection): String = when (collection) {
-        PlaybackCollection.ALBUM -> t("앨범", "Album")
-        PlaybackCollection.PLAYLIST -> t("재생목록", "Playlist")
-        PlaybackCollection.ALGORITHMIC -> t("알고리즘·랜덤", "Algorithmic / shuffle")
-        PlaybackCollection.UNKNOWN -> t("확인 중", "Checking")
-    }
-
-    val collectionUnknownSummary: String get() = t(
-        "재생 앱이 앨범·재생목록 정보를 제공하지 않아 곡명과 아티스트 기준으로 안내합니다.",
-        "This player did not provide album or playlist context, so the title and artist are used.",
-    )
-
-    fun collectionFallback(fallback: CollectionFallback): String = when (fallback) {
-        CollectionFallback.AUTO -> t("자동(곡명·아티스트로 안내)", "Automatic (title + artist)")
-        CollectionFallback.ALBUM -> t("앨범으로 처리", "Treat as album")
-        CollectionFallback.PLAYLIST -> t("재생목록으로 처리", "Treat as playlist")
-        CollectionFallback.ALGORITHMIC -> t("알고리즘·랜덤으로 처리", "Treat as algorithmic / shuffle")
     }
 
     companion object {

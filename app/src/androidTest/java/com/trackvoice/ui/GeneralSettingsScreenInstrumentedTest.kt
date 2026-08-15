@@ -25,12 +25,12 @@ import com.trackvoice.data.AppLanguage
 import com.trackvoice.data.MusicTreatment
 import com.trackvoice.data.TrackStartBehavior
 import com.trackvoice.data.UserSettings
+import com.trackvoice.data.BETA_VISIBLE_ANNOUNCEMENT_READ_FIELDS
 import com.trackvoice.ui.theme.TrackVoiceTheme
 import com.trackvoice.test.TrackTalkComposeTestActivity
 import org.junit.Rule
 import org.junit.Test
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
@@ -65,8 +65,6 @@ class GeneralSettingsScreenInstrumentedTest {
                             isPremium = true,
                             onUpdate = { transform -> settings = transform(settings) },
                             onOpenPremium = {},
-                            target = null,
-                            onTargetHandled = {},
                         )
                     }
                 }
@@ -117,8 +115,6 @@ class GeneralSettingsScreenInstrumentedTest {
                         isPremium = true,
                         onUpdate = {},
                         onOpenPremium = {},
-                        target = null,
-                        onTargetHandled = {},
                     )
                 }
             }
@@ -132,13 +128,12 @@ class GeneralSettingsScreenInstrumentedTest {
     fun deselectingAVisibleFieldDoesNotFollowItToTheInactiveTail() {
         val strings = TrackTalkStrings.forLanguage(AppLanguage.KOREAN, "en")
         var settings by mutableStateOf(
-            listOf(
-                AnnouncementReadField.ALBUM,
-                AnnouncementReadField.TRACK_NUMBER,
-                AnnouncementReadField.TITLE,
-                AnnouncementReadField.ARTIST,
-                AnnouncementReadField.COLLECTION,
-            ),
+                listOf(
+                    AnnouncementReadField.ALBUM,
+                    AnnouncementReadField.TRACK_NUMBER,
+                    AnnouncementReadField.TITLE,
+                    AnnouncementReadField.ARTIST,
+                ),
         )
         composeRule.setContent {
             TrackVoiceTheme {
@@ -147,13 +142,7 @@ class GeneralSettingsScreenInstrumentedTest {
                 ) {
                     ContentReadOrderPicker(
                         title = "read fields",
-                        availableFields = listOf(
-                            AnnouncementReadField.ALBUM,
-                            AnnouncementReadField.TRACK_NUMBER,
-                            AnnouncementReadField.TITLE,
-                            AnnouncementReadField.ARTIST,
-                            AnnouncementReadField.COLLECTION,
-                        ),
+                        availableFields = BETA_VISIBLE_ANNOUNCEMENT_READ_FIELDS,
                         selectedFields = settings,
                         onUpdate = { settings = it },
                     )
@@ -166,14 +155,16 @@ class GeneralSettingsScreenInstrumentedTest {
         val scrollRange = row.fetchSemanticsNode().config[
             SemanticsProperties.HorizontalScrollAxisRange
         ]
-        assertTrue("The content-field row should be horizontally scrollable", scrollRange.maxValue() > 0f)
+        // The beta-visible fields may fit on a wide emulator. The regression is
+        // that deselection never advances the row; it does not require a
+        // scroll range on every device width.
         assertEquals(0f, scrollRange.value(), 0.01f)
 
         val fieldToggles = composeRule.onAllNodes(
             hasClickAction(),
             useUnmergedTree = true,
         )
-        fieldToggles.assertCountEquals(5)
+        fieldToggles.assertCountEquals(BETA_VISIBLE_ANNOUNCEMENT_READ_FIELDS.size)
         fieldToggles.onFirst().performClick()
         composeRule.waitForIdle()
 
@@ -184,14 +175,16 @@ class GeneralSettingsScreenInstrumentedTest {
         composeRule.runOnIdle {
             assertEquals(
                 listOf(
-                    AnnouncementReadField.TRACK_NUMBER,
                     AnnouncementReadField.TITLE,
                     AnnouncementReadField.ARTIST,
-                    AnnouncementReadField.COLLECTION,
                 ),
                 settings,
             )
         }
+
+        composeRule.onNodeWithTag(
+            "$CONTENT_READ_ORDER_PICKER_TAG:${AnnouncementReadField.TRACK_NUMBER.name}",
+        ).assertDoesNotExist()
 
         // Re-enabling appends the field to the inactive tail; that ordering is
         // covered by AnnouncementReadFieldsTest. The UI regression above only

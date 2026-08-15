@@ -12,11 +12,16 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.trackvoice.metadata.ExternalMetadataCacheEntry
+import com.trackvoice.metadata.ExternalMetadataStatus
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import java.io.IOException
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
+import java.util.Base64
 
 private val Context.trackVoiceDataStore: DataStore<Preferences> by preferencesDataStore(
     name = "trackvoice_settings",
@@ -30,6 +35,7 @@ private const val CONTENT_READ_DEFAULT_VERSION = 1
 private const val CONTENT_READ_ORDER_VERSION = 1
 private const val AUDIO_OUTPUT_POLICY_VERSION = 1
 private const val APP_ANNOUNCEMENT_SOURCE_VERSION = 1
+private const val PLAYBACK_CONTEXT_SETTINGS_VERSION = 1
 
 data class PersistedAnnouncement(
     val sourcePackageName: String,
@@ -72,6 +78,21 @@ class DataStoreRepository(private val context: Context) {
 
     suspend fun currentPersistedAnnouncement(): PersistedAnnouncement? =
         dataStore.data.first().toPersistedAnnouncement()
+
+    suspend fun readExternalMetadataCache(cacheKey: String): ExternalMetadataCacheEntry? =
+        dataStore.data.first()[externalMetadataKey(cacheKey)]?.let(::decodeExternalMetadataCache)
+
+    suspend fun writeExternalMetadataCache(cacheKey: String, entry: ExternalMetadataCacheEntry) {
+        dataStore.edit { preferences ->
+            preferences[externalMetadataKey(cacheKey)] = encodeExternalMetadataCache(entry)
+        }
+    }
+
+    internal suspend fun clearExternalMetadataCache(cacheKey: String) {
+        dataStore.edit { preferences ->
+            preferences.remove(externalMetadataKey(cacheKey))
+        }
+    }
 
     suspend fun savePersistedAnnouncement(announcement: PersistedAnnouncement) {
         dataStore.edit { preferences ->
@@ -231,6 +252,17 @@ class DataStoreRepository(private val context: Context) {
         }
     }
 
+    /** Legacy content-type values stay stored for migration, but are no longer runtime policy. */
+    suspend fun migratePlaybackContextSettings() {
+        dataStore.edit { preferences ->
+            if ((preferences[Keys.playbackContextSettingsVersion] ?: 0) >= PLAYBACK_CONTEXT_SETTINGS_VERSION) {
+                return@edit
+            }
+            preferences[Keys.useContentTypeSettings] = false
+            preferences[Keys.playbackContextSettingsVersion] = PLAYBACK_CONTEXT_SETTINGS_VERSION
+        }
+    }
+
     suspend fun migrateAudioOutputPolicy() {
         dataStore.edit { preferences ->
             if ((preferences[Keys.audioOutputPolicyVersion] ?: 0) >= AUDIO_OUTPUT_POLICY_VERSION) {
@@ -362,6 +394,7 @@ class DataStoreRepository(private val context: Context) {
         val ttsVolumeDefaultVersion = intPreferencesKey("tts_volume_default_version")
         val contentReadDefaultVersion = intPreferencesKey("content_read_default_version")
         val contentReadOrderVersion = intPreferencesKey("content_read_order_version")
+        val playbackContextSettingsVersion = intPreferencesKey("playback_context_settings_version")
         val appAnnouncementSourceVersion = intPreferencesKey("app_announcement_source_version")
         val raiseDeviceVolume = booleanPreferencesKey("raise_device_volume")
         val deviceVolumePercent = intPreferencesKey("device_volume_percent")
@@ -436,11 +469,14 @@ class DataStoreRepository(private val context: Context) {
                 this[Keys.delaySeconds] ?: 0,
             ),
             defaultMode = enumOrDefault(this[Keys.defaultMode], AnnouncementMode.SMART),
-            useContentTypeSettings = this[Keys.useContentTypeSettings] ?: true,
+            // The legacy switch is retained only so old preferences can be
+            // read safely. Playback source/context is not a reliable input,
+            // so the runtime always uses the global ordered fields.
+            useContentTypeSettings = false,
             defaultReadFields = orderedFieldsFromStorage(
                 storedOrder = this[Keys.defaultReadOrder],
                 legacyFields = this[Keys.defaultReadFields],
-                allowedFields = ALL_ANNOUNCEMENT_READ_FIELDS,
+                allowedFields = GLOBAL_ANNOUNCEMENT_READ_FIELDS,
                 fallbackFields = DEFAULT_GLOBAL_READ_FIELDS,
                 legacyOrder = announcementOrder,
             ),
@@ -536,10 +572,10 @@ class DataStoreRepository(private val context: Context) {
             settings.delaySeconds,
         )
         this[Keys.defaultMode] = settings.defaultMode.name
-        this[Keys.useContentTypeSettings] = settings.useContentTypeSettings
+        this[Keys.useContentTypeSettings] = false
         val defaultFields = normalizeAnnouncementReadFields(
             settings.defaultReadFields,
-            ALL_ANNOUNCEMENT_READ_FIELDS,
+            GLOBAL_ANNOUNCEMENT_READ_FIELDS,
             DEFAULT_GLOBAL_READ_FIELDS,
         )
         val albumFields = normalizeAnnouncementReadFields(
@@ -710,3 +746,53 @@ private fun deviceKey(key: String, suffix: String): Preferences.Key<String> =
 
 private fun deviceBooleanKey(key: String, suffix: String): Preferences.Key<Boolean> =
     booleanPreferencesKey("device.${key.hashCode()}.$suffix")
+
+private fun externalMetadataKey(cacheKey: String): Preferences.Key<String> =
+    stringPreferencesKey("external_metadata.${sha256(cacheKey)}")
+
+private fun sha256(value: String): String = MessageDigest
+    .getInstance("SHA-256")
+    .digest(value.toByteArray(StandardCharsets.UTF_8))
+    .joinToString("") { byte -> "%02x".format(byte) }
+
+private fun encodeExternalMetadataCache(entry: ExternalMetadataCacheEntry): String = listOf(
+    entry.status.name,
+    entry.provider,
+    entry.confidence.toString(),
+    entry.trackNumber?.toString().orEmpty(),
+    entry.trackCount?.toString().orEmpty(),
+    entry.discNumber?.toString().orEmpty(),
+    entry.canonicalTitle.encodeCacheValue(),
+    entry.canonicalArtist.encodeCacheValue(),
+    entry.canonicalAlbum.encodeCacheValue(),
+    entry.durationMs?.toString().orEmpty(),
+    entry.resolvedAt.toString(),
+).joinToString("|")
+
+private fun decodeExternalMetadataCache(value: String): ExternalMetadataCacheEntry? {
+    val fields = value.split('|')
+    if (fields.size != 11) return null
+    return runCatching {
+        ExternalMetadataCacheEntry(
+            status = ExternalMetadataStatus.valueOf(fields[0]),
+            provider = fields[1],
+            confidence = fields[2].toDouble(),
+            trackNumber = fields[3].toIntOrNull(),
+            trackCount = fields[4].toIntOrNull(),
+            discNumber = fields[5].toIntOrNull(),
+            canonicalTitle = fields[6].decodeCacheValue(),
+            canonicalArtist = fields[7].decodeCacheValue(),
+            canonicalAlbum = fields[8].decodeCacheValue(),
+            durationMs = fields[9].toLongOrNull(),
+            resolvedAt = fields[10].toLong(),
+        )
+    }.getOrNull()
+}
+
+private fun String?.encodeCacheValue(): String = this
+    ?.toByteArray(StandardCharsets.UTF_8)
+    ?.let(Base64.getEncoder()::encodeToString)
+    .orEmpty()
+
+private fun String.decodeCacheValue(): String? = takeIf { it.isNotEmpty() }
+    ?.let { runCatching { String(Base64.getDecoder().decode(it), StandardCharsets.UTF_8) }.getOrNull() }

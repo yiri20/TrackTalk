@@ -39,8 +39,6 @@ class GuideSettingsScreenInstrumentedTest {
                         onUpdate = {},
                         onTest = {},
                         onOpenPremium = {},
-                        target = null,
-                        onTargetHandled = {},
                         selectedPaneName = GuideSettingsPane.GUIDE.name,
                         onPaneSelected = {},
                     )

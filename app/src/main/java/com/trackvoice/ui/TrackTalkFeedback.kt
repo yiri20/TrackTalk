@@ -1,8 +1,8 @@
 package com.trackvoice.ui
 
 import android.content.Intent
-import android.net.Uri
 import android.os.Build
+import androidx.core.net.toUri
 import com.trackvoice.BuildConfig
 
 /** Builds the intentionally minimal feedback email without including user activity data. */
@@ -12,7 +12,7 @@ object TrackTalkFeedback {
 
     fun createIntent(): Intent = Intent(
         Intent.ACTION_SENDTO,
-        Uri.parse("mailto:$FEEDBACK_ADDRESS"),
+        "mailto:$FEEDBACK_ADDRESS".toUri(),
     ).apply {
         putExtra(Intent.EXTRA_SUBJECT, SUBJECT)
         putExtra(Intent.EXTRA_TEXT, diagnosticBody())

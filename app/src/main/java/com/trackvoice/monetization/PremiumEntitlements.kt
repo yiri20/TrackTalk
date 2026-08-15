@@ -3,10 +3,6 @@ package com.trackvoice.monetization
 import com.trackvoice.data.UserSettings
 import com.trackvoice.data.AnnouncementMode
 import com.trackvoice.data.AnnouncementOrder
-import com.trackvoice.data.DEFAULT_ALBUM_READ_FIELDS
-import com.trackvoice.data.DEFAULT_ALGORITHMIC_READ_FIELDS
-import com.trackvoice.data.DEFAULT_GLOBAL_READ_FIELDS
-import com.trackvoice.data.DEFAULT_PLAYLIST_READ_FIELDS
 import com.trackvoice.data.DEFAULT_MUSIC_DUCK_PERCENT
 import com.trackvoice.data.DEFAULT_TTS_VOLUME
 
@@ -20,8 +16,9 @@ fun UserSettings.forPremiumEntitlement(isPremium: Boolean): UserSettings {
         trackStartBehavior = com.trackvoice.data.TrackStartBehavior.PLAY_IMMEDIATELY,
         timing = com.trackvoice.data.AnnouncementTiming.IMMEDIATE,
         defaultMode = AnnouncementMode.SMART,
-        useContentTypeSettings = true,
-        defaultReadFields = DEFAULT_GLOBAL_READ_FIELDS,
+        // Field selection and ordering are part of the complete free core.
+        // Only the old source-specific values are ignored by the runtime.
+        useContentTypeSettings = false,
         announcementOrder = AnnouncementOrder.DEFAULT,
         albumMode = AnnouncementMode.ALBUM,
         playlistMode = AnnouncementMode.PLAYLIST,
@@ -31,10 +28,7 @@ fun UserSettings.forPremiumEntitlement(isPremium: Boolean): UserSettings {
         pitch = 1f,
         volume = DEFAULT_TTS_VOLUME,
         algorithmMode = AnnouncementMode.TITLE_AND_ARTIST,
-        albumReadFields = DEFAULT_ALBUM_READ_FIELDS,
         albumNameFirstTrackOnly = false,
-        playlistReadFields = DEFAULT_PLAYLIST_READ_FIELDS,
-        algorithmReadFields = DEFAULT_ALGORITHMIC_READ_FIELDS,
         raiseDeviceVolume = false,
         deviceVolumePercent = 90,
     )

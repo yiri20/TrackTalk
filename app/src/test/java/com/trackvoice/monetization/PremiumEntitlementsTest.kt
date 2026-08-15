@@ -7,6 +7,7 @@ import com.trackvoice.data.AnnouncementMode
 import com.trackvoice.data.AnnouncementOrder
 import com.trackvoice.data.DEFAULT_TTS_VOLUME
 import com.trackvoice.data.DEFAULT_TTS_VOLUME_PERCENT
+import com.trackvoice.data.AnnouncementReadField
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Test
@@ -27,6 +28,7 @@ class PremiumEntitlementsTest {
             volume = 0.4f,
             raiseDeviceVolume = false,
             deviceVolumePercent = 55,
+            defaultReadFields = listOf(AnnouncementReadField.TITLE, AnnouncementReadField.ALBUM),
         ).forPremiumEntitlement(isPremium = false)
 
         assertFalse(effective.autoEnableOnScreenOff)
@@ -40,6 +42,10 @@ class PremiumEntitlementsTest {
         assertFalse(effective.albumNameFirstTrackOnly)
         assertFalse(effective.raiseDeviceVolume)
         assertEquals(90, effective.deviceVolumePercent)
+        assertEquals(
+            listOf(AnnouncementReadField.TITLE, AnnouncementReadField.ALBUM),
+            effective.defaultReadFields,
+        )
     }
 
     @Test
