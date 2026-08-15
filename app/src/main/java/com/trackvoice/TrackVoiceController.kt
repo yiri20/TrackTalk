@@ -488,6 +488,7 @@ class TrackVoiceController(
     }
 
     private fun resolveCollection(event: PlaybackEvent): PlaybackCollection {
+        val detectedDecision = PlaybackCollectionResolver.resolveWithEvidence(event)
         val resolved = PlaybackCollectionResolver.applyFallback(
             detected = PlaybackCollectionResolver.resolve(
                 event = event,
@@ -496,23 +497,51 @@ class TrackVoiceController(
             ),
             fallback = CollectionFallback.AUTO,
         )
-        if (resolved != PlaybackCollection.UNKNOWN) return resolved
-
         // Some players publish a rich queue once and then omit queue metadata
         // on later callbacks. Keep the known type for that same queue/track
         // instead of reverting the UI and announcement mode to "checking".
         val previousEvent = _mediaState.value.currentEvent
         val previousCollection = _mediaState.value.currentCollection
-        return if (
-            previousCollection != PlaybackCollection.UNKNOWN &&
+        val sameContext = previousCollection != PlaybackCollection.UNKNOWN &&
             previousCollection != PlaybackCollection.ALGORITHMIC &&
             previousEvent != null &&
             samePlaybackContext(previousEvent, event)
+        val finalCollection = if (resolved != PlaybackCollection.UNKNOWN) {
+            resolved
+        } else if (
+            sameContext
         ) {
             previousCollection
         } else {
             PlaybackCollection.UNKNOWN
         }
+        val evidence = detectedDecision.evidence
+        TrackTalkDebugLog.event(
+            "PLAYBACK_CONTEXT_EVIDENCE",
+            "source" to event.sourcePackageName,
+            "mediaId" to event.mediaId,
+            "queueTitleSignal" to evidence.queueTitleSignal,
+            "queueTitle" to event.queueTitle,
+            "queueSize" to evidence.queueSize,
+            "activeQueuePosition" to evidence.activeQueuePosition,
+            "currentAlbumPresent" to evidence.currentAlbumPresent,
+            "queueAlbums" to evidence.queueAlbums.joinToString(",", prefix = "[", postfix = "]"),
+            "queueItemsWithAlbums" to evidence.queueItemsWithAlbums,
+            "queueItemsWithTrackNumbers" to evidence.queueItemsWithTrackNumbers,
+            "canonicalAlbumQueue" to evidence.hasCanonicalAlbumQueue,
+            "shuffleState" to evidence.shuffleState,
+        )
+        TrackTalkDebugLog.event(
+            "PLAYBACK_CONTEXT_DECISION",
+            "source" to event.sourcePackageName,
+            "mediaId" to event.mediaId,
+            "detected" to detectedDecision.collection,
+            "detectedReason" to detectedDecision.reason,
+            "final" to finalCollection,
+            "previous" to previousCollection,
+            "sameContext" to sameContext,
+        )
+        return finalCollection
     }
 
     private fun samePlaybackContext(previous: PlaybackEvent, current: PlaybackEvent): Boolean {
@@ -850,6 +879,8 @@ class TrackVoiceController(
             "required" to required.joinToString(",", prefix = "[", postfix = "]"),
             "available" to available.joinToString(",", prefix = "[", postfix = "]"),
             "missing" to missing.joinToString(",", prefix = "[", postfix = "]"),
+            "trackNumber" to event.trackNumber,
+            "trackNumberSource" to event.trackNumberSource,
             "action" to action,
         )
     }
@@ -928,11 +959,7 @@ class TrackVoiceController(
         "ALBUM" -> !event.album.isNullOrBlank()
         "COLLECTION" -> !event.queueTitle.isNullOrBlank() &&
             !PlaybackCollectionResolver.isGenericQueueTitle(event.queueTitle)
-        "TRACK_NUMBER" -> AlbumTrackNumberResolver.resolve(
-            event,
-            allowQueuePositionFallback = decision.collection == PlaybackCollection.ALBUM ||
-                (decision.mode == AnnouncementMode.ALBUM && decision.collection == PlaybackCollection.UNKNOWN),
-        ) != null
+        "TRACK_NUMBER" -> AlbumTrackNumberResolver.resolve(event) != null
         else -> false
     }
 

@@ -732,10 +732,7 @@ private fun CurrentTrackCard(
                 ) {
                     TrackField(strings.playlistField, event.queueTitle.orEmpty())
                 }
-                val visibleTrackNumber = AlbumTrackNumberResolver.resolve(
-                    event = event,
-                    allowQueuePositionFallback = collection == PlaybackCollection.ALBUM,
-                )
+                val visibleTrackNumber = AlbumTrackNumberResolver.resolve(event)
                 if (visibleTrackNumber != null) {
                     TrackField(
                         strings.trackNumberField,

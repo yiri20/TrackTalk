@@ -1,6 +1,7 @@
 package com.trackvoice.media
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class PlaybackCollectionResolverTest {
@@ -77,9 +78,9 @@ class PlaybackCollectionResolverTest {
     }
 
     @Test
-    fun genericMultiItemQueueWithAlbumMetadataIdentifiesAlbum() {
+    fun genericMultiItemQueueWithAlbumMetadataRemainsAmbiguous() {
         assertEquals(
-            PlaybackCollection.ALBUM,
+            PlaybackCollection.UNKNOWN,
             PlaybackCollectionResolver.resolve(
                 event(
                     album = "Album",
@@ -87,6 +88,23 @@ class PlaybackCollectionResolverTest {
                     activeQueuePosition = 2,
                     queueSize = 10,
                 ),
+            ),
+        )
+    }
+
+    @Test
+    fun directSingleTrackWithProviderGeneratedQueueRemainsUnknown() {
+        assertEquals(
+            PlaybackCollection.UNKNOWN,
+            PlaybackCollectionResolver.resolve(
+                event(
+                    album = "Album",
+                    trackNumber = 1,
+                    totalTracks = 10,
+                    queueTitle = "다음 트랙",
+                    queueSize = 25,
+                    activeQueuePosition = 0,
+                ).copy(mediaId = "direct-song"),
             ),
         )
     }
@@ -252,11 +270,40 @@ class PlaybackCollectionResolverTest {
                     title = "Song $index",
                     artist = "Artist",
                     album = "Album",
+                    trackNumber = index + 1,
                 )
             },
         )
 
         assertEquals(PlaybackCollection.ALBUM, PlaybackCollectionResolver.resolve(event))
+    }
+
+    @Test
+    fun sameAlbumQueueWithoutExplicitTrackNumbersRemainsAmbiguous() {
+        val event = event(album = "Album", queueTitle = "다음 트랙", queueSize = 3).copy(
+            queue = List(3) { index ->
+                QueueItemSnapshot(
+                    mediaId = "track-$index",
+                    title = "Song $index",
+                    artist = "Artist",
+                    album = "Album",
+                )
+            },
+        )
+
+        assertEquals(PlaybackCollection.UNKNOWN, PlaybackCollectionResolver.resolve(event))
+    }
+
+    @Test
+    fun contextDecisionExplainsAmbiguousGenericQueue() {
+        val decision = PlaybackCollectionResolver.resolveWithEvidence(
+            event(album = "Album", queueTitle = "다음 트랙", queueSize = 25),
+        )
+
+        assertEquals(PlaybackCollection.UNKNOWN, decision.collection)
+        assertEquals("AMBIGUOUS_MEDIA_SESSION_CONTEXT", decision.reason)
+        assertEquals("GENERIC", decision.evidence.queueTitleSignal)
+        assertFalse(decision.evidence.hasCanonicalAlbumQueue)
     }
 
     @Test
@@ -281,6 +328,10 @@ class PlaybackCollectionResolverTest {
         assertEquals(
             PlaybackCollection.ALGORITHMIC,
             PlaybackCollectionResolver.resolve(event(queueTitle = "추천 라디오")),
+        )
+        assertEquals(
+            PlaybackCollection.ALGORITHMIC,
+            PlaybackCollectionResolver.resolve(event(queueTitle = "Random")),
         )
     }
 
@@ -325,9 +376,9 @@ class PlaybackCollectionResolverTest {
     }
 
     @Test
-    fun shuffledAlbumMetadataStillIdentifiesAlbum() {
+    fun shuffledAlbumMetadataWithoutQueueMetadataRemainsAmbiguous() {
         assertEquals(
-            PlaybackCollection.ALBUM,
+            PlaybackCollection.UNKNOWN,
             PlaybackCollectionResolver.resolve(
                 event(
                     album = "Album",
@@ -351,9 +402,9 @@ class PlaybackCollectionResolverTest {
     }
 
     @Test
-    fun albumMetadataIdentifiesAlbumWhenQueueItemsOmitAlbumExtras() {
+    fun albumMetadataWithGenericQueueAndNoQueueExtrasRemainsAmbiguous() {
         assertEquals(
-            PlaybackCollection.ALBUM,
+            PlaybackCollection.UNKNOWN,
             PlaybackCollectionResolver.resolve(
                 event(
                     album = "Album",

@@ -450,7 +450,7 @@ class AnnouncementPolicyTest {
     }
 
     @Test
-    fun albumChecklistUsesQueuePositionWhenTrackMetadataIsMissing() {
+    fun albumChecklistOmitsTrackWhenTrackMetadataIsMissing() {
         val decision = AnnouncementPolicy.decide(
             event = event().copy(
                 trackNumber = null,
@@ -463,7 +463,7 @@ class AnnouncementPolicyTest {
             externalAudioOutput = true,
         )
 
-        assertEquals("A Moon Shaped Pool, 트랙 3번, Glass Eyes, Radiohead.", decision.text)
+        assertEquals("A Moon Shaped Pool, Glass Eyes, Radiohead.", decision.text)
     }
 
     private fun queueItem(title: String = "Glass Eyes", album: String? = null) = com.trackvoice.media.QueueItemSnapshot(

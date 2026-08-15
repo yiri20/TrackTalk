@@ -59,17 +59,23 @@ class TrackMetadataMapper(
         val queueOrderChanged = detectQueueOrderChange(controller, rawQueue)
         val shuffleState = state.toShuffleState()
         rememberQueueTrackNumbers(controller.packageName, queue)
-        val resolvedTrackNumber = when {
-            activeQueueTrackNumber != null -> activeQueueTrackNumber
-            queueOrderChanged || shuffleState == ShuffleState.ON -> cachedTrackNumber ?: metadataTrackNumber
-            else -> metadataTrackNumber
+        val trackNumberResolution = when {
+            activeQueueTrackNumber != null -> activeQueueTrackNumber to TrackNumberSource.QUEUE_ITEM_METADATA
+            queueOrderChanged || shuffleState == ShuffleState.ON -> when {
+                cachedTrackNumber != null -> cachedTrackNumber to TrackNumberSource.CACHED_QUEUE_ITEM_METADATA
+                metadataTrackNumber != null -> metadataTrackNumber to TrackNumberSource.MEDIA_METADATA
+                else -> null to TrackNumberSource.UNSPECIFIED
+            }
+            metadataTrackNumber != null -> metadataTrackNumber to TrackNumberSource.MEDIA_METADATA
+            cachedTrackNumber != null -> cachedTrackNumber to TrackNumberSource.CACHED_QUEUE_ITEM_METADATA
+            else -> null to TrackNumberSource.UNSPECIFIED
         }
-        // A track number read directly from media metadata remains valid even
-        // when the surrounding recommendation queue is shuffled or reordered.
-        // Only a queue position needs to be rejected after a shuffle.
-        val trackNumberReliable = activeQueueTrackNumber != null ||
-            cachedTrackNumber != null && (queueOrderChanged || shuffleState == ShuffleState.ON) ||
-            metadataTrackNumber != null
+        val resolvedTrackNumber = trackNumberResolution.first
+        val trackNumberSource = trackNumberResolution.second
+        // Explicit metadata remains valid even when the surrounding
+        // recommendation queue is shuffled or reordered. Queue position is
+        // never promoted into this value.
+        val trackNumberReliable = trackNumberSource != TrackNumberSource.UNSPECIFIED
         if (trackKey != null && resolvedTrackNumber != null && trackNumberReliable) {
             knownTrackNumbers[trackKey] = resolvedTrackNumber
         }
@@ -91,8 +97,37 @@ class TrackMetadataMapper(
             },
             "albumAvailable" to (metadataAlbum != null || activeQueueDescription?.extras?.getString(MediaMetadata.METADATA_KEY_ALBUM) != null),
             "trackNumber" to resolvedTrackNumber,
+            "trackNumberSource" to trackNumberSource,
             "queueSize" to queue.size,
             "activeQueuePosition" to activeQueuePosition,
+        )
+        TrackTalkDebugLog.event(
+            "TRACK_NUMBER_RESOLUTION",
+            "source" to controller.packageName,
+            "mediaId" to mediaId,
+            "selected" to resolvedTrackNumber,
+            "provenance" to trackNumberSource,
+            "mediaMetadata" to metadataTrackNumber,
+            "activeQueueItem" to activeQueueTrackNumber,
+            "cachedQueueItem" to cachedTrackNumber,
+            "activeQueuePosition" to activeQueuePosition,
+            "queueItemsWithTrackNumbers" to queue.count { it.trackNumber != null },
+            "queueTrackNumbers" to queue.mapNotNull { it.trackNumber }.joinToString(",", prefix = "[", postfix = "]"),
+        )
+        TrackTalkDebugLog.event(
+            "PLAYBACK_CONTEXT_EVIDENCE",
+            "source" to controller.packageName,
+            "mediaId" to mediaId,
+            "metadataKeys" to metadata?.keySet()?.joinToString(",", prefix = "[", postfix = "]"),
+            "controllerExtras" to controller.extras?.keySet()?.joinToString(",", prefix = "[", postfix = "]"),
+            "queueSize" to queue.size,
+            "queueAlbumCoverage" to queue.count { !it.album.isNullOrBlank() },
+            "queueTrackCoverage" to queue.count { it.trackNumber != null },
+            "queueMediaIds" to queue.mapNotNull { it.mediaId }.take(12).joinToString(",", prefix = "[", postfix = "]"),
+            "queueTitle" to controller.queueTitle?.toString().clean(),
+            "activeQueuePosition" to activeQueuePosition,
+            "shuffleState" to shuffleState,
+            "queueOrderChanged" to queueOrderChanged,
         )
         return PlaybackEvent(
             sourcePackageName = controller.packageName,
@@ -126,6 +161,7 @@ class TrackMetadataMapper(
             queueOrderChanged = queueOrderChanged,
             shuffleState = shuffleState,
             trackNumberReliable = trackNumberReliable,
+            trackNumberSource = trackNumberSource,
         )
     }
 

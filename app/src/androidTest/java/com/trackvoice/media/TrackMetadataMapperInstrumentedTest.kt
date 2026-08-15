@@ -78,6 +78,7 @@ class TrackMetadataMapperInstrumentedTest {
         assertEquals("Radiohead", event.artist)
         assertEquals("A Moon Shaped Pool", event.album)
         assertEquals(3, event.trackNumber)
+        assertEquals(TrackNumberSource.MEDIA_METADATA, event.trackNumberSource)
         assertEquals(11, event.totalTracks)
         assertEquals(1, event.discNumber)
         assertEquals(180_000L, event.duration)
@@ -332,6 +333,7 @@ class TrackMetadataMapperInstrumentedTest {
         assertEquals("Queue Album", event.queue.single().album)
         assertEquals(4, event.queue.single().trackNumber)
         assertEquals(4, event.trackNumber)
+        assertEquals(TrackNumberSource.QUEUE_ITEM_METADATA, event.trackNumberSource)
         assertTrue(event.trackNumberReliable)
     }
 
@@ -389,7 +391,62 @@ class TrackMetadataMapperInstrumentedTest {
         val event = mapper.map(MediaController(context, session.sessionToken))
         assertTrue(event.queueOrderChanged)
         assertEquals(4, event.trackNumber)
+        assertEquals(TrackNumberSource.CACHED_QUEUE_ITEM_METADATA, event.trackNumberSource)
         assertTrue(event.trackNumberReliable)
+    }
+
+    @Test
+    fun usesCachedQueueItemTrackNumberWhenCurrentQueuePositionCannotBeResolved() {
+        val mapper = TrackMetadataMapper { "Test Music" }
+        session.setMetadata(
+            MediaMetadata.Builder()
+                .putString(MediaMetadata.METADATA_KEY_MEDIA_ID, "target")
+                .putString(MediaMetadata.METADATA_KEY_TITLE, "Target")
+                .build(),
+        )
+        session.setPlaybackState(
+            PlaybackState.Builder()
+                .setState(PlaybackState.STATE_PLAYING, 0L, 1f)
+                .setActiveQueueItemId(7L)
+                .build(),
+        )
+        session.setQueue(
+            listOf(
+                MediaSession.QueueItem(
+                    MediaDescription.Builder()
+                        .setMediaId("target")
+                        .setTitle("Target")
+                        .setExtras(Bundle().apply {
+                            putLong(MediaMetadata.METADATA_KEY_TRACK_NUMBER, 4L)
+                        })
+                        .build(),
+                    7L,
+                ),
+            ),
+        )
+        mapper.map(MediaController(context, session.sessionToken), observedAt = 1_300L)
+
+        session.setPlaybackState(
+            PlaybackState.Builder()
+                .setState(PlaybackState.STATE_PLAYING, 0L, 1f)
+                .setActiveQueueItemId(-1L)
+                .build(),
+        )
+        session.setQueue(
+            listOf(
+                MediaSession.QueueItem(
+                    MediaDescription.Builder()
+                        .setMediaId(null)
+                        .setTitle("Unmatched queue item")
+                        .build(),
+                    8L,
+                ),
+            ),
+        )
+
+        val event = mapper.map(MediaController(context, session.sessionToken), observedAt = 1_301L)
+        assertEquals(4, event.trackNumber)
+        assertEquals(TrackNumberSource.CACHED_QUEUE_ITEM_METADATA, event.trackNumberSource)
     }
 
     private fun queueItem(mediaId: String, title: String, queueId: Long) = MediaSession.QueueItem(

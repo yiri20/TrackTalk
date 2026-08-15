@@ -134,9 +134,9 @@ class AnnouncementFormatterTest {
     }
 
     @Test
-    fun albumModeUsesQueuePositionWhenTrackMetadataIsMissing() {
+    fun albumModeOmitsTrackWhenExplicitTrackMetadataIsMissing() {
         assertEquals(
-            "A Moon Shaped Pool, 트랙 3번, Glass Eyes, Radiohead.",
+            "A Moon Shaped Pool, Glass Eyes, Radiohead.",
             AnnouncementFormatter.format(
                 event(trackNumber = null).copy(
                     activeQueuePosition = 2,
@@ -275,17 +275,17 @@ class AnnouncementFormatterTest {
     }
 
     @Test
-    fun albumNameFirstTrackOnlyUsesStableQueuePositionWhenTrackMetadataIsMissing() {
+    fun albumNameFirstTrackOnlyDoesNotInferFromQueuePositionWhenTrackMetadataIsMissing() {
         val options = AnnouncementFormatOptions(albumNameFirstTrackOnly = true)
         val first = event(trackNumber = null).copy(activeQueuePosition = 0)
         val second = event(title = "Second Song", trackNumber = null).copy(activeQueuePosition = 1)
 
         assertEquals(
-            "A Moon Shaped Pool, 트랙 1번, Glass Eyes, Radiohead.",
+            "Glass Eyes, Radiohead.",
             AnnouncementFormatter.format(first, AnnouncementMode.ALBUM, options, PlaybackCollection.ALBUM),
         )
         assertEquals(
-            "트랙 2번, Second Song, Radiohead.",
+            "Second Song, Radiohead.",
             AnnouncementFormatter.format(second, AnnouncementMode.ALBUM, options, PlaybackCollection.ALBUM),
         )
     }

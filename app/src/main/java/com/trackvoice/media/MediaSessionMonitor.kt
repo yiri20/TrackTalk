@@ -249,8 +249,13 @@ class MediaSessionMonitor(
             "title" to selected?.event?.title,
             "artist" to selected?.event?.artist,
             "album" to selected?.event?.album,
+            "trackNumber" to selected?.event?.trackNumber,
+            "trackNumberSource" to selected?.event?.trackNumberSource,
             "queueTitle" to selected?.event?.queueTitle,
             "queueSize" to selected?.event?.queue?.size,
+            "activeQueuePosition" to selected?.event?.activeQueuePosition,
+            "queueAlbumCoverage" to selected?.event?.queue?.count { !it.album.isNullOrBlank() },
+            "queueTrackCoverage" to selected?.event?.queue?.count { it.trackNumber != null },
             "playing" to selected?.event?.isPlaying,
             "observedAt" to now,
         )

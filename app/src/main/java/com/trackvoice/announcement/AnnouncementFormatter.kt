@@ -59,15 +59,7 @@ object AnnouncementFormatter {
         val album = event.album.cleanIf(options.shouldReadAlbum(event, collection))
         val collectionTitle = event.queueTitle.cleanIf(options.readCollection)
         val track = if (options.readTrackNumber) {
-            AlbumTrackNumberResolver.resolve(
-                event = event,
-                // A queue position is meaningful as an album track only when
-                // the content was actually identified as an album. A user may
-                // choose album/track fields for a recommendation or shuffle,
-                // but that queue is not album-ordered.
-                allowQueuePositionFallback = collection == PlaybackCollection.ALBUM ||
-                    (mode == AnnouncementMode.ALBUM && collection == PlaybackCollection.UNKNOWN),
-            )
+            AlbumTrackNumberResolver.resolve(event)
         } else {
             null
         }

@@ -40,6 +40,7 @@ data class PlaybackEvent(
     val queueOrderChanged: Boolean = false,
     val shuffleState: ShuffleState = ShuffleState.UNKNOWN,
     val trackNumberReliable: Boolean = true,
+    val trackNumberSource: TrackNumberSource = TrackNumberSource.UNSPECIFIED,
 ) {
     val hasTitle: Boolean get() = !title.isNullOrBlank()
     /**
@@ -62,23 +63,33 @@ enum class ShuffleState {
     ON,
 }
 
+/**
+ * Provenance for a track number exposed by a media session.
+ *
+ * Queue position is intentionally not represented here: an item's position
+ * in a provider-generated queue is not the same thing as its album track
+ * number.
+ */
+enum class TrackNumberSource {
+    UNSPECIFIED,
+    MEDIA_METADATA,
+    QUEUE_ITEM_METADATA,
+    CACHED_QUEUE_ITEM_METADATA,
+}
+
 object AlbumTrackNumberResolver {
-    fun resolve(event: PlaybackEvent, allowQueuePositionFallback: Boolean): Int? {
+    fun resolve(event: PlaybackEvent): Int? {
         val effectiveTotalTracks = event.totalTracks ?: event.queue.size.takeIf { it > 1 }
         val directTrack = event.trackNumber
             ?.takeIf { event.trackNumberReliable }
             ?.takeIf { it.isValidTrack(effectiveTotalTracks) }
         if (directTrack != null) return directTrack
 
-        // A queue position is not an album track number once the player has
-        // shuffled or reordered its queue. It is safer to omit the number than
-        // to announce a convincing but incorrect "track 1".
-        if (!allowQueuePositionFallback || event.queueOrderChanged || event.shuffleState == ShuffleState.ON) {
-            return null
-        }
-        return event.activeQueuePosition
-            ?.plus(1)
-            ?.takeIf { it.isValidTrack(effectiveTotalTracks) }
+        // A queue position is never an album track number. Providers commonly
+        // expose a recommendation queue, a shuffled queue, or a queue that
+        // starts at the selected item. Omitting an unavailable number is safer
+        // than announcing a convincing but fabricated value.
+        return null
     }
 
     fun isFirstAlbumTrack(event: PlaybackEvent): Boolean {
@@ -91,9 +102,9 @@ object AlbumTrackNumberResolver {
             return directTrack == 1 && (event.discNumber == null || event.discNumber <= 1)
         }
 
-        // A queue position is only a safe first-track signal when the player
-        // has not shuffled or reordered the album queue.
-        return event.activeQueuePosition == 0
+        // A queue position is not enough to establish the first album track.
+        // The provider must expose an explicit track number.
+        return false
     }
 
     private fun Int.isValidTrack(totalTracks: Int?): Boolean =
@@ -145,15 +156,18 @@ object PlaybackCollectionResolver {
         return detected
     }
 
-    fun resolve(event: PlaybackEvent): PlaybackCollection {
+    fun resolve(event: PlaybackEvent): PlaybackCollection = resolveWithEvidence(event).collection
+
+    fun resolveWithEvidence(event: PlaybackEvent): PlaybackContextDecision {
+        val evidence = evidence(event)
         val queueTitle = event.queueTitle.normalized()
         val album = event.album.normalized().takeIf { it.isNotBlank() }
         when {
             queueTitle.isExplicitPlaylistTitle() -> {
-                return PlaybackCollection.PLAYLIST
+                return evidence.decision(PlaybackCollection.PLAYLIST, "EXPLICIT_PLAYLIST_TITLE")
             }
             queueTitle.isExplicitAlbumTitle() -> {
-                return PlaybackCollection.ALBUM
+                return evidence.decision(PlaybackCollection.ALBUM, "EXPLICIT_ALBUM_TITLE")
             }
         }
 
@@ -162,45 +176,75 @@ object PlaybackCollectionResolver {
         // metadata describes the track, not necessarily the queue it came
         // from.
         if (queueTitle.isAlgorithmicTitle()) {
-            return PlaybackCollection.ALGORITHMIC
+            return evidence.decision(PlaybackCollection.ALGORITHMIC, "ALGORITHMIC_QUEUE_TITLE")
         }
 
-        val queueAlbums = event.queue.mapNotNull { it.album.normalized().takeIf(String::isNotBlank) }.distinct()
         val hasMeaningfulQueueTitle = queueTitle.isNotBlank() && !queueTitle.isGenericTitle()
         if (hasMeaningfulQueueTitle) {
             if (album != null && queueTitle.matchesAlbum(album)) {
-                return PlaybackCollection.ALBUM
+                return evidence.decision(PlaybackCollection.ALBUM, "QUEUE_TITLE_MATCHES_ALBUM")
             }
             if (event.queue.size > 1) {
                 // A named, non-generic queue that is not the current album is
                 // the strongest playlist signal available from MediaSession.
-                return PlaybackCollection.PLAYLIST
+                return evidence.decision(PlaybackCollection.PLAYLIST, "NAMED_QUEUE")
             }
         }
 
-        if (queueAlbums.size > 1) return PlaybackCollection.PLAYLIST
-        if (event.queue.size > 1 && album != null && queueAlbums.singleOrNull() == album) {
-            return PlaybackCollection.ALBUM
+        if (evidence.queueAlbums.size > 1) {
+            return evidence.decision(PlaybackCollection.PLAYLIST, "MULTI_ALBUM_QUEUE")
         }
 
-        // YouTube Music and several other players expose an album queue as a
-        // generic "next track" queue. In that snapshot they keep the current
-        // album but omit both track-number metadata and album names from queue
-        // items. A multi-item generic queue is the best album signal left;
-        // without this fallback album playback is repeatedly reported as an
-        // ambiguous or previously selected recommendation queue. Album and
-        // track metadata by itself is deliberately not enough: those fields
-        // describe the selected song even when the user tapped one song
-        // directly from search or a recommendation surface.
-        if (album != null && event.queue.size > 1 && queueTitle.isGenericTitle()) {
-            return PlaybackCollection.ALBUM
+        // A generic queue can be an album, a single-track autoplay queue, a
+        // recommendation queue, or a provider's "up next" list. Only classify
+        // it as an album when the queue itself carries complete, canonical
+        // album/track metadata for the current album. Album metadata on the
+        // selected song and queue length alone are deliberately insufficient.
+        if (evidence.hasCanonicalAlbumQueue && album != null && evidence.queueAlbums.singleOrNull() == album) {
+            return evidence.decision(PlaybackCollection.ALBUM, "CANONICAL_ALBUM_QUEUE_METADATA")
         }
 
         // A queue position by itself only says that the player has a queue;
         // it does not say that the queue is an album or an algorithmic mix.
         // Leave this ambiguous rather than applying the wrong settings.
-        return PlaybackCollection.UNKNOWN
+        return evidence.decision(PlaybackCollection.UNKNOWN, "AMBIGUOUS_MEDIA_SESSION_CONTEXT")
     }
+
+    fun evidence(event: PlaybackEvent): PlaybackContextEvidence {
+        val queueTitle = event.queueTitle.normalized()
+        val queueAlbums = event.queue.mapNotNull { it.album.normalized().takeIf(String::isNotBlank) }.distinct()
+        val queueItemsWithAlbums = event.queue.count { !it.album.normalized().isBlank() }
+        val queueItemsWithTrackNumbers = event.queue.count { item ->
+            item.trackNumber?.takeIf { it in 1..999 } != null
+        }
+        val hasCanonicalAlbumQueue = event.queue.size > 1 &&
+            queueItemsWithAlbums == event.queue.size &&
+            queueItemsWithTrackNumbers == event.queue.size &&
+            event.queue.mapNotNull { it.trackNumber }.distinct().size == event.queue.size
+        return PlaybackContextEvidence(
+            queueTitleSignal = when {
+                queueTitle.isBlank() -> "EMPTY"
+                queueTitle.isExplicitPlaylistTitle() -> "EXPLICIT_PLAYLIST"
+                queueTitle.isExplicitAlbumTitle() -> "EXPLICIT_ALBUM"
+                queueTitle.isAlgorithmicTitle() -> "ALGORITHMIC"
+                queueTitle.isGenericTitle() -> "GENERIC"
+                else -> "NAMED"
+            },
+            queueSize = event.queue.size,
+            activeQueuePosition = event.activeQueuePosition,
+            currentAlbumPresent = !event.album.normalized().isBlank(),
+            queueAlbums = queueAlbums,
+            queueItemsWithAlbums = queueItemsWithAlbums,
+            queueItemsWithTrackNumbers = queueItemsWithTrackNumbers,
+            hasCanonicalAlbumQueue = hasCanonicalAlbumQueue,
+            shuffleState = event.shuffleState,
+        )
+    }
+
+    private fun PlaybackContextEvidence.decision(
+        collection: PlaybackCollection,
+        reason: String,
+    ): PlaybackContextDecision = PlaybackContextDecision(collection, reason, this)
 
     fun isGenericQueueTitle(queueTitle: String?): Boolean = queueTitle.normalized().isGenericTitle()
 
@@ -217,7 +261,6 @@ object PlaybackCollectionResolver {
             ?: return false
         val previousTrack = AlbumTrackNumberResolver.resolve(
             previous,
-            allowQueuePositionFallback = true,
         ) ?: return false
         if (previousTrack < previousTotal) return false
 
@@ -282,12 +325,15 @@ object PlaybackCollectionResolver {
         "release radar",
         "daily mix",
         "recommend",
+        "random",
         "알고리즘",
         "자동재생",
         "자동 재생",
         "라디오",
         "스테이션",
         "추천",
+        "랜덤",
+        "무작위",
     )
 
     private fun String.isRecommendationLikeTitle(): Boolean = containsAny(
@@ -336,6 +382,24 @@ object PlaybackCollectionResolver {
     private fun String.containsAny(vararg candidates: String): Boolean =
         candidates.any(::contains)
 }
+
+data class PlaybackContextEvidence(
+    val queueTitleSignal: String,
+    val queueSize: Int,
+    val activeQueuePosition: Int?,
+    val currentAlbumPresent: Boolean,
+    val queueAlbums: List<String>,
+    val queueItemsWithAlbums: Int,
+    val queueItemsWithTrackNumbers: Int,
+    val hasCanonicalAlbumQueue: Boolean,
+    val shuffleState: ShuffleState,
+)
+
+data class PlaybackContextDecision(
+    val collection: PlaybackCollection,
+    val reason: String,
+    val evidence: PlaybackContextEvidence,
+)
 
 data class SessionSnapshot(
     val sessionKey: String,
