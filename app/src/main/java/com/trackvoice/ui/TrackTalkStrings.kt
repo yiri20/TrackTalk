@@ -454,7 +454,9 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     val buildNumberLabel: String get() = t("빌드 번호", "Build number")
     val developerLabel: String get() = t("개발자", "Developer")
     val developerName: String get() = "yiri20"
-    val openRepository: String get() = t("프로젝트 페이지 열기", "Open project page")
+    val feedbackDeveloper: String get() = t("개발자에게 피드백 보내기", "Send feedback to the developer")
+    val feedbackDeveloperSummary: String get() = t("의견이나 문제를 이메일로 보내 주세요.", "Share an idea or report a problem by email.")
+    val noEmailApp: String get() = t("사용할 수 있는 이메일 앱이 없습니다.", "No compatible email app is available.")
     val privacy: String get() = t("개인정보", "Privacy")
     val privacySummary: String get() = t("곡 정보는 안내에만 사용하며 서버에 저장하지 않습니다.", "Track information is used only for announcements and is not stored on a server.")
     val currentTrackInfo: String get() = t("현재 곡 정보", "Current track information")

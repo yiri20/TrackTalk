@@ -2,10 +2,12 @@ package com.trackvoice.ui
 
 import android.Manifest
 import android.app.Activity
+import android.content.Context
 import android.content.pm.PackageManager
 import android.content.Intent
 import android.os.Build
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -322,8 +324,8 @@ fun TrackVoiceApp(viewModel: TrackVoiceViewModel, activity: Activity) {
                     onUpdateDevice = viewModel.controller::updateAudioDeviceSettings,
                     onOpenPremium = { showPremiumDialog = true },
                     onOpenDiagnostics = { selectedSectionName = AppSection.DIAGNOSTICS.name },
-                    onOpenRepository = {
-                        context.startActivity(Intent(Intent.ACTION_VIEW, "https://github.com/yiri20/TrackTalk".toUri()))
+                    onFeedback = {
+                        openFeedbackEmail(context, strings.noEmailApp)
                     },
                 )
 
@@ -1291,7 +1293,7 @@ private fun DeviceSettingsScreen(
     onUpdateDevice: (AudioDeviceSettings) -> Unit,
     onOpenPremium: () -> Unit,
     onOpenDiagnostics: () -> Unit,
-    onOpenRepository: () -> Unit,
+    onFeedback: () -> Unit,
 ) {
     val strings = LocalTrackTalkStrings.current
     LazyColumn(
@@ -1359,13 +1361,13 @@ private fun DeviceSettingsScreen(
             }
         }
         item {
-            AppInfoCard(onOpenRepository = onOpenRepository)
+            AppInfoCard(onFeedback = onFeedback)
         }
     }
 }
 
 @Composable
-private fun AppInfoCard(onOpenRepository: () -> Unit) {
+private fun AppInfoCard(onFeedback: () -> Unit) {
     val strings = LocalTrackTalkStrings.current
     SettingCard(strings.appInfoTitle) {
         Text(
@@ -1377,9 +1379,28 @@ private fun AppInfoCard(onOpenRepository: () -> Unit) {
         InfoRow(strings.versionLabel, "v${BuildConfig.VERSION_NAME}")
         InfoRow(strings.buildNumberLabel, BuildConfig.VERSION_CODE.toString())
         InfoRow(strings.developerLabel, strings.developerName)
-        OutlinedButton(onClick = onOpenRepository, modifier = Modifier.fillMaxWidth()) {
-            Text(strings.openRepository)
-        }
+        NavigationEntryContent(
+            title = strings.feedbackDeveloper,
+            summary = strings.feedbackDeveloperSummary,
+            showPlusBadge = false,
+            onClick = onFeedback,
+        )
+    }
+}
+
+private fun openFeedbackEmail(context: Context, noEmailAppMessage: String) {
+    val intent = TrackTalkFeedback.createIntent()
+    val canOpenEmail = runCatching {
+        intent.resolveActivity(context.packageManager) != null
+    }.getOrDefault(false)
+    if (!canOpenEmail) {
+        Toast.makeText(context, noEmailAppMessage, Toast.LENGTH_SHORT).show()
+        return
+    }
+    runCatching {
+        context.startActivity(intent)
+    }.onFailure {
+        Toast.makeText(context, noEmailAppMessage, Toast.LENGTH_SHORT).show()
     }
 }
 
