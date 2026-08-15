@@ -4,6 +4,7 @@ import android.content.Context
 import android.media.AudioManager
 import com.trackvoice.data.MAX_MUSIC_DUCK_PERCENT
 import com.trackvoice.data.MIN_MUSIC_DUCK_PERCENT
+import com.trackvoice.diagnostics.TrackTalkDebugLog
 import kotlin.math.roundToInt
 
 object MusicVolumeCalculator {
@@ -45,6 +46,17 @@ class MusicVolumeManager(context: Context) {
             duckedVolume = target
             saveState(original, target)
             if (current != target) audioManager.setStreamVolume(stream, target, 0)
+            TrackTalkDebugLog.event(
+                "MUSIC_ATTENUATION",
+                "implementation" to "STREAM_MUSIC_SET_STREAM_VOLUME",
+                "streamType" to "STREAM_MUSIC",
+                "originalVolume" to original,
+                "currentVolume" to current,
+                "targetVolume" to target,
+                "streamMaxVolume" to audioManager.getStreamMaxVolume(stream),
+                "musicDuckPercent" to percent,
+                "ttsUsage" to "USAGE_ASSISTANCE_ACCESSIBILITY",
+            )
         }
     }
 
@@ -58,6 +70,13 @@ class MusicVolumeManager(context: Context) {
             if (duckedVolume == null || current == duckedVolume) {
                 audioManager.setStreamVolume(stream, original, 0)
             }
+            TrackTalkDebugLog.event(
+                "MUSIC_ATTENUATION_RESTORE",
+                "streamType" to "STREAM_MUSIC",
+                "originalVolume" to original,
+                "duckedVolume" to duckedVolume,
+                "currentVolume" to current,
+            )
             true
         }.getOrDefault(false)
         if (!restored) return

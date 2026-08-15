@@ -95,6 +95,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -1955,7 +1956,7 @@ private fun BasicPlaybackDefaults(musicDuckPercent: Int) {
 }
 
 @Composable
-private fun ContentReadOrderPicker(
+internal fun ContentReadOrderPicker(
     title: String,
     hint: String? = null,
     availableFields: List<AnnouncementReadField>,
@@ -1984,9 +1985,20 @@ private fun ContentReadOrderPicker(
             userScrollEnabled = draggingField == null,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             contentPadding = PaddingValues(end = 4.dp),
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(CONTENT_READ_ORDER_PICKER_TAG),
         ) {
-            items(visibleFields, key = { it.name }) { field ->
+            items(
+                visibleFields,
+                key = { field ->
+                    // A checked field moving to the inactive tail is a
+                    // selection change, not a drag. Changing the segment in
+                    // the key makes LazyRow remove the old item instead of
+                    // preserving it as an anchor and scrolling after it.
+                    contentReadFieldItemKey(field, field in normalizedFields)
+                },
+            ) { field ->
                 val active = field in normalizedFields
                 val currentFields by rememberUpdatedState(normalizedFields)
                 val currentActive by rememberUpdatedState(active)
@@ -2023,6 +2035,7 @@ private fun ContentReadOrderPicker(
                         null
                     },
                     modifier = Modifier
+                        .testTag("$CONTENT_READ_ORDER_PICKER_TAG:${field.name}")
                         .zIndex(if (draggingField == field) 1f else 0f)
                         .graphicsLayer {
                             if (draggingField == field) {
@@ -2103,6 +2116,13 @@ private fun ContentReadOrderPicker(
         }
     }
 }
+
+internal const val CONTENT_READ_ORDER_PICKER_TAG = "content-read-order-picker"
+
+internal fun contentReadFieldItemKey(
+    field: AnnouncementReadField,
+    active: Boolean,
+): String = "${if (active) "active" else "inactive"}:${field.name}"
 
 private fun AnnouncementMode.toReadFields(defaultFields: List<AnnouncementReadField>): List<AnnouncementReadField> = when (this) {
     AnnouncementMode.ALBUM -> listOf(

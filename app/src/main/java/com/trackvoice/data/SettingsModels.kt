@@ -1,8 +1,8 @@
 package com.trackvoice.data
 
-const val DEFAULT_TTS_VOLUME_PERCENT = 40
-const val DEFAULT_TTS_VOLUME = 0.40f
-const val DEFAULT_MUSIC_DUCK_PERCENT = 35
+const val DEFAULT_TTS_VOLUME_PERCENT = 85
+const val DEFAULT_TTS_VOLUME = 0.85f
+const val DEFAULT_MUSIC_DUCK_PERCENT = 50
 const val MIN_MUSIC_DUCK_PERCENT = 10
 const val MAX_MUSIC_DUCK_PERCENT = 80
 const val YOUTUBE_PACKAGE_NAME = "com.google.android.youtube"

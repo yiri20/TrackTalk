@@ -30,7 +30,15 @@ class AudioFocusManager(context: Context) {
                 .build()
             focusRequest = request
             val granted = audioManager.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-            TrackTalkDebugLog.event("audio_focus", "action" to "request", "duck" to duck, "granted" to granted)
+            TrackTalkDebugLog.event(
+                "audio_focus",
+                "action" to "request",
+                "duck" to duck,
+                "granted" to granted,
+                "audioFocusMode" to if (duck) "AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK" else "AUDIOFOCUS_GAIN_TRANSIENT",
+                "usage" to "USAGE_ASSISTANCE_ACCESSIBILITY",
+                "contentType" to "CONTENT_TYPE_SPEECH",
+            )
             granted
         }.getOrDefault(false)
     }

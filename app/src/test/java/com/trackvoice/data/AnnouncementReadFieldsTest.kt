@@ -37,6 +37,72 @@ class AnnouncementReadFieldsTest {
     }
 
     @Test
+    fun disablingPreservesActiveOrderAndReenablingAppends() {
+        val fields = listOf(
+            AnnouncementReadField.ALBUM,
+            AnnouncementReadField.TRACK_NUMBER,
+            AnnouncementReadField.TITLE,
+            AnnouncementReadField.ARTIST,
+        )
+        val withoutAlbum = toggleAnnouncementReadField(
+            fields = fields,
+            field = AnnouncementReadField.ALBUM,
+            enabled = false,
+            allowedFields = fields,
+        )
+        assertEquals(
+            listOf(
+                AnnouncementReadField.TRACK_NUMBER,
+                AnnouncementReadField.TITLE,
+                AnnouncementReadField.ARTIST,
+            ),
+            withoutAlbum,
+        )
+        assertEquals(
+            listOf(
+                AnnouncementReadField.TRACK_NUMBER,
+                AnnouncementReadField.TITLE,
+                AnnouncementReadField.ARTIST,
+                AnnouncementReadField.ALBUM,
+            ),
+            toggleAnnouncementReadField(
+                fields = withoutAlbum,
+                field = AnnouncementReadField.ALBUM,
+                enabled = true,
+                allowedFields = fields,
+            ),
+        )
+    }
+
+    @Test
+    fun deselectionSemanticsApplyToEveryContentTypeGroup() {
+        listOf(
+            DEFAULT_GLOBAL_READ_FIELDS,
+            DEFAULT_ALBUM_READ_FIELDS,
+            DEFAULT_PLAYLIST_READ_FIELDS,
+            DEFAULT_ALGORITHMIC_READ_FIELDS,
+        ).forEach { group ->
+            val first = group.first()
+            val remaining = toggleAnnouncementReadField(
+                fields = group,
+                field = first,
+                enabled = false,
+                allowedFields = group,
+            )
+            assertEquals(group.drop(1), remaining)
+            assertEquals(
+                group.drop(1) + first,
+                toggleAnnouncementReadField(
+                    fields = remaining,
+                    field = first,
+                    enabled = true,
+                    allowedFields = group,
+                ),
+            )
+        }
+    }
+
+    @Test
     fun dragReorderingChangesOnlyTheActiveOrder() {
         val fields = listOf(
             AnnouncementReadField.TITLE,
