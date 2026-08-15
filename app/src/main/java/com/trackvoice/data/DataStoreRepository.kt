@@ -342,6 +342,7 @@ class DataStoreRepository(private val context: Context) {
         val playlistMode = enumOrDefault(this[Keys.playlistMode], AnnouncementMode.PLAYLIST)
         val algorithmMode = enumOrDefault(this[Keys.algorithmMode], AnnouncementMode.TITLE_AND_ARTIST)
         val announcementOrder = enumOrDefault(this[Keys.announcementOrder], AnnouncementOrder.DEFAULT)
+        val timing = enumOrDefault(this[Keys.timing], AnnouncementTiming.IMMEDIATE).normalizedForSettings()
         return UserSettings(
             appLanguage = enumOrDefault(this[Keys.appLanguage], AppLanguage.SYSTEM),
             enabled = this[Keys.enabled] ?: true,
@@ -360,8 +361,11 @@ class DataStoreRepository(private val context: Context) {
                 .coerceIn(MIN_MUSIC_DUCK_PERCENT, MAX_MUSIC_DUCK_PERCENT),
             trackStartBehavior = trackStartBehavior,
             showStatusNotification = this[Keys.showStatusNotification] ?: true,
-            timing = enumOrDefault(this[Keys.timing], AnnouncementTiming.IMMEDIATE).normalizedForSettings(),
-            delaySeconds = (this[Keys.delaySeconds] ?: 0).coerceIn(0, 2),
+            timing = timing,
+            delaySeconds = AnnouncementTimingPolicy.normalizeStoredDelaySeconds(
+                timing,
+                this[Keys.delaySeconds] ?: 0,
+            ),
             defaultMode = enumOrDefault(this[Keys.defaultMode], AnnouncementMode.SMART),
             useContentTypeSettings = this[Keys.useContentTypeSettings] ?: true,
             defaultReadFields = orderedFieldsFromStorage(
@@ -458,7 +462,10 @@ class DataStoreRepository(private val context: Context) {
         this[Keys.trackStartBehavior] = settings.trackStartBehavior.name
         this[Keys.showStatusNotification] = settings.showStatusNotification
         this[Keys.timing] = settings.timing.name
-        this[Keys.delaySeconds] = settings.delaySeconds.coerceIn(0, 2)
+        this[Keys.delaySeconds] = AnnouncementTimingPolicy.normalizeStoredDelaySeconds(
+            settings.timing,
+            settings.delaySeconds,
+        )
         this[Keys.defaultMode] = settings.defaultMode.name
         this[Keys.useContentTypeSettings] = settings.useContentTypeSettings
         val defaultFields = normalizeAnnouncementReadFields(

@@ -115,6 +115,7 @@ import com.trackvoice.data.AnnouncementOrder
 import com.trackvoice.data.AnnouncementOutputPolicy
 import com.trackvoice.data.AnnouncementReadField
 import com.trackvoice.data.AnnouncementTiming
+import com.trackvoice.data.AnnouncementTimingPolicy
 import com.trackvoice.data.AppSettings
 import com.trackvoice.data.AppCategory
 import com.trackvoice.data.AppLanguage
@@ -1040,17 +1041,34 @@ private fun GeneralSettingsScreen(
                         AnnouncementTiming.DELAYED,
                     )
                     OptionDropdown(strings.announcementTiming, settings.timing, timingOptions, strings::announcementTiming) { selectedTiming ->
-                        onUpdate { current -> current.copy(timing = selectedTiming) }
+                        onUpdate { current ->
+                            current.copy(
+                                timing = selectedTiming,
+                                delaySeconds = AnnouncementTimingPolicy.normalizeStoredDelaySeconds(
+                                    selectedTiming,
+                                    current.delaySeconds,
+                                ),
+                            )
+                        }
                     }
                     Text(
-                        strings.announcementTimingSummary(settings.timing, settings.delaySeconds),
+                        strings.announcementTimingSummary(
+                            settings.timing,
+                            AnnouncementTimingPolicy.normalizeStoredDelaySeconds(settings.timing, settings.delaySeconds),
+                            settings.trackStartBehavior,
+                        ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     val playbackThresholdsActive = settings.timing != AnnouncementTiming.IMMEDIATE &&
                         settings.trackStartBehavior != TrackStartBehavior.ANNOUNCE_THEN_PLAY
                     if (playbackThresholdsActive) {
-                        SliderSetting(strings.announcementDelay, settings.delaySeconds.toFloat(), 0f..2f, { value -> strings.seconds(value.toInt()) }) { value ->
+                        SliderSetting(
+                            strings.announcementDelay,
+                            AnnouncementTimingPolicy.normalizeStoredDelaySeconds(settings.timing, settings.delaySeconds).toFloat(),
+                            AnnouncementTimingPolicy.MIN_DELAY_SECONDS.toFloat()..AnnouncementTimingPolicy.MAX_DELAY_SECONDS.toFloat(),
+                            { value -> strings.seconds(value.toInt()) },
+                        ) { value ->
                             onUpdate { it.copy(delaySeconds = value.toInt()) }
                         }
                         SliderSetting(

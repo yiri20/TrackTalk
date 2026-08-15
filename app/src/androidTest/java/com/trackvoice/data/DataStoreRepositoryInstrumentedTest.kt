@@ -122,6 +122,28 @@ class DataStoreRepositoryInstrumentedTest {
     }
 
     @Test
+    fun delayedReadingPersistsAUsableDelayAcrossRepositoryRecreation() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val repository = DataStoreRepository(context)
+        val original = repository.currentUserSettings()
+
+        try {
+            repository.updateUserSettings { current ->
+                current.copy(
+                    timing = AnnouncementTiming.DELAYED,
+                    delaySeconds = 0,
+                )
+            }
+
+            val recreated = DataStoreRepository(context).currentUserSettings()
+            assertEquals(AnnouncementTiming.DELAYED, recreated.timing)
+            assertEquals(AnnouncementTimingPolicy.MIN_DELAY_SECONDS, recreated.delaySeconds)
+        } finally {
+            repository.updateUserSettings { original }
+        }
+    }
+
+    @Test
     fun legacyAppAnnouncementMigrationKeepsTheAppEligibilityOverride() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val repository = DataStoreRepository(context)

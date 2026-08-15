@@ -5,6 +5,7 @@ import com.trackvoice.data.AnnouncementOrder
 import com.trackvoice.data.AnnouncementOutputPolicy
 import com.trackvoice.data.AnnouncementReadField
 import com.trackvoice.data.AnnouncementTiming
+import com.trackvoice.data.AnnouncementTimingPolicy
 import com.trackvoice.data.AppCategory
 import com.trackvoice.data.AppLanguage
 import com.trackvoice.data.CollectionFallback
@@ -75,7 +76,10 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
             AnnouncementTiming.IMMEDIATE -> t("바로 안내", "announce now")
             AnnouncementTiming.DELAYED,
             AnnouncementTiming.BETWEEN_TRACKS,
-            -> if (delaySeconds <= 0) t("바로 안내", "announce now") else t("${delaySeconds}초 후 안내", "announce after ${delaySeconds}s")
+            -> {
+                val effectiveDelay = AnnouncementTimingPolicy.normalizeStoredDelaySeconds(timing, delaySeconds)
+                t("${effectiveDelay}초 후 안내", "announce after ${effectiveDelay}s")
+            }
         }
         return timingText
     }
@@ -267,23 +271,31 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
         )
     }
     val announcementDelay: String get() = t("읽기 전 대기", "Wait before reading")
-    fun announcementTimingSummary(timing: AnnouncementTiming, delaySeconds: Int): String = when (timing) {
+    fun announcementTimingSummary(
+        timing: AnnouncementTiming,
+        delaySeconds: Int,
+        trackStartBehavior: TrackStartBehavior? = null,
+    ): String {
+        if (trackStartBehavior == TrackStartBehavior.ANNOUNCE_THEN_PLAY) {
+            return t(
+                "곡명 안내 후 재생에서는 바로 안내합니다.",
+                "Announces immediately before playback starts.",
+            )
+        }
+        return when (timing) {
         AnnouncementTiming.IMMEDIATE -> t(
             "새 곡을 감지하면 바로 읽습니다. 대기 시간은 적용되지 않습니다.",
             "Reads as soon as a new track is detected. Wait time is ignored.",
         )
         AnnouncementTiming.DELAYED,
         AnnouncementTiming.BETWEEN_TRACKS,
-        -> if (delaySeconds <= 0) {
+        -> {
+            val effectiveDelay = AnnouncementTimingPolicy.normalizeStoredDelaySeconds(timing, delaySeconds)
             t(
-                "현재 0초라 바로 읽습니다. 1~2초로 설정하면 그만큼 기다립니다.",
-                "It reads immediately at 0s. Set 1–2s to wait before reading.",
+                "새 곡을 감지한 뒤 ${effectiveDelay}초 후 읽습니다.",
+                "Reads ${effectiveDelay}s after a new track is detected.",
             )
-        } else {
-            t(
-                "새 곡을 감지한 뒤 ${delaySeconds}초 후 읽습니다.",
-                "Reads ${delaySeconds}s after a new track is detected.",
-            )
+        }
         }
     }
     val minimumPlayback: String get() = t("최소 재생 시간", "Minimum playback time")

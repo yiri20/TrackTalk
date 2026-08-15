@@ -10,6 +10,7 @@ import com.trackvoice.data.DEFAULT_ALGORITHMIC_READ_FIELDS
 import com.trackvoice.data.DEFAULT_GLOBAL_READ_FIELDS
 import com.trackvoice.data.DEFAULT_PLAYLIST_READ_FIELDS
 import com.trackvoice.data.ALL_ANNOUNCEMENT_READ_FIELDS
+import com.trackvoice.data.AnnouncementTimingPolicy
 import com.trackvoice.data.normalizeAnnouncementReadFields
 import com.trackvoice.data.withLegacyAnnouncementOrder
 import com.trackvoice.media.PlaybackEvent
@@ -63,23 +64,17 @@ object AnnouncementPolicy {
         )
         val configuration = resolveConfiguration(userSettings, collection)
         val mode = resolveMode(collection, userSettings)
-        val timing = userSettings.timing
         val announceBeforePlayback = userSettings.trackStartBehavior == com.trackvoice.data.TrackStartBehavior.ANNOUNCE_THEN_PLAY
         val configuredDelayMs = if (announceBeforePlayback) {
             0L
-        } else timing.let {
-            when (it) {
-                com.trackvoice.data.AnnouncementTiming.IMMEDIATE -> 0L
-                com.trackvoice.data.AnnouncementTiming.DELAYED,
-                com.trackvoice.data.AnnouncementTiming.BETWEEN_TRACKS,
-                -> userSettings.delaySeconds.coerceIn(0, 2) * 1_000L
-            }
+        } else {
+            AnnouncementTimingPolicy.effectiveDelayMs(userSettings)
         }
 
         // Immediate reading (and announce-before-playback) has no meaningful
         // elapsed-playback threshold. Do not let a stale minimum value delay
         // an announcement after the user selects "Read now".
-        val minimumPosition = if (timing == com.trackvoice.data.AnnouncementTiming.IMMEDIATE || announceBeforePlayback) {
+        val minimumPosition = if (userSettings.timing == com.trackvoice.data.AnnouncementTiming.IMMEDIATE || announceBeforePlayback) {
             0L
         } else {
             userSettings.minimumPlaybackSeconds.coerceIn(0, 120) * 1_000L

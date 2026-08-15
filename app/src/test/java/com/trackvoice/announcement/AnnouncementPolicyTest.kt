@@ -516,6 +516,23 @@ class AnnouncementPolicyTest {
     }
 
     @Test
+    fun delayedTimingUsesThePersistedAnnouncementDelay() {
+        val decision = AnnouncementPolicy.decide(
+            event().copy(playbackPosition = 0L),
+            UserSettings(
+                outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS,
+                timing = AnnouncementTiming.DELAYED,
+                delaySeconds = 2,
+            ),
+            null,
+            externalAudioOutput = true,
+        )
+
+        assertTrue(decision.shouldAnnounce)
+        assertEquals(2_000L, decision.delayMs)
+    }
+
+    @Test
     fun immediateTimingIgnoresMinimumPlaybackTime() {
         val decision = AnnouncementPolicy.decide(
             event().copy(playbackPosition = 2_000L),

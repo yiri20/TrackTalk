@@ -58,7 +58,7 @@ class TrackVoiceNotificationListenerService : NotificationListenerService() {
     }
 
     override fun onListenerDisconnected() {
-        application.controller.detachNotificationListener()
+        application.controller.detachNotificationListener(preservePlaybackHistory = true)
         notificationJob?.cancel()
         notificationManager.cancel(SHORTCUT_NOTIFICATION_ID)
         unregisterScreenReceiver()
@@ -66,7 +66,7 @@ class TrackVoiceNotificationListenerService : NotificationListenerService() {
     }
 
     override fun onDestroy() {
-        application.controller.detachNotificationListener()
+        application.controller.detachNotificationListener(preservePlaybackHistory = true)
         notificationJob?.cancel()
         scope.cancel()
         notificationManager.cancel(SHORTCUT_NOTIFICATION_ID)

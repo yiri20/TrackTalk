@@ -28,6 +28,7 @@ class MediaSessionMonitor(
     private var started = false
     private var selectedSessionKey: String? = null
     private var resumeRequestId = 0L
+    private var lastPublishedSelection: PublishedSelection? = null
 
     val activeSessionCount: Int get() = sessions.size
 
@@ -173,6 +174,13 @@ class MediaSessionMonitor(
                 sessions[key] = TrackedSession(controller, sessionCallback, now, now, now)
             } else {
                 if (existing.controller !== controller) {
+                    TrackTalkDebugLog.event(
+                        "ACTIVE_SESSION_REFRESH",
+                        "sessionKey" to key,
+                        "package" to controller.packageName,
+                        "sameSessionToken" to (existing.controller.sessionToken == controller.sessionToken),
+                        "controllerInstanceChanged" to true,
+                    )
                     runCatching { existing.controller.unregisterCallback(existing.callback) }
                     val sessionCallback = callbackFor(key)
                     runCatching { controller.registerCallback(sessionCallback, handler) }
@@ -239,7 +247,25 @@ class MediaSessionMonitor(
             }.getOrNull()
         }.mapNotNull { it }
         val selected = ActiveSessionSelector.select(snapshots)
+        val previousSelection = lastPublishedSelection
+        if (previousSelection != null && selected != null && (
+                eventType == MediaEventType.ACTIVE_SESSIONS ||
+                    previousSelection.sessionKey != selected.sessionKey
+                )
+        ) {
+            TrackTalkDebugLog.event(
+                "ACTIVE_SESSION_REFRESH",
+                "oldSessionKey" to previousSelection.sessionKey,
+                "newSessionKey" to selected.sessionKey,
+                "oldPackage" to previousSelection.event.sourcePackageName,
+                "newPackage" to selected.event.sourcePackageName,
+                "sameSessionToken" to (previousSelection.sessionKey == selected.sessionKey),
+                "sameLogicalTrack" to sameLogicalTrack(previousSelection.event, selected.event),
+                "eventType" to eventType,
+            )
+        }
         selectedSessionKey = selected?.sessionKey
+        lastPublishedSelection = selected?.let { PublishedSelection(it.sessionKey, it.event) }
         TrackTalkDebugLog.event(
             "media_update",
             "type" to eventType,
@@ -351,12 +377,40 @@ class MediaSessionMonitor(
         ).toString()
     }.getOrDefault(packageName)
 
+    private fun sameLogicalTrack(previous: PlaybackEvent, current: PlaybackEvent): Boolean {
+        if (previous.sourcePackageName != current.sourcePackageName) return false
+        val previousMediaId = previous.mediaId.normalizedOrNull()
+        val currentMediaId = current.mediaId.normalizedOrNull()
+        if (previousMediaId != null && currentMediaId != null) return previousMediaId == currentMediaId
+        val previousTitle = previous.title.normalizedOrNull()
+        val currentTitle = current.title.normalizedOrNull()
+        if (previousTitle == null || currentTitle == null || previousTitle != currentTitle) return false
+        return compatibleTrackMetadata(previous.artist, current.artist) &&
+            compatibleTrackMetadata(previous.album, current.album)
+    }
+
+    private fun String?.normalizedOrNull(): String? = this
+        ?.trim()
+        ?.lowercase(Locale.ROOT)
+        ?.replace(Regex("\\s+"), " ")
+        ?.takeIf { it.isNotEmpty() }
+
+    private fun compatibleTrackMetadata(previous: String?, current: String?): Boolean =
+        previous.normalizedOrNull() == null ||
+            current.normalizedOrNull() == null ||
+            previous.normalizedOrNull() == current.normalizedOrNull()
+
     private data class TrackedSession(
         var controller: MediaController,
         var callback: MediaController.Callback,
         var lastMetadataChangedAt: Long,
         var lastPlaybackStateChangedAt: Long,
         var lastObservedAt: Long,
+    )
+
+    private data class PublishedSelection(
+        val sessionKey: String,
+        val event: PlaybackEvent,
     )
 }
 

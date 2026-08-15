@@ -110,6 +110,39 @@ class DuplicateSuppressorTest {
     }
 
     @Test
+    fun sameSongAfterControllerRecreationDoesNotReadAgain() {
+        val suppressor = DuplicateSuppressor()
+        val announced = event().copy(mediaId = "session-a-track-3")
+        val refreshedController = announced.copy(mediaId = "session-b-track-3")
+
+        suppressor.markAnnounced(announced, 1_000L, announcementText = "Glass Eyes, Radiohead.")
+
+        assertFalse(
+            suppressor.shouldAnnounce(
+                refreshedController,
+                allowRepeat = false,
+                now = 2_000L,
+                announcementText = "Glass Eyes, Radiohead.",
+            ),
+        )
+    }
+
+    @Test
+    fun nextTrackAfterControllerRecreationRemainsAnnounceable() {
+        val suppressor = DuplicateSuppressor()
+        val announced = event().copy(mediaId = "session-a-track-3")
+        val nextTrack = announced.copy(
+            mediaId = "session-b-track-4",
+            title = "Next song",
+            trackNumber = 4,
+        )
+
+        suppressor.markAnnounced(announced, 1_000L)
+
+        assertTrue(suppressor.shouldAnnounce(nextTrack, allowRepeat = false, now = 2_000L))
+    }
+
+    @Test
     fun queueDescriptionChangingToCanonicalTitleDoesNotReadAgain() {
         val suppressor = DuplicateSuppressor()
         val queueDescription = event().copy(

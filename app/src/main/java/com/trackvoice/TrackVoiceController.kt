@@ -24,7 +24,6 @@ import com.trackvoice.data.DataStoreRepository
 import com.trackvoice.data.UserSettings
 import com.trackvoice.diagnostics.TrackTalkDebugLog
 import com.trackvoice.data.AudioDeviceSettings
-import com.trackvoice.data.CollectionFallback
 import com.trackvoice.monetization.PremiumState
 import com.trackvoice.monetization.forPremiumEntitlement
 import android.content.Intent
@@ -40,6 +39,7 @@ import com.trackvoice.media.TrackFingerprint
 import com.trackvoice.media.PlaybackCollection
 import com.trackvoice.media.PlaybackCollectionResolver
 import com.trackvoice.media.AlbumTrackNumberResolver
+import com.trackvoice.media.TemporalPlaybackContextResolver
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -53,7 +53,6 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.launch
-import java.util.Locale
 
 data class MediaUiState(
     val currentEvent: PlaybackEvent? = null,
@@ -88,6 +87,7 @@ class TrackVoiceController(
     private val outputDetector = AudioOutputDetector(appContext)
     private val audioDeviceMonitor = AudioDeviceMonitor(appContext, ::handleAudioDevices)
     private val duplicateSuppressor = DuplicateSuppressor()
+    private val temporalContextResolver = TemporalPlaybackContextResolver()
     private val pendingFingerprints = mutableSetOf<String>()
     private var pendingJob: Job? = null
     private var pendingAnnouncementEvent: PlaybackEvent? = null
@@ -98,6 +98,8 @@ class TrackVoiceController(
     private var activeSpeechTrack: PlaybackEvent? = null
     private var lastAnnouncedTrack: PlaybackEvent? = null
     private var lastAnnouncedAt: Long = Long.MIN_VALUE
+    private var lastAnnouncedSessionKey: String? = null
+    private var selectedSessionKey: String? = null
     private var speechGeneration = 0L
     private var screenAutoActivated = false
     private var deviceAutoActivated = false
@@ -165,22 +167,40 @@ class TrackVoiceController(
 
     fun attachNotificationListener() {
         _diagnostics.value = _diagnostics.value.copy(notificationListenerConnected = true)
+        TrackTalkDebugLog.event(
+            "SESSION_STATE_PRESERVATION",
+            "stage" to "ATTACH",
+            "duplicateHistoryPresent" to (lastAnnouncedTrack != null),
+            "lastAnnouncedSessionKey" to lastAnnouncedSessionKey,
+        )
     }
 
     fun setNotificationAccessGranted(granted: Boolean) {
         if (granted) attachNotificationListener()
-        else detachNotificationListener()
+        else detachNotificationListener(preservePlaybackHistory = false)
     }
 
-    fun detachNotificationListener() {
+    fun detachNotificationListener(preservePlaybackHistory: Boolean = true) {
+        TrackTalkDebugLog.event(
+            "SESSION_STATE_PRESERVATION",
+            "stage" to "DETACH",
+            "duplicateHistoryPreserved" to (preservePlaybackHistory && lastAnnouncedTrack != null),
+            "lastAnnouncedSessionKey" to lastAnnouncedSessionKey,
+        )
         speechGeneration += 1
         activeSpeechTrack = null
-        lastAnnouncedTrack = null
-        lastAnnouncedAt = Long.MIN_VALUE
         cancelPendingAnnouncement()
         finishAnnouncementAudio()
         monitor?.stop()
         monitor = null
+        selectedSessionKey = null
+        if (!preservePlaybackHistory) {
+            lastAnnouncedTrack = null
+            lastAnnouncedAt = Long.MIN_VALUE
+            lastAnnouncedSessionKey = null
+            duplicateSuppressor.clear()
+            temporalContextResolver.reset()
+        }
         _diagnostics.value = _diagnostics.value.copy(notificationListenerConnected = false)
         _mediaState.value = _mediaState.value.copy(
             currentEvent = null,
@@ -325,6 +345,10 @@ class TrackVoiceController(
         activeSpeechTrack = null
         lastAnnouncedTrack = null
         lastAnnouncedAt = Long.MIN_VALUE
+        lastAnnouncedSessionKey = null
+        selectedSessionKey = null
+        duplicateSuppressor.clear()
+        temporalContextResolver.reset()
         cancelPendingAnnouncement()
         finishAnnouncementAudio()
         monitor?.stop()
@@ -414,7 +438,54 @@ class TrackVoiceController(
     private fun handleMediaUpdate(update: MediaMonitorUpdate) {
         val event = update.selected?.event
         val settings = effectiveSettings()
-        val collection = event?.let(::resolveCollection) ?: PlaybackCollection.UNKNOWN
+        val incomingSessionKey = update.selected?.sessionKey
+        val previousEvent = _mediaState.value.currentEvent
+        val sameVisibleTrack = previousEvent != null && event != null &&
+            AnnouncementTrackMatcher.matchesForDuplicateSuppression(
+                expected = previousEvent,
+                current = event,
+                requireSameSource = true,
+            )
+        val sameAnnouncedTrack = lastAnnouncedTrack?.let { announced ->
+            event?.let {
+                AnnouncementTrackMatcher.matchesForDuplicateSuppression(
+                    expected = announced,
+                    current = it,
+                    requireSameSource = true,
+                )
+            }
+        } == true
+        val sessionRefresh = event != null && sameAnnouncedTrack && (
+            update.eventType == MediaEventType.INITIAL ||
+                update.eventType == MediaEventType.ACTIVE_SESSIONS ||
+                (selectedSessionKey != null && incomingSessionKey != null && selectedSessionKey != incomingSessionKey)
+            )
+        if (sessionRefresh) {
+            TrackTalkDebugLog.event(
+                "ACTIVE_SESSION_REFRESH",
+                "oldSessionKey" to selectedSessionKey,
+                "newSessionKey" to incomingSessionKey,
+                "sameLogicalTrack" to true,
+                "samePackage" to true,
+                "eventType" to update.eventType,
+            )
+            TrackTalkDebugLog.event(
+                "SESSION_STATE_PRESERVATION",
+                "duplicateHistoryPreserved" to true,
+                "reason" to "SAME_LOGICAL_TRACK_SESSION_REFRESH",
+            )
+        } else if (sameVisibleTrack && update.eventType == MediaEventType.ACTIVE_SESSIONS) {
+            TrackTalkDebugLog.event(
+                "ACTIVE_SESSION_REFRESH",
+                "oldSessionKey" to selectedSessionKey,
+                "newSessionKey" to incomingSessionKey,
+                "sameLogicalTrack" to true,
+                "samePackage" to true,
+                "eventType" to update.eventType,
+            )
+        }
+        selectedSessionKey = incomingSessionKey ?: selectedSessionKey
+        val collection = event?.let { resolveCollection(it, incomingSessionKey) } ?: PlaybackCollection.UNKNOWN
         val mode = AnnouncementPolicy.resolveMode(collection, settings)
         TrackTalkDebugLog.event(
             "controller_media_update",
@@ -455,6 +526,16 @@ class TrackVoiceController(
         }
 
         if (event == null) {
+            // Losing the selected session is a playback-context boundary. Keep
+            // the last announced track for duplicate suppression after a
+            // listener/controller refresh, but never carry album continuity
+            // into a later session that starts without an explicit identity.
+            temporalContextResolver.reset()
+            selectedSessionKey = null
+            TrackTalkDebugLog.event(
+                "PLAYBACK_CONTEXT_BOUNDARY",
+                "reason" to "NO_SELECTED_SESSION",
+            )
             TrackTalkDebugLog.event("announcement_cancel", "reason" to "no_selected_event")
             cancelPendingAnnouncement()
             return
@@ -484,38 +565,12 @@ class TrackVoiceController(
             )
             return
         }
-        scheduleAnnouncement(event, collection)
+        scheduleAnnouncement(event, collection, incomingSessionKey, sessionRefresh)
     }
 
-    private fun resolveCollection(event: PlaybackEvent): PlaybackCollection {
-        val detectedDecision = PlaybackCollectionResolver.resolveWithEvidence(event)
-        val resolved = PlaybackCollectionResolver.applyFallback(
-            detected = PlaybackCollectionResolver.resolve(
-                event = event,
-                previousEvent = _mediaState.value.currentEvent,
-                previousCollection = _mediaState.value.currentCollection,
-            ),
-            fallback = CollectionFallback.AUTO,
-        )
-        // Some players publish a rich queue once and then omit queue metadata
-        // on later callbacks. Keep the known type for that same queue/track
-        // instead of reverting the UI and announcement mode to "checking".
-        val previousEvent = _mediaState.value.currentEvent
-        val previousCollection = _mediaState.value.currentCollection
-        val sameContext = previousCollection != PlaybackCollection.UNKNOWN &&
-            previousCollection != PlaybackCollection.ALGORITHMIC &&
-            previousEvent != null &&
-            samePlaybackContext(previousEvent, event)
-        val finalCollection = if (resolved != PlaybackCollection.UNKNOWN) {
-            resolved
-        } else if (
-            sameContext
-        ) {
-            previousCollection
-        } else {
-            PlaybackCollection.UNKNOWN
-        }
-        val evidence = detectedDecision.evidence
+    private fun resolveCollection(event: PlaybackEvent, sessionKey: String?): PlaybackCollection {
+        val decision = temporalContextResolver.resolve(event, sessionKey)
+        val evidence = decision.evidence
         TrackTalkDebugLog.event(
             "PLAYBACK_CONTEXT_EVIDENCE",
             "source" to event.sourcePackageName,
@@ -535,56 +590,23 @@ class TrackVoiceController(
             "PLAYBACK_CONTEXT_DECISION",
             "source" to event.sourcePackageName,
             "mediaId" to event.mediaId,
-            "detected" to detectedDecision.collection,
-            "detectedReason" to detectedDecision.reason,
-            "final" to finalCollection,
-            "previous" to previousCollection,
-            "sameContext" to sameContext,
+            "detected" to decision.collection,
+            "detectedReason" to decision.reason,
+            "final" to decision.collection,
+            "stateReset" to decision.stateReset,
+            "transition" to decision.transition,
+            "naturalTransition" to decision.naturalTransition,
+            "sameAlbumTransitions" to decision.sameAlbumNaturalTransitions,
+            "mixedTransitions" to decision.mixedNaturalTransitions,
         )
-        return finalCollection
+        return decision.collection
     }
-
-    private fun samePlaybackContext(previous: PlaybackEvent, current: PlaybackEvent): Boolean {
-        if (previous.sourcePackageName != current.sourcePackageName) return false
-
-        val previousMediaId = previous.mediaId.normalizedOrNull()
-        val currentMediaId = current.mediaId.normalizedOrNull()
-        if (previousMediaId != null && currentMediaId != null) {
-            return previousMediaId == currentMediaId
-        }
-
-        val previousQueueTitle = previous.queueTitle.normalizedOrNull()
-        val currentQueueTitle = current.queueTitle.normalizedOrNull()
-        if (
-            previousQueueTitle != null &&
-            previousQueueTitle == currentQueueTitle &&
-            !PlaybackCollectionResolver.isGenericQueueTitle(previous.queueTitle) &&
-            !PlaybackCollectionResolver.isGenericQueueTitle(current.queueTitle)
-        ) {
-            return true
-        }
-
-        return sameRequiredText(previous.title, current.title) &&
-            sameOptionalText(previous.artist, current.artist) &&
-            sameOptionalText(previous.album, current.album)
-    }
-
-    private fun String?.normalizedOrNull(): String? = this
-        ?.trim()
-        ?.lowercase(Locale.ROOT)
-        ?.replace(Regex("\\s+"), " ")
-        ?.takeIf { it.isNotEmpty() }
-
-    private fun sameRequiredText(previous: String?, current: String?): Boolean =
-        previous.normalizedOrNull() != null && previous.normalizedOrNull() == current.normalizedOrNull()
-
-    private fun sameOptionalText(previous: String?, current: String?): Boolean =
-        previous.normalizedOrNull() == null || current.normalizedOrNull() == null ||
-            previous.normalizedOrNull() == current.normalizedOrNull()
 
     private fun scheduleAnnouncement(
         event: PlaybackEvent,
         collection: PlaybackCollection,
+        sessionKey: String?,
+        sessionRefresh: Boolean,
     ) {
         val settings = effectiveSettings()
         val app = appSettingsFor(event)
@@ -679,7 +701,13 @@ class TrackVoiceController(
             } == true &&
             (!settings.allowRepeatAnnouncements || now - lastAnnouncedAt < REPEAT_ANNOUNCEMENT_COOLDOWN_MS)
         ) {
-            TrackTalkDebugLog.event("duplicate_suppressed", "reason" to "completed_track", "mediaId" to event.mediaId)
+            TrackTalkDebugLog.event(
+                "duplicate_suppressed",
+                "reason" to if (sessionRefresh) "SAME_LOGICAL_TRACK_SESSION_REFRESH" else "completed_track",
+                "mediaId" to event.mediaId,
+                "lastSessionKey" to lastAnnouncedSessionKey,
+                "sessionKey" to sessionKey,
+            )
             return
         }
 
@@ -810,6 +838,7 @@ class TrackVoiceController(
                 val announcedAt = System.currentTimeMillis()
                 lastAnnouncedTrack = current
                 lastAnnouncedAt = announcedAt
+                lastAnnouncedSessionKey = sessionKey
                 duplicateSuppressor.markAnnounced(
                     event = current,
                     now = announcedAt,

@@ -80,7 +80,7 @@ class AppLanguageTest {
             korean.announcementTimingSummary(AnnouncementTiming.DELAYED, 2),
         )
         assertEquals(
-            "It reads immediately at 0s. Set 1–2s to wait before reading.",
+            "Reads 1s after a new track is detected.",
             english.announcementTimingSummary(AnnouncementTiming.DELAYED, 0),
         )
         assertEquals(
