@@ -415,9 +415,14 @@ private fun HomeScreen(
                 PermissionCard(onOpenPermission)
             }
         }
-        if (!notificationPermissionGranted && settings.showStatusNotification) {
+        if (shouldShowNotificationPermissionBanner(
+                requiresRuntimePermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU,
+                permissionGranted = notificationPermissionGranted,
+                statusNotificationEnabled = settings.showStatusNotification,
+            )
+        ) {
             item {
-                NotificationPermissionCard(onRequestNotificationPermission)
+                NotificationPermissionBanner(onRequestNotificationPermission)
             }
         }
         item {
@@ -617,19 +622,52 @@ private fun PremiumBenefit(text: String) {
     }
 }
 
+internal fun shouldShowNotificationPermissionBanner(
+    requiresRuntimePermission: Boolean,
+    permissionGranted: Boolean,
+    statusNotificationEnabled: Boolean,
+): Boolean = requiresRuntimePermission && statusNotificationEnabled && !permissionGranted
+
 @Composable
-private fun NotificationPermissionCard(onRequestPermission: () -> Unit) {
+internal fun NotificationPermissionBanner(onRequestPermission: () -> Unit) {
     val strings = LocalTrackTalkStrings.current
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = TrackVoiceCardShape,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+        ),
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(strings.notificationPermissionTitle, fontWeight = FontWeight.Bold)
-            Text(strings.notificationPermissionSummary, style = MaterialTheme.typography.bodyMedium)
-            OutlinedButton(onClick = onRequestPermission) { Text(strings.allowNotifications) }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    strings.notificationPermissionTitle,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    strings.notificationPermissionSummary,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            TextButton(
+                onClick = onRequestPermission,
+                modifier = Modifier.heightIn(min = 48.dp),
+            ) {
+                Text(strings.allowNotifications)
+            }
         }
     }
 }

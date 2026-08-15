@@ -104,10 +104,10 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
         else -> t("ON · 새 곡을 안내합니다.", "ON · New tracks will be announced.")
     }
 
-    val notificationPermissionTitle: String get() = t("상태 알림 권한", "Status notification permission")
+    val notificationPermissionTitle: String get() = t("알림 권한 필요", "Notifications needed")
     val notificationPermissionSummary: String
-        get() = t("상단바 바로가기 알림을 표시하려면 알림 권한이 필요합니다. 음악 감지 권한과는 별개입니다.", "Notification permission is needed for the shortcut notification. It is separate from music detection access.")
-    val allowNotifications: String get() = t("알림 허용", "Allow notifications")
+        get() = t("상단바 바로가기 사용에 필요합니다. 음악 감지는 계속됩니다.", "Needed for the quick status-bar shortcut. Music detection still works.")
+    val allowNotifications: String get() = t("허용", "Allow")
     val permissionRequired: String get() = t("권한이 필요합니다", "Permission required")
     val permissionSummary: String get() = t("음악 정보를 읽으려면 알림 접근 권한을 허용해 주세요.", "Allow notification access to read music information.")
     val permissionSettings: String get() = t("권한 설정", "Permission settings")
