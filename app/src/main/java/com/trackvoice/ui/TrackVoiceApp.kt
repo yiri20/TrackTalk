@@ -64,6 +64,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -89,6 +90,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
@@ -96,6 +98,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.core.graphics.drawable.toBitmap
@@ -104,6 +107,7 @@ import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.trackvoice.BuildConfig
 import com.trackvoice.TrackVoiceViewModel
+import com.trackvoice.announcement.AnnouncementPolicy
 import com.trackvoice.announcement.InstalledVoice
 import com.trackvoice.announcement.TtsStatus
 import com.trackvoice.data.AnnouncementMode
@@ -131,6 +135,7 @@ import com.trackvoice.data.normalizeAnnouncementReadFields
 import com.trackvoice.data.reorderAnnouncementReadField
 import com.trackvoice.data.toggleAnnouncementReadField
 import com.trackvoice.announcement.ConnectedAudioDevice
+import com.trackvoice.announcement.EffectiveAnnouncementConfiguration
 import com.trackvoice.data.MAX_MUSIC_DUCK_PERCENT
 import com.trackvoice.data.MIN_MUSIC_DUCK_PERCENT
 import com.trackvoice.media.PlaybackEvent
@@ -187,18 +192,9 @@ fun TrackVoiceApp(viewModel: TrackVoiceViewModel, activity: Activity) {
     val premiumState by viewModel.premiumState.collectAsStateWithLifecycle()
     val effectiveSettings = settings.forPremiumEntitlement(premiumState.isPremium)
     val strings = TrackTalkStrings.forLanguage(settings.appLanguage, Locale.getDefault().language)
-    val currentAppUsesCustomGuide = mediaState.currentEvent?.let { event ->
-        appSettings[event.sourcePackageName]
-            ?.forPremiumEntitlement(premiumState.isPremium)
-            ?.useCustomGuideSettings == true
-    } == true
-    val currentGuideUsesTypeSpecificSettings = effectiveSettings.useContentTypeSettings &&
-        mediaState.currentCollection != PlaybackCollection.UNKNOWN
-    val currentGuideUsesAppSpecificSettings = currentAppUsesCustomGuide &&
-        !currentGuideUsesTypeSpecificSettings
-    val currentGuideBasis = strings.announcementBasisValue(
-        appSpecific = currentGuideUsesAppSpecificSettings,
-        typeSpecific = currentGuideUsesTypeSpecificSettings,
+    val effectiveAnnouncementConfiguration = AnnouncementPolicy.resolveConfiguration(
+        userSettings = effectiveSettings,
+        collection = mediaState.currentCollection,
     )
     var selectedSectionName by rememberSaveable { mutableStateOf(AppSection.HOME.name) }
     var guidePaneName by rememberSaveable { mutableStateOf(GuideSettingsPane.GUIDE.name) }
@@ -272,7 +268,7 @@ fun TrackVoiceApp(viewModel: TrackVoiceViewModel, activity: Activity) {
                     settings = effectiveSettings,
                     mediaEvent = mediaState.currentEvent,
                     currentCollection = mediaState.currentCollection,
-                    guideBasis = currentGuideBasis,
+                    announcementConfiguration = effectiveAnnouncementConfiguration,
                     lastDetectedAt = mediaState.lastDetectedAt,
                     effectiveEnabled = mediaState.effectiveEnabled,
                     notificationAccess = diagnostics.notificationListenerConnected,
@@ -287,11 +283,6 @@ fun TrackVoiceApp(viewModel: TrackVoiceViewModel, activity: Activity) {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                         }
-                    },
-                    onOpenGeneral = {
-                        generalSettingsTargetName = null
-                        guidePaneName = GuideSettingsPane.GUIDE.name
-                        selectedSectionName = AppSection.GENERAL.name
                     },
                     onOpenCollectionSettings = { collection ->
                         generalSettingsTargetName = collection.toGeneralSettingsTarget()?.name
@@ -389,7 +380,7 @@ private fun HomeScreen(
     settings: UserSettings,
     mediaEvent: PlaybackEvent?,
     currentCollection: PlaybackCollection,
-    guideBasis: String,
+    announcementConfiguration: EffectiveAnnouncementConfiguration,
     lastDetectedAt: Long?,
     effectiveEnabled: Boolean,
     notificationAccess: Boolean,
@@ -399,7 +390,6 @@ private fun HomeScreen(
     onTogglePlayback: () -> Unit,
     onOpenPermission: () -> Unit,
     onRequestNotificationPermission: () -> Unit,
-    onOpenGeneral: () -> Unit,
     onOpenCollectionSettings: (PlaybackCollection) -> Unit,
     onOpenPremium: () -> Unit,
 ) {
@@ -430,7 +420,8 @@ private fun HomeScreen(
             CurrentTrackCard(
                 event = mediaEvent,
                 collection = currentCollection,
-                guideBasis = guideBasis,
+                settings = settings,
+                announcementConfiguration = announcementConfiguration,
                 lastDetectedAt = lastDetectedAt,
                 onTogglePlayback = onTogglePlayback,
                 onOpenCollectionSettings = onOpenCollectionSettings,
@@ -438,14 +429,6 @@ private fun HomeScreen(
         }
         item {
             PremiumCard(premiumState, onOpenPremium)
-        }
-        item {
-            NavigationEntryCard(
-                title = strings.guideSettings,
-                summary = strings.guideTimingSummary(settings.timing, settings.delaySeconds),
-                onClick = onOpenGeneral,
-                containerColor = MaterialTheme.colorScheme.secondaryContainer,
-            )
         }
     }
 }
@@ -700,7 +683,8 @@ private fun PermissionCard(onOpenPermission: () -> Unit) {
 private fun CurrentTrackCard(
     event: PlaybackEvent?,
     collection: PlaybackCollection,
-    guideBasis: String,
+    settings: UserSettings,
+    announcementConfiguration: EffectiveAnnouncementConfiguration,
     lastDetectedAt: Long?,
     onTogglePlayback: () -> Unit,
     onOpenCollectionSettings: (PlaybackCollection) -> Unit,
@@ -714,7 +698,25 @@ private fun CurrentTrackCard(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(strings.currentTrack, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    strings.currentTrack,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+                if (event != null) {
+                    IconButton(onClick = onTogglePlayback) {
+                        Icon(
+                            if (event.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            contentDescription = if (event.isPlaying) strings.pauseMusic else strings.playMusic,
+                        )
+                    }
+                }
+            }
             if (event == null) {
                 Text(strings.noMusicPlaying)
                 Text(strings.playMusicHint, style = MaterialTheme.typography.bodySmall)
@@ -740,9 +742,10 @@ private fun CurrentTrackCard(
                         strings.trackNumber(visibleTrackNumber, event.totalTracks ?: event.queue.size.takeIf { it > 1 }),
                     )
                 }
-                CurrentTrackSummary(
-                    collection = collection,
-                    guideBasis = guideBasis,
+                CurrentAnnouncementSummaryCard(
+                    configuration = announcementConfiguration,
+                    timing = settings.timing,
+                    delaySeconds = settings.delaySeconds,
                     onClick = { onOpenCollectionSettings(collection) },
                 )
                 if (collection == PlaybackCollection.UNKNOWN) {
@@ -752,19 +755,6 @@ private fun CurrentTrackCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                OutlinedButton(onClick = onTogglePlayback, modifier = Modifier.fillMaxWidth()) {
-                    Box(Modifier.fillMaxWidth()) {
-                        Icon(
-                            if (event.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = null,
-                            modifier = Modifier.align(Alignment.CenterStart),
-                        )
-                        Text(
-                            if (event.isPlaying) strings.pauseMusic else strings.playMusic,
-                            modifier = Modifier.align(Alignment.Center),
-                        )
-                    }
-                }
                 if (lastDetectedAt != null) Text(strings.lastDetected(formatTime(lastDetectedAt)), style = MaterialTheme.typography.bodySmall)
             }
         }
@@ -772,71 +762,77 @@ private fun CurrentTrackCard(
 }
 
 @Composable
-private fun CurrentTrackSummary(
-    collection: PlaybackCollection,
-    guideBasis: String,
+private fun CurrentAnnouncementSummaryCard(
+    configuration: EffectiveAnnouncementConfiguration,
+    timing: AnnouncementTiming,
+    delaySeconds: Int,
     onClick: () -> Unit,
 ) {
     val strings = LocalTrackTalkStrings.current
     val summaryShape = RoundedCornerShape(12.dp)
-    Row(
+    Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(summaryShape)
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.32f))
-            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), summaryShape)
-            .padding(horizontal = 10.dp, vertical = 9.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .clickable(role = Role.Button, onClick = onClick),
+        shape = summaryShape,
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.32f),
+        ),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
-        SummaryInfo(
+        Row(
             modifier = Modifier
-                .weight(0.9f)
-                .clickable(enabled = collection != PlaybackCollection.UNKNOWN, onClick = onClick)
-                .padding(horizontal = 3.dp, vertical = 1.dp),
-            label = strings.playbackTypeLabel,
-            value = strings.collectionValue(collection),
-        )
-        Box(
-            modifier = Modifier
-                .width(1.dp)
-                .height(30.dp)
-                .background(MaterialTheme.colorScheme.outlineVariant),
-        )
-        SummaryInfo(
-            modifier = Modifier
-                .weight(1.1f)
-                .padding(horizontal = 3.dp, vertical = 1.dp),
-            label = strings.announcementBasisLabel,
-            value = guideBasis,
-        )
-    }
-}
-
-@Composable
-private fun SummaryInfo(
-    modifier: Modifier,
-    label: String,
-    value: String,
-) {
-    Column(
-        modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        Text(
-            label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            value,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        strings.currentAnnouncement,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        strings.homeAnnouncementBasis(configuration),
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Text(
+                    strings.homeAnnouncementBehavior(timing, delaySeconds),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    strings.announcementFieldsSummary(configuration.fields),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Icon(
+                Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 
@@ -1923,7 +1919,7 @@ private fun ContentReadOrderPicker(
     val visibleFields = normalizedFields + availableFields.filterNot { it in normalizedFields }
     val listState = rememberLazyListState()
     var draggingField by remember { mutableStateOf<AnnouncementReadField?>(null) }
-    var draggedDistance by remember { mutableFloatStateOf(0f) }
+    var draggedPointerCenter by remember { mutableFloatStateOf(0f) }
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         Text(
@@ -1951,11 +1947,11 @@ private fun ContentReadOrderPicker(
                 FilterChip(
                     selected = active,
                     onClick = {
-                        onUpdate(
+                        currentUpdate(
                             toggleAnnouncementReadField(
-                                fields = normalizedFields,
+                                fields = currentFields,
                                 field = field,
-                                enabled = !active,
+                                enabled = !currentActive,
                                 allowedFields = availableFields,
                                 fallbackFields = availableFields,
                             ),
@@ -1979,57 +1975,82 @@ private fun ContentReadOrderPicker(
                     } else {
                         null
                     },
-                    modifier = Modifier.pointerInput(field) {
-                        detectDragGesturesAfterLongPress(
-                            onDragStart = {
+                    modifier = Modifier
+                        .zIndex(if (draggingField == field) 1f else 0f)
+                        .graphicsLayer {
+                            if (draggingField == field) {
+                                val index = currentFields.indexOf(field)
+                                val item = listState.layoutInfo.visibleItemsInfo
+                                    .firstOrNull { it.index == index }
+                                if (item != null) {
+                                    translationX = draggedPointerCenter - (item.offset + item.size / 2f)
+                                    shadowElevation = 12f
+                                }
+                            } else {
+                                translationX = 0f
+                                shadowElevation = 0f
+                            }
+                        }
+                        .pointerInput(field) {
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = { offset ->
                                 if (currentActive) {
+                                    val index = currentFields.indexOf(field)
+                                    val item = listState.layoutInfo.visibleItemsInfo
+                                        .firstOrNull { it.index == index }
+                                    if (item == null) return@detectDragGesturesAfterLongPress
                                     draggingField = field
-                                    draggedDistance = 0f
+                                    draggedPointerCenter = item.offset + offset.x
                                 }
                             },
-                            onDragCancel = {
-                                draggingField = null
-                                draggedDistance = 0f
-                            },
-                            onDragEnd = {
-                                draggingField = null
-                                draggedDistance = 0f
-                            },
-                            onDrag = { _, amount ->
+                                onDragCancel = {
+                                    draggingField = null
+                                    draggedPointerCenter = 0f
+                                },
+                                onDragEnd = {
+                                    draggingField = null
+                                    draggedPointerCenter = 0f
+                                },
+                                onDrag = { change, amount ->
                                 if (!currentActive || draggingField != field) return@detectDragGesturesAfterLongPress
-                                draggedDistance += amount.x
+                                change.consume()
+                                draggedPointerCenter += amount.x
                                 val fields = currentFields
                                 val fromIndex = fields.indexOf(field)
-                                val draggedItem = listState.layoutInfo.visibleItemsInfo
+                                val visibleItems = listState.layoutInfo.visibleItemsInfo
+                                val draggedItem = visibleItems
                                     .firstOrNull { it.index == fromIndex }
-                                val target = listState.layoutInfo.visibleItemsInfo
-                                    .filter { it.index in fields.indices && it.index != fromIndex }
-                                    .minByOrNull { item ->
-                                        val center = item.offset + item.size / 2f
-                                        val draggedCenter = (draggedItem?.offset ?: 0) +
-                                            (draggedItem?.size ?: 0) / 2f + draggedDistance
-                                        abs(center - draggedCenter)
+                                if (draggedItem == null || fromIndex < 0) return@detectDragGesturesAfterLongPress
+                                val currentCenter = draggedItem.offset + draggedItem.size / 2f
+                                var targetIndex = fromIndex
+                                if (draggedPointerCenter > currentCenter) {
+                                    while (targetIndex + 1 < fields.size) {
+                                        val next = visibleItems.firstOrNull { it.index == targetIndex + 1 } ?: break
+                                        if (draggedPointerCenter < next.offset + next.size / 2f) break
+                                        targetIndex += 1
                                     }
-                                if (target != null && abs(
-                                        target.offset + target.size / 2f -
-                                            ((draggedItem?.offset ?: 0) + (draggedItem?.size ?: 0) / 2f + draggedDistance),
-                                    ) <= target.size / 2f
-                                ) {
+                                } else if (draggedPointerCenter < currentCenter) {
+                                    while (targetIndex - 1 >= 0) {
+                                        val previous = visibleItems.firstOrNull { it.index == targetIndex - 1 } ?: break
+                                        if (draggedPointerCenter > previous.offset + previous.size / 2f) break
+                                        targetIndex -= 1
+                                    }
+                                }
+                                if (targetIndex != fromIndex) {
                                     val reordered = reorderAnnouncementReadField(
                                         fields = fields,
                                         field = field,
-                                        targetIndex = target.index,
+                                        targetIndex = targetIndex,
                                         allowedFields = availableFields,
                                         fallbackFields = availableFields,
                                     )
                                     if (reordered != fields) {
                                         currentUpdate(reordered)
-                                        draggedDistance = 0f
                                     }
                                 }
-                            },
-                        )
-                    },
+                                },
+                            )
+                        },
                 )
             }
         }

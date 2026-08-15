@@ -39,7 +39,7 @@ class DataStoreRepositoryInstrumentedTest {
 
             // Updating another app setting must not turn an unset default into
             // an explicit false value.
-            repository.updateAppSettings(discovered[unknownPackage]!!.copy(readTitle = false))
+            repository.updateAppSettings(discovered[unknownPackage]!!.copy(enabledOverride = null))
             repository.ensureApp(unknownPackage, "Spotify")
             assertTrue(repository.currentAppSettings()[unknownPackage]!!.enabled)
 
@@ -118,6 +118,33 @@ class DataStoreRepositoryInstrumentedTest {
             assertEquals(selectedOrder, recreatedRepository.currentUserSettings().albumReadFields)
         } finally {
             repository.updateUserSettings { original }
+        }
+    }
+
+    @Test
+    fun legacyAppAnnouncementMigrationKeepsTheAppEligibilityOverride() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val repository = DataStoreRepository(context)
+        val packageName = "com.trackvoice.test.legacy.app"
+
+        try {
+            repository.removeApp(packageName)
+            repository.ensureApp(packageName, "Legacy Player")
+            repository.updateAppSettings(
+                repository.currentAppSettings()[packageName]!!.copy(
+                    enabled = false,
+                    enabledOverride = false,
+                ),
+            )
+
+            repository.migrateLegacyAppAnnouncementSettings()
+            repository.migrateLegacyAppAnnouncementSettings()
+
+            val migrated = DataStoreRepository(context).currentAppSettings()[packageName]!!
+            assertFalse(migrated.enabled)
+            assertEquals(false, migrated.enabledOverride)
+        } finally {
+            repository.removeApp(packageName)
         }
     }
 }

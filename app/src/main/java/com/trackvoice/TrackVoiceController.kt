@@ -131,6 +131,7 @@ class TrackVoiceController(
         scope.launch(Dispatchers.IO) {
             repository.migrateContentReadDefaults()
             repository.migrateContentReadOrder()
+            repository.migrateLegacyAppAnnouncementSettings()
         }
         scope.launch(Dispatchers.IO) { repository.migrateAudioOutputPolicy() }
         scope.launch {
@@ -413,10 +414,8 @@ class TrackVoiceController(
     private fun handleMediaUpdate(update: MediaMonitorUpdate) {
         val event = update.selected?.event
         val settings = effectiveSettings()
-        val app = event?.let(::appSettingsFor)
-        val appGuideSettings = app?.takeIf { it.useCustomGuideSettings }
-        val collection = event?.let { resolveCollection(it, appGuideSettings) } ?: PlaybackCollection.UNKNOWN
-        val mode = AnnouncementPolicy.resolveMode(collection, settings, appGuideSettings)
+        val collection = event?.let(::resolveCollection) ?: PlaybackCollection.UNKNOWN
+        val mode = AnnouncementPolicy.resolveMode(collection, settings)
         TrackTalkDebugLog.event(
             "controller_media_update",
             "eventType" to update.eventType,
@@ -488,14 +487,14 @@ class TrackVoiceController(
         scheduleAnnouncement(event, collection)
     }
 
-    private fun resolveCollection(event: PlaybackEvent, appGuideSettings: AppSettings?): PlaybackCollection {
+    private fun resolveCollection(event: PlaybackEvent): PlaybackCollection {
         val resolved = PlaybackCollectionResolver.applyFallback(
             detected = PlaybackCollectionResolver.resolve(
                 event = event,
                 previousEvent = _mediaState.value.currentEvent,
                 previousCollection = _mediaState.value.currentCollection,
             ),
-            fallback = appGuideSettings?.collectionFallback ?: CollectionFallback.AUTO,
+            fallback = CollectionFallback.AUTO,
         )
         if (resolved != PlaybackCollection.UNKNOWN) return resolved
 
@@ -577,20 +576,16 @@ class TrackVoiceController(
             externalAudioOutput = externalOutput,
             collectionOverride = collection,
         )
-        val configSource = when {
-            settings.useContentTypeSettings && collection != PlaybackCollection.UNKNOWN -> "CONTENT_TYPE"
-            app?.useCustomGuideSettings == true -> "APP"
-            else -> "DEFAULT"
-        }
+        val configuration = AnnouncementPolicy.resolveConfiguration(settings, collection)
         TrackTalkDebugLog.event(
             "CONTENT_TYPE",
             "mediaId" to event.mediaId,
             "resolved" to collection,
-            "source" to configSource,
+            "source" to configuration.source,
         )
         TrackTalkDebugLog.event(
             "ANNOUNCEMENT_CONFIG",
-            "source" to configSource,
+            "source" to configuration.source,
             "selected" to decision.formatOptions.orderedFields?.joinToString(","),
             "legacyOrder" to decision.formatOptions.announcementOrder,
             "mode" to decision.mode,
@@ -823,7 +818,6 @@ class TrackVoiceController(
      */
     private fun appSettingsFor(event: PlaybackEvent): AppSettings =
         appSettings.value[event.sourcePackageName]
-            ?.forPremiumEntitlement(premiumState.value.isPremium)
             ?: AppSettings(
                 packageName = event.sourcePackageName,
                 appName = event.sourceAppName,

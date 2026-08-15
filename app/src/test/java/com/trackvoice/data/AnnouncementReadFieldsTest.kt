@@ -60,6 +60,29 @@ class AnnouncementReadFieldsTest {
     }
 
     @Test
+    fun leftMostActiveFieldCanBeMovedAcrossSeveralPositionsInOneGesture() {
+        val fields = listOf(
+            AnnouncementReadField.TITLE,
+            AnnouncementReadField.ARTIST,
+            AnnouncementReadField.ALBUM,
+        )
+
+        assertEquals(
+            listOf(
+                AnnouncementReadField.ARTIST,
+                AnnouncementReadField.ALBUM,
+                AnnouncementReadField.TITLE,
+            ),
+            reorderAnnouncementReadField(
+                fields = fields,
+                field = AnnouncementReadField.TITLE,
+                targetIndex = 2,
+                allowedFields = fields,
+            ),
+        )
+    }
+
+    @Test
     fun legacyDefaultSetRecoversTheCanonicalDefaultOrder() {
         assertEquals(
             DEFAULT_ALBUM_READ_FIELDS,

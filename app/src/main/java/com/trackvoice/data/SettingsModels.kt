@@ -292,15 +292,6 @@ data class AppSettings(
     val packageName: String,
     val appName: String,
     val enabled: Boolean = true,
-    val useCustomGuideSettings: Boolean = false,
-    val mode: AnnouncementMode = AnnouncementMode.SMART,
-    val collectionFallback: CollectionFallback = CollectionFallback.AUTO,
-    val readTitle: Boolean = true,
-    val readArtist: Boolean = true,
-    val readTrackNumber: Boolean = true,
-    val readAlbum: Boolean = true,
-    val readCollection: Boolean = true,
-    val timing: AnnouncementTiming? = null,
     /** Null means the app follows its category default; non-null is explicit. */
     val enabledOverride: Boolean? = null,
 )

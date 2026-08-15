@@ -1,10 +1,8 @@
 package com.trackvoice.monetization
 
 import com.trackvoice.data.UserSettings
-import com.trackvoice.data.AppSettings
 import com.trackvoice.data.AnnouncementMode
 import com.trackvoice.data.AnnouncementOrder
-import com.trackvoice.data.CollectionFallback
 import com.trackvoice.data.DEFAULT_ALBUM_READ_FIELDS
 import com.trackvoice.data.DEFAULT_ALGORITHMIC_READ_FIELDS
 import com.trackvoice.data.DEFAULT_GLOBAL_READ_FIELDS
@@ -39,20 +37,5 @@ fun UserSettings.forPremiumEntitlement(isPremium: Boolean): UserSettings {
         algorithmReadFields = DEFAULT_ALGORITHMIC_READ_FIELDS,
         raiseDeviceVolume = false,
         deviceVolumePercent = 90,
-    )
-}
-
-fun AppSettings.forPremiumEntitlement(isPremium: Boolean): AppSettings {
-    if (isPremium) return this
-    return copy(
-        useCustomGuideSettings = false,
-        mode = AnnouncementMode.SMART,
-        collectionFallback = CollectionFallback.AUTO,
-        readTitle = true,
-        readArtist = true,
-        readTrackNumber = true,
-        readAlbum = true,
-        readCollection = true,
-        timing = null,
     )
 }

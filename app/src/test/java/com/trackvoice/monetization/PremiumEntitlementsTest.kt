@@ -5,13 +5,10 @@ import com.trackvoice.data.MusicTreatment
 import com.trackvoice.data.TrackStartBehavior
 import com.trackvoice.data.AnnouncementMode
 import com.trackvoice.data.AnnouncementOrder
-import com.trackvoice.data.AnnouncementTiming
-import com.trackvoice.data.AppSettings
 import com.trackvoice.data.DEFAULT_TTS_VOLUME
 import com.trackvoice.data.DEFAULT_TTS_VOLUME_PERCENT
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PremiumEntitlementsTest {
@@ -59,24 +56,4 @@ class PremiumEntitlementsTest {
         assertEquals(settings, settings.forPremiumEntitlement(isPremium = true))
     }
 
-    @Test
-    fun freeAppSettingsReturnToBasicAnnouncementDefaults() {
-        val effective = AppSettings(
-            packageName = "com.example.player",
-            appName = "Player",
-            useCustomGuideSettings = true,
-            mode = AnnouncementMode.TITLE_ONLY,
-            readArtist = false,
-            readAlbum = false,
-            readCollection = false,
-            timing = AnnouncementTiming.DELAYED,
-        ).forPremiumEntitlement(isPremium = false)
-
-        assertEquals(AnnouncementMode.SMART, effective.mode)
-        assertTrue(effective.readArtist)
-        assertTrue(effective.readAlbum)
-        assertTrue(effective.readCollection)
-        assertEquals(null, effective.timing)
-        assertFalse(effective.useCustomGuideSettings)
-    }
 }

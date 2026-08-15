@@ -28,6 +28,7 @@ private const val TTS_VOLUME_DEFAULT_VERSION = 2
 private const val CONTENT_READ_DEFAULT_VERSION = 1
 private const val CONTENT_READ_ORDER_VERSION = 1
 private const val AUDIO_OUTPUT_POLICY_VERSION = 1
+private const val APP_ANNOUNCEMENT_SOURCE_VERSION = 1
 
 class DataStoreRepository(private val context: Context) {
     private val dataStore = context.trackVoiceDataStore
@@ -148,6 +149,28 @@ class DataStoreRepository(private val context: Context) {
             preferences[Keys.algorithmReadOrder] = algorithmFields.encodeReadFields()
             preferences[Keys.announcementOrder] = AnnouncementOrder.DEFAULT.name
             preferences[Keys.contentReadOrderVersion] = CONTENT_READ_ORDER_VERSION
+        }
+    }
+
+    /**
+     * Per-app announcement fields/modes were removed from the product model.
+     * Keep the app enablement override, but delete the old policy keys so an
+     * upgrade can never resurrect an app-specific announcement source.
+     */
+    suspend fun migrateLegacyAppAnnouncementSettings() {
+        dataStore.edit { preferences ->
+            if ((preferences[Keys.appAnnouncementSourceVersion] ?: 0) >= APP_ANNOUNCEMENT_SOURCE_VERSION) {
+                return@edit
+            }
+
+            preferences[Keys.knownPackages].orEmpty().forEach { packageName ->
+                if (preferences[AppKeys.alwaysExclude(packageName)] == true) {
+                    preferences[AppKeys.enabledOverride(packageName)] = false
+                    preferences[AppKeys.enabled(packageName)] = false
+                }
+                removeLegacyAppAnnouncementKeys(preferences, packageName)
+            }
+            preferences[Keys.appAnnouncementSourceVersion] = APP_ANNOUNCEMENT_SOURCE_VERSION
         }
     }
 
@@ -282,6 +305,7 @@ class DataStoreRepository(private val context: Context) {
         val ttsVolumeDefaultVersion = intPreferencesKey("tts_volume_default_version")
         val contentReadDefaultVersion = intPreferencesKey("content_read_default_version")
         val contentReadOrderVersion = intPreferencesKey("content_read_order_version")
+        val appAnnouncementSourceVersion = intPreferencesKey("app_announcement_source_version")
         val raiseDeviceVolume = booleanPreferencesKey("raise_device_volume")
         val deviceVolumePercent = intPreferencesKey("device_volume_percent")
         val knownPackages = stringSetPreferencesKey("known_app_packages")
@@ -406,17 +430,7 @@ class DataStoreRepository(private val context: Context) {
             // either key continue following the category default.
             val explicitEnabled = this[AppKeys.enabledOverride(packageName)]
                 ?: this[AppKeys.enabled(packageName)]
-            val mode = enumOrDefault(this[AppKeys.mode(packageName)], AnnouncementMode.SMART)
-            val collectionFallback = enumOrDefault(
-                this[AppKeys.collectionFallback(packageName)],
-                CollectionFallback.AUTO,
-            )
-            val readTitle = this[AppKeys.readTitle(packageName)] ?: true
-            val readArtist = this[AppKeys.readArtist(packageName)] ?: true
-            val readTrackNumber = this[AppKeys.readTrackNumber(packageName)] ?: true
-            val readAlbum = this[AppKeys.readAlbum(packageName)] ?: true
-            val readCollection = this[AppKeys.readCollection(packageName)] ?: true
-            val timing = nullableEnum<AnnouncementTiming>(this[AppKeys.timing(packageName)])?.normalizedForSettings()
+            val legacyExcluded = this[AppKeys.alwaysExclude(packageName)] ?: false
             AppSettings(
                 packageName = packageName,
                 appName = appName,
@@ -424,25 +438,7 @@ class DataStoreRepository(private val context: Context) {
                     packageName = packageName,
                     appName = appName,
                     explicitOverride = explicitEnabled,
-                ) &&
-                    !(this[AppKeys.alwaysExclude(packageName)] ?: false),
-                useCustomGuideSettings = this[AppKeys.useCustomGuideSettings(packageName)] ?: (
-                    mode != AnnouncementMode.SMART ||
-                        !readTitle ||
-                        !readArtist ||
-                        !readTrackNumber ||
-                        !readAlbum ||
-                        !readCollection ||
-                        timing != null
-                ),
-                mode = mode,
-                collectionFallback = collectionFallback,
-                readTitle = readTitle,
-                readArtist = readArtist,
-                readTrackNumber = readTrackNumber,
-                readAlbum = readAlbum,
-                readCollection = readCollection,
-                timing = timing,
+                ) && !legacyExcluded,
                 enabledOverride = explicitEnabled,
             )
         }
@@ -513,33 +509,33 @@ class DataStoreRepository(private val context: Context) {
 
     private fun MutablePreferences.writeAppSettings(settings: AppSettings) {
         this[AppKeys.name(settings.packageName)] = settings.appName
-        // Do not materialize a category default as an explicit user choice.
-        // The Apps switch supplies enabledOverride; keep the legacy key in
-        // sync for older builds while the new key is canonical.
-        settings.enabledOverride?.let { explicitEnabled ->
+        if (settings.enabledOverride == null) {
+            remove(AppKeys.enabledOverride(settings.packageName))
+            remove(AppKeys.enabled(settings.packageName))
+        } else {
+            val explicitEnabled = settings.enabledOverride
             this[AppKeys.enabledOverride(settings.packageName)] = explicitEnabled
             this[AppKeys.enabled(settings.packageName)] = explicitEnabled
         }
-        this[AppKeys.useCustomGuideSettings(settings.packageName)] = settings.useCustomGuideSettings
-        this[AppKeys.mode(settings.packageName)] = settings.mode.name
-        this[AppKeys.collectionFallback(settings.packageName)] = settings.collectionFallback.name
-        this[AppKeys.readTitle(settings.packageName)] = settings.readTitle
-        this[AppKeys.readArtist(settings.packageName)] = settings.readArtist
-        this[AppKeys.readTrackNumber(settings.packageName)] = settings.readTrackNumber
-        this[AppKeys.readAlbum(settings.packageName)] = settings.readAlbum
-        this[AppKeys.readCollection(settings.packageName)] = settings.readCollection
-        if (settings.timing == null) remove(AppKeys.timing(settings.packageName))
-        else this[AppKeys.timing(settings.packageName)] = settings.timing.name
-        // The old exclusion switch had exactly the same runtime effect as
-        // enabled=false. Keep removing it so it cannot disagree with enabled.
-        remove(AppKeys.alwaysExclude(settings.packageName))
+        removeLegacyAppAnnouncementKeys(this, settings.packageName)
+    }
+
+    private fun removeLegacyAppAnnouncementKeys(preferences: MutablePreferences, packageName: String) {
+        preferences.remove(AppKeys.useCustomGuideSettings(packageName))
+        preferences.remove(AppKeys.mode(packageName))
+        preferences.remove(AppKeys.collectionFallback(packageName))
+        preferences.remove(AppKeys.readTitle(packageName))
+        preferences.remove(AppKeys.readArtist(packageName))
+        preferences.remove(AppKeys.readTrackNumber(packageName))
+        preferences.remove(AppKeys.readAlbum(packageName))
+        preferences.remove(AppKeys.readCollection(packageName))
+        preferences.remove(AppKeys.timing(packageName))
+        preferences.remove(AppKeys.alwaysExclude(packageName))
     }
 
     private inline fun <reified T : Enum<T>> enumOrDefault(value: String?, default: T): T =
         value?.let { runCatching { enumValueOf<T>(it) }.getOrNull() } ?: default
 
-    private inline fun <reified T : Enum<T>> nullableEnum(value: String?): T? =
-        value?.let { runCatching { enumValueOf<T>(it) }.getOrNull() }
 }
 
 private fun AnnouncementTiming.normalizedForSettings(): AnnouncementTiming = when (this) {

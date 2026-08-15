@@ -6,10 +6,10 @@ import com.trackvoice.data.AnnouncementOutputPolicy
 import com.trackvoice.data.AnnouncementReadField
 import com.trackvoice.data.AnnouncementTiming
 import com.trackvoice.data.AppSettings
-import com.trackvoice.data.CollectionFallback
 import com.trackvoice.data.VoiceLanguage
 import com.trackvoice.data.UserSettings
 import com.trackvoice.media.PlaybackEvent
+import com.trackvoice.media.PlaybackCollection
 import com.trackvoice.media.PlaybackStatus
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -17,6 +17,54 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AnnouncementPolicyTest {
+    @Test
+    fun contentSpecificOffUsesOnlyTheDefaultAnnouncementSource() {
+        val configuration = AnnouncementPolicy.resolveConfiguration(
+            userSettings = UserSettings(useContentTypeSettings = false),
+            collection = PlaybackCollection.ALBUM,
+        )
+
+        assertEquals(AnnouncementConfigurationSource.DEFAULT, configuration.source)
+    }
+
+    @Test
+    fun contentSpecificAlbumUsesTheAlbumAnnouncementSource() {
+        val configuration = AnnouncementPolicy.resolveConfiguration(
+            userSettings = UserSettings(useContentTypeSettings = true),
+            collection = PlaybackCollection.ALBUM,
+        )
+
+        assertEquals(AnnouncementConfigurationSource.CONTENT_SPECIFIC, configuration.source)
+        assertEquals(PlaybackCollection.ALBUM, configuration.collection)
+    }
+
+    @Test
+    fun contentSpecificPlaylistUsesThePlaylistAnnouncementSource() {
+        val configuration = AnnouncementPolicy.resolveConfiguration(
+            userSettings = UserSettings(useContentTypeSettings = true),
+            collection = PlaybackCollection.PLAYLIST,
+        )
+
+        assertEquals(AnnouncementConfigurationSource.CONTENT_SPECIFIC, configuration.source)
+        assertEquals(PlaybackCollection.PLAYLIST, configuration.collection)
+    }
+
+    @Test
+    fun appEnablementDoesNotBecomeAnAnnouncementConfigurationSource() {
+        val decision = AnnouncementPolicy.decide(
+            event = event(),
+            userSettings = UserSettings(outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS),
+            appSettings = AppSettings("com.youtube.music", "YouTube Music", enabled = true),
+            externalAudioOutput = true,
+        )
+
+        assertEquals(PlaybackCollection.ALBUM, decision.collection)
+        assertEquals(
+            AnnouncementConfigurationSource.CONTENT_SPECIFIC,
+            AnnouncementPolicy.resolveConfiguration(UserSettings(), decision.collection).source,
+        )
+    }
+
     @Test
     fun runtimePolicyBlocksAnAppThatIsDisabledByItsEffectiveEnablement() {
         val decision = AnnouncementPolicy.decide(
@@ -36,26 +84,23 @@ class AnnouncementPolicyTest {
     }
 
     @Test
-    fun appChecklistTakesPriorityOverLegacyAppMode() {
+    fun appSettingsOnlyControlEligibilityAndCannotOverrideDefaultFields() {
         val decision = AnnouncementPolicy.decide(
             event = event(),
             userSettings = UserSettings(
                 defaultMode = AnnouncementMode.TITLE_ONLY,
                 useContentTypeSettings = false,
+                defaultReadFields = listOf(AnnouncementReadField.TITLE),
                 outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS,
             ),
             appSettings = AppSettings(
                 "com.youtube.music",
                 "YouTube Music",
-                useCustomGuideSettings = true,
-                mode = AnnouncementMode.TITLE_AND_ARTIST,
-                readArtist = false,
-                readCollection = false,
             ),
             externalAudioOutput = true,
         )
         assertTrue(decision.shouldAnnounce)
-        assertEquals("A Moon Shaped Pool, 트랙 3번, Glass Eyes.", decision.text)
+        assertEquals("Glass Eyes.", decision.text)
     }
 
     @Test
@@ -74,14 +119,13 @@ class AnnouncementPolicyTest {
     }
 
     @Test
-    fun typeSpecificFieldsStayActiveWhenTheOldGlobalModeIsStillStored() {
+    fun typeSpecificFieldsStayActiveWithoutPerAppConfiguration() {
         val decision = AnnouncementPolicy.decide(
             event = event(),
             userSettings = UserSettings(defaultMode = AnnouncementMode.TITLE_ONLY, outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS),
             appSettings = AppSettings(
                 "com.youtube.music",
                 "YouTube Music",
-                mode = AnnouncementMode.TITLE_AND_ARTIST,
             ),
             externalAudioOutput = true,
         )
@@ -140,25 +184,24 @@ class AnnouncementPolicyTest {
     }
 
     @Test
-    fun appFallbackCanResolveAnAmbiguousQueue() {
+    fun ambiguousQueueDoesNotUseLegacyPerAppFallback() {
         val decision = AnnouncementPolicy.decide(
             event = event().copy(
+                queueTitle = null,
                 trackNumber = null,
                 totalTracks = null,
-                activeQueuePosition = 2,
-                queue = List(11) { queueItem("Song $it") },
+                activeQueuePosition = null,
+                queue = emptyList(),
             ),
             userSettings = UserSettings(outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS),
             appSettings = AppSettings(
                 "com.youtube.music",
                 "YouTube Music",
-                useCustomGuideSettings = true,
-                collectionFallback = CollectionFallback.ALBUM,
             ),
             externalAudioOutput = true,
         )
 
-        assertEquals("A Moon Shaped Pool, 트랙 3번, Glass Eyes, Radiohead.", decision.text)
+        assertEquals(PlaybackCollection.UNKNOWN, decision.collection)
     }
 
     @Test
@@ -385,24 +428,20 @@ class AnnouncementPolicyTest {
     }
 
     @Test
-    fun appChecklistCanReadAlbumTrackEvenWhenLegacyModeWasTitleAndArtist() {
+    fun appSettingsCannotOverrideGlobalReadFields() {
         val decision = AnnouncementPolicy.decide(
             event = event(),
             userSettings = UserSettings(
                 outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS,
-                albumMode = AnnouncementMode.TITLE_AND_ARTIST,
                 useContentTypeSettings = false,
+                defaultReadFields = listOf(
+                    AnnouncementReadField.TRACK_NUMBER,
+                    AnnouncementReadField.TITLE,
+                ),
             ),
             appSettings = AppSettings(
                 "com.youtube.music",
                 "YouTube Music",
-                useCustomGuideSettings = true,
-                mode = AnnouncementMode.SMART,
-                readTitle = true,
-                readArtist = false,
-                readTrackNumber = true,
-                readAlbum = false,
-                readCollection = false,
             ),
             externalAudioOutput = true,
         )

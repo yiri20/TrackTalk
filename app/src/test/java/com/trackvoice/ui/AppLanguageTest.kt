@@ -3,8 +3,11 @@ package com.trackvoice.ui
 import com.trackvoice.data.AppLanguage
 import com.trackvoice.data.AnnouncementOutputPolicy
 import com.trackvoice.data.AnnouncementTiming
-import com.trackvoice.data.AnnouncementMode
+import com.trackvoice.data.AnnouncementReadField
 import com.trackvoice.data.resolve
+import com.trackvoice.announcement.AnnouncementConfigurationSource
+import com.trackvoice.announcement.EffectiveAnnouncementConfiguration
+import com.trackvoice.media.PlaybackCollection
 import com.trackvoice.monetization.PremiumMessage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -87,21 +90,26 @@ class AppLanguageTest {
     }
 
     @Test
-    fun nowPlayingCardUsesASeparateGuideBasisLabel() {
+    fun nowPlayingCardSummarizesTheEffectiveSourceAndFieldOrder() {
         val korean = TrackTalkStrings.forLanguage(AppLanguage.KOREAN, "en")
         val english = TrackTalkStrings.forLanguage(AppLanguage.ENGLISH, "ko")
+        val defaultConfiguration = EffectiveAnnouncementConfiguration(
+            source = AnnouncementConfigurationSource.DEFAULT,
+            collection = PlaybackCollection.UNKNOWN,
+            fields = listOf(AnnouncementReadField.TITLE, AnnouncementReadField.ARTIST),
+            typeSpecificSettingsEnabled = true,
+        )
+        val albumConfiguration = EffectiveAnnouncementConfiguration(
+            source = AnnouncementConfigurationSource.CONTENT_SPECIFIC,
+            collection = PlaybackCollection.ALBUM,
+            fields = listOf(AnnouncementReadField.TRACK_NUMBER, AnnouncementReadField.TITLE),
+            typeSpecificSettingsEnabled = true,
+        )
 
-        assertEquals(
-            "안내 기준: 앨범",
-            korean.readingFormatLabel(AnnouncementMode.ALBUM),
-        )
-        assertEquals(
-            "Guide basis: Playlist",
-            english.readingFormatLabel(AnnouncementMode.PLAYLIST),
-        )
-        assertEquals("기본 설정", korean.announcementBasisValue(appSpecific = false, typeSpecific = false))
-        assertEquals("유형별 설정", korean.announcementBasisValue(appSpecific = false, typeSpecific = true))
-        assertEquals("앱별 설정", korean.announcementBasisValue(appSpecific = true, typeSpecific = true))
+        assertEquals("기본 설정", korean.homeAnnouncementBasis(defaultConfiguration))
+        assertEquals("Album", english.homeAnnouncementBasis(albumConfiguration))
+        assertEquals("트랙 번호 · 곡명", korean.announcementFieldsSummary(albumConfiguration.fields))
+        assertEquals("Track number · Track title", english.announcementFieldsSummary(albumConfiguration.fields))
     }
 
     @Test

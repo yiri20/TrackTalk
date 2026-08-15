@@ -14,6 +14,8 @@ import com.trackvoice.data.TrackStartBehavior
 import com.trackvoice.data.VoiceLanguage
 import com.trackvoice.data.DEFAULT_TTS_VOLUME_PERCENT
 import com.trackvoice.data.resolve
+import com.trackvoice.announcement.AnnouncementConfigurationSource
+import com.trackvoice.announcement.EffectiveAnnouncementConfiguration
 import com.trackvoice.media.PlaybackCollection
 import com.trackvoice.media.PlaybackStatus
 import com.trackvoice.monetization.PremiumMessage
@@ -62,7 +64,6 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
         AppLanguage.ENGLISH -> "English"
     }
 
-    val guideSettings: String get() = t("안내 설정", "Guide settings")
     fun guideSummary(mode: AnnouncementMode, timing: AnnouncementTiming, delaySeconds: Int): String {
         return guideSummary(announcementMode(mode), timing, delaySeconds)
     }
@@ -79,11 +80,18 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
         return timingText
     }
     fun seconds(value: Int): String = if (english) "${value}s" else "${value}초"
-    fun announcementBasisValue(appSpecific: Boolean, typeSpecific: Boolean): String = when {
-        appSpecific -> t("앱별 설정", "App-specific settings")
-        typeSpecific -> t("유형별 설정", "Type-specific settings")
-        else -> t("기본 설정", "Default settings")
+    val currentAnnouncement: String get() = t("현재 안내", "Current announcement")
+    fun homeAnnouncementBasis(configuration: EffectiveAnnouncementConfiguration): String = when {
+        configuration.source == AnnouncementConfigurationSource.CONTENT_SPECIFIC -> {
+            collectionValue(configuration.collection)
+        }
+        else -> t("기본 설정", "Default")
     }
+    fun homeAnnouncementBehavior(timing: AnnouncementTiming, delaySeconds: Int): String =
+        guideTimingSummary(timing, delaySeconds)
+
+    fun announcementFieldsSummary(fields: List<AnnouncementReadField>): String =
+        fields.joinToString(" · ") { readField(it) }
 
     val homeVoiceGuide: String get() = t("음성 안내", "Voice guide")
     fun statusSummary(effectiveEnabled: Boolean, enabled: Boolean): String = when {
@@ -385,41 +393,17 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
         AppCategory.OTHER -> t("자동 분류되지 않은 미디어 앱", "Uncategorized media apps")
     }
     fun appCategoryCount(count: Int): String = if (english) "$count" else "${count}개"
-    val alwaysExclude: String get() = t("안내에서 제외", "Excluded from guide")
     val appGuideEnabled: String get() = t("안내 사용 중", "Guide on")
     val appGuideDisabled: String get() = t("안내 꺼짐", "Guide off")
-    val appDetailsPlusTitle: String get() = t("앱별 설정은 Plus 기능입니다.", "Per-app settings are a Plus feature.")
-    val appDetailsFreeSummary: String get() = t("이 앱은 안내 탭 기본값을 사용합니다.", "This app uses Guide defaults.")
-    val appCustomGuideSettings: String get() = t("앱별 설정 사용", "Use app-specific settings")
-    fun appCustomGuideSummary(custom: Boolean): String = if (custom) {
-        t("안내 탭 기본값 대신 이 앱의 설정을 사용합니다.", "Uses this app's settings instead of Guide defaults.")
-    } else {
-        t("안내 탭의 기본값을 사용합니다.", "Uses Guide defaults.")
-    }
-    val appAlwaysExclude: String get() = t("이 앱은 안내하지 않기", "Do not guide this app")
-    val appAlwaysExcludeSummary: String get() = t("이 앱은 재생해도 음성 안내를 하지 않습니다.", "Do not announce this app even when it is playing.")
-    val appOverrideDetails: String get() = t("앱별 안내 설정", "App-specific guide settings")
-    val appCollectionFallback: String get() = t("유형 판별 보정", "Type detection fallback")
-    val appCollectionFallbackSummary: String get() = t(
-        "자동 판별이 어려울 때 적용할 콘텐츠 유형을 정합니다.",
-        "Choose a content type when automatic detection is unclear.",
-    )
-    val appAnnouncementTiming: String get() = t("안내 시점", "Announcement timing")
-    val appReadItems: String get() = t("읽을 항목", "Items to read")
-    val appReadItemsSummary: String get() = t(
-        "체크한 항목만 이 앱에 적용합니다. 앱별 설정을 끄면 안내 탭 기본값으로 돌아갑니다.",
-        "Only checked fields apply to this app. Turn off app-specific settings to use Guide defaults.",
-    )
-    val appReadTitle: String get() = t("곡명", "Track title")
-    val appReadArtist: String get() = t("아티스트", "Artist")
-    val appReadTrackNumber: String get() = t("트랙 번호", "Track number")
-    val appReadAlbum: String get() = t("앨범", "Album")
-    val appReadCollection: String get() = t("앨범·재생목록 이름", "Album · playlist name")
+    val readTitle: String get() = t("곡명", "Track title")
+    val readArtist: String get() = t("아티스트", "Artist")
+    val readTrackNumber: String get() = t("트랙 번호", "Track number")
+    val readAlbum: String get() = t("앨범", "Album")
     fun readField(field: AnnouncementReadField): String = when (field) {
-        AnnouncementReadField.TITLE -> appReadTitle
-        AnnouncementReadField.ARTIST -> appReadArtist
-        AnnouncementReadField.TRACK_NUMBER -> appReadTrackNumber
-        AnnouncementReadField.ALBUM -> appReadAlbum
+        AnnouncementReadField.TITLE -> readTitle
+        AnnouncementReadField.ARTIST -> readArtist
+        AnnouncementReadField.TRACK_NUMBER -> readTrackNumber
+        AnnouncementReadField.ALBUM -> readAlbum
         AnnouncementReadField.COLLECTION -> t("재생목록 이름", "Playlist name")
     }
 
@@ -468,8 +452,6 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     val privacy: String get() = t("개인정보", "Privacy")
     val privacySummary: String get() = t("곡 정보는 안내에만 사용하며 서버에 저장하지 않습니다.", "Track information is used only for announcements and is not stored on a server.")
     val currentTrackInfo: String get() = t("현재 곡 정보", "Current track information")
-    val playbackTypeLabel: String get() = t("재생 유형", "Playback type")
-    val announcementBasisLabel: String get() = t("안내 기준", "Guide basis")
     val titleMissing: String get() = t("곡명 없음", "No track title")
     val artistMissing: String get() = t("아티스트 없음", "No artist")
     val permissionNeeded: String get() = t("권한 필요", "Permission required")
@@ -484,13 +466,6 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
         AnnouncementMode.TITLE_AND_ARTIST -> t("제목·아티스트", "Title · artist")
         AnnouncementMode.TITLE_ONLY -> t("제목", "Title")
     }
-
-    fun readingFormatLabel(mode: AnnouncementMode): String =
-        if (english) {
-            "Guide basis: ${announcementMode(mode)}"
-        } else {
-            "안내 기준: ${announcementMode(mode)}"
-        }
 
     fun announcementTiming(timing: AnnouncementTiming): String = when (timing) {
         AnnouncementTiming.IMMEDIATE -> t("바로 읽기", "Read now")

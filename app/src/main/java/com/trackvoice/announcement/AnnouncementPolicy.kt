@@ -25,6 +25,18 @@ enum class AnnouncementSkipReason {
     NO_TEXT,
 }
 
+enum class AnnouncementConfigurationSource {
+    DEFAULT,
+    CONTENT_SPECIFIC,
+}
+
+data class EffectiveAnnouncementConfiguration(
+    val source: AnnouncementConfigurationSource,
+    val collection: PlaybackCollection,
+    val fields: List<AnnouncementReadField>,
+    val typeSpecificSettingsEnabled: Boolean,
+)
+
 data class AnnouncementDecision(
     val shouldAnnounce: Boolean,
     val text: String? = null,
@@ -44,16 +56,14 @@ object AnnouncementPolicy {
         externalAudioOutput: Boolean = true,
         collectionOverride: PlaybackCollection? = null,
     ): AnnouncementDecision {
-        val appGuideSettings = appSettings?.takeIf { it.useCustomGuideSettings }
         val detectedCollection = collectionOverride ?: PlaybackCollectionResolver.resolve(event)
         val collection = PlaybackCollectionResolver.applyFallback(
             detected = detectedCollection,
-            fallback = appGuideSettings?.collectionFallback
-                ?: com.trackvoice.data.CollectionFallback.AUTO,
+            fallback = com.trackvoice.data.CollectionFallback.AUTO,
         )
-        val typeSpecificActive = userSettings.useContentTypeSettings && collection != PlaybackCollection.UNKNOWN
-        val mode = resolveMode(collection, userSettings, appGuideSettings)
-        val timing = appGuideSettings?.timing ?: userSettings.timing
+        val configuration = resolveConfiguration(userSettings, collection)
+        val mode = resolveMode(collection, userSettings)
+        val timing = userSettings.timing
         val announceBeforePlayback = userSettings.trackStartBehavior == com.trackvoice.data.TrackStartBehavior.ANNOUNCE_THEN_PLAY
         val configuredDelayMs = if (announceBeforePlayback) {
             0L
@@ -89,27 +99,10 @@ object AnnouncementPolicy {
             return skipped(mode, delayMs, AnnouncementSkipReason.SPEAKER_OUTPUT)
         }
 
-        val formatOptions = if (typeSpecificActive) {
-            userSettings.readFieldsFor(collection).toFormatOptions(
-                albumNameFirstTrackOnly = userSettings.albumNameFirstTrackOnly,
-                announcementOrder = userSettings.announcementOrder,
-            )
-        } else if (appGuideSettings != null) {
-            AnnouncementFormatOptions(
-                readTitle = appGuideSettings.readTitle,
-                readArtist = appGuideSettings.readArtist,
-                readTrackNumber = appGuideSettings.readTrackNumber,
-                readAlbum = appGuideSettings.readAlbum,
-                readCollection = appGuideSettings.readCollection,
-                albumNameFirstTrackOnly = userSettings.albumNameFirstTrackOnly,
-                announcementOrder = userSettings.announcementOrder,
-            )
-        } else {
-            userSettings.readFieldsFor(collection).toFormatOptions(
-                albumNameFirstTrackOnly = userSettings.albumNameFirstTrackOnly,
-                announcementOrder = userSettings.announcementOrder,
-            )
-        }
+        val formatOptions = configuration.fields.toFormatOptions(
+            albumNameFirstTrackOnly = userSettings.albumNameFirstTrackOnly,
+            announcementOrder = userSettings.announcementOrder,
+        )
 
         val text = AnnouncementFormatter.format(
             event = event,
@@ -146,50 +139,24 @@ object AnnouncementPolicy {
     fun resolveMode(
         collection: PlaybackCollection,
         userSettings: UserSettings,
-        appSettings: AppSettings?,
     ): AnnouncementMode {
-        val typeSpecificActive = userSettings.useContentTypeSettings && collection != PlaybackCollection.UNKNOWN
+        val configuration = resolveConfiguration(userSettings, collection)
         // Once type-specific settings are enabled, a detected content type is
-        // the source of truth. This prevents a stale global format or an app
-        // checklist from silently discarding checked album/track fields.
-        if (typeSpecificActive) {
+        // the source of truth. This prevents a stale global format from
+        // silently discarding checked album/track fields.
+        if (configuration.source == AnnouncementConfigurationSource.CONTENT_SPECIFIC) {
             return when (collection) {
-                PlaybackCollection.ALBUM -> userSettings.readFieldsFor(collection).toAlbumMode()
-                PlaybackCollection.PLAYLIST -> userSettings.readFieldsFor(collection).toPlaylistMode()
-                PlaybackCollection.ALGORITHMIC -> userSettings.readFieldsFor(collection)
+                PlaybackCollection.ALBUM -> configuration.fields.toAlbumMode()
+                PlaybackCollection.PLAYLIST -> configuration.fields.toPlaylistMode()
+                PlaybackCollection.ALGORITHMIC -> configuration.fields
                     .toConfiguredMode(userSettings.algorithmMode)
                 PlaybackCollection.UNKNOWN -> error("unreachable")
             }
         }
 
-        if (appSettings != null) {
-            return when (collection) {
-                PlaybackCollection.ALBUM -> if (appSettings.readAlbum || appSettings.readTrackNumber) {
-                    AnnouncementMode.ALBUM
-                } else {
-                    AnnouncementMode.TITLE_AND_ARTIST
-                }
-                PlaybackCollection.PLAYLIST -> if (appSettings.readCollection) {
-                    AnnouncementMode.PLAYLIST
-                } else {
-                    AnnouncementMode.TITLE_AND_ARTIST
-                }
-                PlaybackCollection.ALGORITHMIC,
-                -> AnnouncementMode.TITLE_AND_ARTIST
-                PlaybackCollection.UNKNOWN -> if (appSettings.readAlbum || appSettings.readTrackNumber) {
-                    // A directly selected song can still expose its album
-                    // and track number. Keep those fields readable without
-                    // claiming that the surrounding queue is an album.
-                    AnnouncementMode.ALBUM
-                } else {
-                    AnnouncementMode.TITLE_AND_ARTIST
-                }
-            }
-        }
-
         if (!userSettings.useContentTypeSettings) {
             return if (userSettings.defaultMode == AnnouncementMode.SMART) {
-                userSettings.readFieldsFor(PlaybackCollection.UNKNOWN).toAnnouncementMode()
+                configuration.fields.toAnnouncementMode()
             } else {
                 userSettings.defaultMode
             }
@@ -198,12 +165,29 @@ object AnnouncementPolicy {
         if (userSettings.defaultMode != AnnouncementMode.SMART) return userSettings.defaultMode
 
         return when (collection) {
-            PlaybackCollection.UNKNOWN -> userSettings.readFieldsFor(PlaybackCollection.UNKNOWN).toAnnouncementMode()
+            PlaybackCollection.UNKNOWN -> configuration.fields.toAnnouncementMode()
             PlaybackCollection.ALBUM,
             PlaybackCollection.PLAYLIST,
             PlaybackCollection.ALGORITHMIC,
-            -> userSettings.readFieldsFor(PlaybackCollection.UNKNOWN).toAnnouncementMode()
+            -> configuration.fields.toAnnouncementMode()
         }
+    }
+
+    fun resolveConfiguration(
+        userSettings: UserSettings,
+        collection: PlaybackCollection,
+    ): EffectiveAnnouncementConfiguration {
+        val typeSpecific = userSettings.useContentTypeSettings && collection != PlaybackCollection.UNKNOWN
+        return EffectiveAnnouncementConfiguration(
+            source = if (typeSpecific) {
+                AnnouncementConfigurationSource.CONTENT_SPECIFIC
+            } else {
+                AnnouncementConfigurationSource.DEFAULT
+            },
+            collection = collection,
+            fields = userSettings.readFieldsFor(if (typeSpecific) collection else PlaybackCollection.UNKNOWN),
+            typeSpecificSettingsEnabled = userSettings.useContentTypeSettings,
+        )
     }
 
     private fun UserSettings.readFieldsFor(collection: PlaybackCollection): List<AnnouncementReadField> {
