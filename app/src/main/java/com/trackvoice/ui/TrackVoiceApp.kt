@@ -80,6 +80,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -107,6 +108,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.core.graphics.drawable.toBitmap
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.trackvoice.BuildConfig
 import com.trackvoice.TrackVoiceViewModel
@@ -230,6 +234,20 @@ fun TrackVoiceApp(viewModel: TrackVoiceViewModel, activity: Activity) {
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted -> notificationPermissionGranted = granted }
+    val lifecycleOwner = activity as? LifecycleOwner
+    DisposableEffect(lifecycleOwner, context) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                notificationPermissionGranted = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                    ContextCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.POST_NOTIFICATIONS,
+                    ) == PackageManager.PERMISSION_GRANTED
+            }
+        }
+        lifecycleOwner?.lifecycle?.addObserver(observer)
+        onDispose { lifecycleOwner?.lifecycle?.removeObserver(observer) }
+    }
 
     CompositionLocalProvider(LocalTrackTalkStrings provides strings) {
         Scaffold(
@@ -380,7 +398,7 @@ private fun SurfaceContent(padding: PaddingValues, content: @Composable ColumnSc
 }
 
 @Composable
-private fun HomeScreen(
+internal fun HomeScreen(
     settings: UserSettings,
     mediaEvent: PlaybackEvent?,
     currentCollection: PlaybackCollection,
@@ -397,7 +415,13 @@ private fun HomeScreen(
     onOpenCollectionSettings: (PlaybackCollection) -> Unit,
     onOpenPremium: () -> Unit,
 ) {
-    val strings = LocalTrackTalkStrings.current
+    val permissionPresentation = resolveHomePermissionPresentation(
+        requiredPermissionGranted = notificationAccess,
+        optionalPermissionGranted = notificationPermissionGranted,
+        requiresOptionalRuntimePermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU,
+        statusNotificationEnabled = settings.showStatusNotification,
+        isPremium = premiumState.isPremium,
+    )
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -410,25 +434,20 @@ private fun HomeScreen(
                 onToggle = onToggle,
             )
         }
-        if (!notificationAccess) {
+        if (permissionPresentation.showRequiredPermission) {
             item {
-                PermissionCard(onOpenPermission)
+                RequiredPermissionBanner(onOpenPermission)
             }
         }
-        if (shouldShowNotificationPermissionBanner(
-                requiresRuntimePermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU,
-                permissionGranted = notificationPermissionGranted,
-                statusNotificationEnabled = settings.showStatusNotification,
-            )
-        ) {
+        if (permissionPresentation.showOptionalPermission) {
             item {
                 NotificationPermissionBanner(onRequestNotificationPermission)
             }
         }
         item {
             CurrentTrackCard(
-                event = mediaEvent,
-                collection = currentCollection,
+                event = mediaEvent.takeIf { permissionPresentation.showCurrentPlayback },
+                corePermissionGranted = permissionPresentation.showCurrentPlayback,
                 settings = settings,
                 announcementConfiguration = announcementConfiguration,
                 lastDetectedAt = lastDetectedAt,
@@ -436,8 +455,10 @@ private fun HomeScreen(
                 onOpenCollectionSettings = onOpenCollectionSettings,
             )
         }
-        item {
-            PremiumCard(premiumState, onOpenPremium)
+        if (permissionPresentation.showPremiumPromotion) {
+            item {
+                PremiumCard(premiumState, onOpenPremium)
+            }
         }
     }
 }
@@ -626,7 +647,43 @@ internal fun shouldShowNotificationPermissionBanner(
     requiresRuntimePermission: Boolean,
     permissionGranted: Boolean,
     statusNotificationEnabled: Boolean,
-): Boolean = requiresRuntimePermission && statusNotificationEnabled && !permissionGranted
+    requiredPermissionGranted: Boolean = true,
+): Boolean = requiredPermissionGranted && requiresRuntimePermission && statusNotificationEnabled && !permissionGranted
+
+internal data class HomePermissionPresentation(
+    val showRequiredPermission: Boolean,
+    val showOptionalPermission: Boolean,
+    val showPremiumPromotion: Boolean,
+    val showCurrentPlayback: Boolean,
+)
+
+internal fun resolveHomePermissionPresentation(
+    requiredPermissionGranted: Boolean,
+    optionalPermissionGranted: Boolean,
+    requiresOptionalRuntimePermission: Boolean,
+    statusNotificationEnabled: Boolean,
+    isPremium: Boolean,
+): HomePermissionPresentation = HomePermissionPresentation(
+    showRequiredPermission = !requiredPermissionGranted,
+    showOptionalPermission = shouldShowNotificationPermissionBanner(
+        requiresRuntimePermission = requiresOptionalRuntimePermission,
+        permissionGranted = optionalPermissionGranted,
+        statusNotificationEnabled = statusNotificationEnabled,
+        requiredPermissionGranted = requiredPermissionGranted,
+    ),
+    showPremiumPromotion = requiredPermissionGranted && !isPremium,
+    showCurrentPlayback = requiredPermissionGranted,
+)
+
+internal fun homeStatusText(
+    enabled: Boolean,
+    notificationAccess: Boolean,
+    strings: TrackTalkStrings,
+): String = when {
+    enabled && !notificationAccess -> strings.statusNeedsSetup
+    enabled -> strings.on
+    else -> strings.off
+}
 
 @Composable
 internal fun NotificationPermissionBanner(onRequestPermission: () -> Unit) {
@@ -651,11 +708,21 @@ internal fun NotificationPermissionBanner(onRequestPermission: () -> Unit) {
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                Text(
-                    strings.notificationPermissionTitle,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.SemiBold,
-                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        strings.notificationPermissionTitle,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        strings.optionalPermissionBadge,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Text(
                     strings.notificationPermissionSummary,
                     style = MaterialTheme.typography.bodySmall,
@@ -701,22 +768,57 @@ private fun StatusCard(enabled: Boolean, effectiveEnabled: Boolean, onToggle: (B
 }
 
 @Composable
-private fun PermissionCard(onOpenPermission: () -> Unit) {
+internal fun RequiredPermissionBanner(onOpenPermission: () -> Unit) {
     val strings = LocalTrackTalkStrings.current
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = TrackVoiceCardShape,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.45f),
+        ),
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Warning, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text(strings.permissionRequired, fontWeight = FontWeight.Bold)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        strings.musicDetectionPermissionTitle,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        strings.requiredPermissionBadge,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+                Text(
+                    strings.musicDetectionPermissionSummary,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
-            Text(strings.permissionSummary, style = MaterialTheme.typography.bodyMedium)
-            Button(onClick = onOpenPermission) { Text(strings.permissionSettings) }
+            OutlinedButton(
+                onClick = onOpenPermission,
+                modifier = Modifier.heightIn(min = 48.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp),
+            ) {
+                Text(strings.permissionSettings)
+            }
         }
     }
 }
@@ -724,7 +826,7 @@ private fun PermissionCard(onOpenPermission: () -> Unit) {
 @Composable
 private fun CurrentTrackCard(
     event: PlaybackEvent?,
-    collection: PlaybackCollection,
+    corePermissionGranted: Boolean,
     settings: UserSettings,
     announcementConfiguration: EffectiveAnnouncementConfiguration,
     lastDetectedAt: Long?,
@@ -760,8 +862,12 @@ private fun CurrentTrackCard(
                 }
             }
             if (event == null) {
-                Text(strings.noMusicPlaying)
-                Text(strings.playMusicHint, style = MaterialTheme.typography.bodySmall)
+                if (corePermissionGranted) {
+                    Text(strings.noMusicPlaying)
+                    Text(strings.playMusicHint, style = MaterialTheme.typography.bodySmall)
+                } else {
+                    Text(strings.permissionPlaybackSummary)
+                }
             } else {
                 TrackField(strings.appField, event.sourceAppName)
                 TrackField(strings.trackField, event.title ?: strings.unknownTitle)
@@ -2338,36 +2444,26 @@ private fun DiagnosticRow(label: String, value: String, ok: Boolean) {
 @Composable
 private fun StatusBadge(enabled: Boolean, notificationAccess: Boolean) {
     val strings = LocalTrackTalkStrings.current
-    val color = when {
-        !notificationAccess -> MaterialTheme.colorScheme.error
-        enabled -> MaterialTheme.colorScheme.primary
-        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    val setupRequired = enabled && !notificationAccess
+    val statusText = homeStatusText(enabled, notificationAccess, strings)
+    val color = if (enabled && !setupRequired) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
     }
     Row(
         modifier = Modifier.padding(end = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            when {
-                !notificationAccess -> Icons.Default.Warning
-                enabled -> Icons.Default.CheckCircle
-                else -> Icons.Default.Settings
-            },
-            contentDescription = when {
-                !notificationAccess -> strings.permissionNeeded
-                enabled -> strings.on
-                else -> strings.off
-            },
+            if (enabled && !setupRequired) Icons.Default.CheckCircle else Icons.Default.Settings,
+            contentDescription = statusText,
             tint = color,
             modifier = Modifier.size(18.dp),
         )
         Spacer(Modifier.width(4.dp))
         Text(
-            when {
-                !notificationAccess -> strings.permissionShort
-                enabled -> strings.on
-                else -> strings.off
-            },
+            statusText,
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.Bold,
             color = color,

@@ -104,13 +104,19 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
         else -> t("ON · 새 곡을 안내합니다.", "ON · New tracks will be announced.")
     }
 
-    val notificationPermissionTitle: String get() = t("알림 권한 필요", "Notifications needed")
+    val notificationPermissionTitle: String get() = t("상단바 바로가기", "Notification shortcut")
     val notificationPermissionSummary: String
-        get() = t("상단바 바로가기 사용에 필요합니다. 음악 감지는 계속됩니다.", "Needed for the quick status-bar shortcut. Music detection still works.")
+        get() = t("알림에서 TrackTalk을 바로 켜고 끌 수 있습니다.", "Control TrackTalk directly from the notification.")
+    val optionalPermissionBadge: String get() = t("선택", "Optional")
     val allowNotifications: String get() = t("허용", "Allow")
-    val permissionRequired: String get() = t("권한이 필요합니다", "Permission required")
-    val permissionSummary: String get() = t("음악 정보를 읽으려면 알림 접근 권한을 허용해 주세요.", "Allow notification access to read music information.")
-    val permissionSettings: String get() = t("권한 설정", "Permission settings")
+    val musicDetectionPermissionTitle: String get() = t("음악 감지 권한 필요", "Music detection permission")
+    val musicDetectionPermissionSummary: String
+        get() = t("재생 중인 곡을 확인하려면 권한을 허용해 주세요.", "Allow access so TrackTalk can detect the song currently playing.")
+    val requiredPermissionBadge: String get() = t("필수", "Required")
+    val permissionSettings: String get() = t("권한 설정", "Open settings")
+    val permissionPlaybackSummary: String
+        get() = t("권한을 설정하면 현재 재생 정보가 표시됩니다.", "Grant access to show the current track.")
+    val statusNeedsSetup: String get() = t("ON · 설정 필요", "ON · Setup needed")
 
     val currentTrack: String get() = t("현재 재생", "Now playing")
     val noMusicPlaying: String get() = t("재생 중인 음악이 없습니다.", "No music is playing.")

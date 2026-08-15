@@ -35,8 +35,30 @@ class NotificationPermissionBannerInstrumentedTest {
             }
         }
 
-        composeRule.onNodeWithText("알림 권한 필요").assertIsDisplayed()
+        composeRule.onNodeWithText("상단바 바로가기").assertIsDisplayed()
         composeRule.onNodeWithText("허용").assertIsDisplayed().performClick()
         composeRule.runOnIdle { assertEquals(1, requestCount) }
+    }
+
+    @Test
+    fun requiredBannerShowsRequiredCopyAndInvokesSettingsCallback() {
+        var openSettingsCount = 0
+        composeRule.setContent {
+            TrackVoiceTheme {
+                CompositionLocalProvider(
+                    LocalTrackTalkStrings provides TrackTalkStrings.forLanguage(
+                        AppLanguage.KOREAN,
+                        "en",
+                    ),
+                ) {
+                    RequiredPermissionBanner { openSettingsCount += 1 }
+                }
+            }
+        }
+
+        composeRule.onNodeWithText("음악 감지 권한 필요").assertIsDisplayed()
+        composeRule.onNodeWithText("필수").assertIsDisplayed()
+        composeRule.onNodeWithText("권한 설정").assertIsDisplayed().performClick()
+        composeRule.runOnIdle { assertEquals(1, openSettingsCount) }
     }
 }
