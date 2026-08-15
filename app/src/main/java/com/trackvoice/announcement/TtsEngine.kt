@@ -131,6 +131,7 @@ class TtsEngine(context: Context) : TextToSpeech.OnInitListener {
     fun speak(
         text: String,
         settings: UserSettings,
+        transitionAtMs: Long? = null,
         onFinished: (success: Boolean, message: String) -> Unit,
     ) {
         mainHandler.post {
@@ -154,6 +155,7 @@ class TtsEngine(context: Context) : TextToSpeech.OnInitListener {
                 }
             }
             pendingResults.clear()
+            utteranceTransitionAtMs.clear()
             runCatching { engine.stop() }
             val supportedLocales = runCatching { engine.voices.orEmpty().map { it.locale }.toSet() }
                 .getOrDefault(emptySet())
@@ -191,6 +193,7 @@ class TtsEngine(context: Context) : TextToSpeech.OnInitListener {
                 }.getOrDefault(true)
                 val utteranceId = "trackvoice-${System.nanoTime()}-$index"
                 pendingResults[utteranceId] = batch
+                utteranceTransitionAtMs[utteranceId] = transitionAtMs
                 val result = runCatching { engine.speak(
                     segment.text,
                     if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD,
@@ -221,6 +224,7 @@ class TtsEngine(context: Context) : TextToSpeech.OnInitListener {
             runCatching { textToSpeech?.shutdown() }
             textToSpeech = null
             pendingResults.clear()
+            utteranceTransitionAtMs.clear()
             _state.value = TtsState(TtsStatus.CLOSED, "TTS 종료")
         }
     }
@@ -232,10 +236,18 @@ class TtsEngine(context: Context) : TextToSpeech.OnInitListener {
     )
 
     private val pendingResults = mutableMapOf<String, PendingBatch>()
+    private val utteranceTransitionAtMs = mutableMapOf<String, Long?>()
 
     private val progressListener = object : UtteranceProgressListener() {
         override fun onStart(utteranceId: String?) {
             TrackTalkDebugLog.event("tts_start", "utteranceId" to utteranceId)
+            TrackTalkDebugLog.event(
+                "TTS_STARTED",
+                "utteranceId" to utteranceId,
+                "transitionToTtsStartMs" to utteranceId?.let { id ->
+                    utteranceTransitionAtMs[id]?.let { startAt -> System.currentTimeMillis() - startAt }
+                },
+            )
         }
 
         override fun onDone(utteranceId: String?) {
@@ -243,6 +255,7 @@ class TtsEngine(context: Context) : TextToSpeech.OnInitListener {
             TrackTalkDebugLog.event("tts_segment_done", "utteranceId" to utteranceId)
             mainHandler.post {
                 val batch = pendingResults.remove(utteranceId) ?: return@post
+                utteranceTransitionAtMs.remove(utteranceId)
                 batch.remaining -= 1
                 if (batch.remaining == 0 && !batch.completed) {
                     batch.completed = true
@@ -256,6 +269,7 @@ class TtsEngine(context: Context) : TextToSpeech.OnInitListener {
             if (utteranceId == null) return
             TrackTalkDebugLog.event("tts_error", "utteranceId" to utteranceId)
             mainHandler.post {
+                utteranceTransitionAtMs.remove(utteranceId)
                 pendingResults[utteranceId]?.let { failBatch(it, "TTS 재생 중 오류가 발생했습니다.") }
             }
         }
@@ -264,6 +278,7 @@ class TtsEngine(context: Context) : TextToSpeech.OnInitListener {
             if (utteranceId == null) return
             TrackTalkDebugLog.event("tts_error", "utteranceId" to utteranceId, "errorCode" to errorCode)
             mainHandler.post {
+                utteranceTransitionAtMs.remove(utteranceId)
                 pendingResults[utteranceId]?.let { failBatch(it, "TTS 재생 오류 코드: $errorCode") }
             }
         }
@@ -272,6 +287,7 @@ class TtsEngine(context: Context) : TextToSpeech.OnInitListener {
     private fun failBatch(batch: PendingBatch, message: String) {
         if (batch.completed) return
         batch.completed = true
+        pendingResults.filterValues { it === batch }.keys.forEach(utteranceTransitionAtMs::remove)
         pendingResults.entries.removeAll { it.value === batch }
         runCatching { textToSpeech?.stop() }
         runCatching { batch.callback(false, message) }

@@ -12,6 +12,8 @@ class TrackMetadataMapper(
 ) {
     private val queueHistories = linkedMapOf<String, QueueHistory>()
     private val knownTrackNumbers = linkedMapOf<String, Int>()
+    private val lastQueueDiagnosticSignatures = linkedMapOf<String, String>()
+    private val lastNextTrackDiagnosticSignatures = linkedMapOf<String, String>()
 
     fun map(controller: MediaController, observedAt: Long = System.currentTimeMillis()): PlaybackEvent {
         val metadata = controller.metadata
@@ -46,6 +48,85 @@ class TrackMetadataMapper(
             artist = metadataArtist,
             album = metadataAlbum,
         )
+        val queueDiagnosticStart = (activeQueuePosition ?: 0).coerceIn(0, rawQueue.size)
+        val queueDiagnosticItems = rawQueue
+            .drop(queueDiagnosticStart)
+            .take(6)
+            .mapIndexed { offset, item ->
+                val description = item.description
+                val extras = description.extras?.keySet()?.sorted()?.joinToString(",").orEmpty()
+                "${queueDiagnosticStart + offset}:{" +
+                    "queueItemId=${item.queueId}," +
+                    "mediaId=${description.mediaId.clean()}," +
+                    "title=${description.title?.toString().clean()}," +
+                    "subtitle=${description.subtitle?.toString().clean()}," +
+                    "description=${description.description?.toString().clean()?.take(80)}," +
+                    "mediaUriPresent=${description.mediaUri != null}," +
+                    "iconUriPresent=${description.iconUri != null}," +
+                    "extras=[$extras]}"
+            }
+            .joinToString(" || ")
+        val queueDiagnosticSignature = listOf(
+            controller.packageName,
+            controller.queueTitle?.toString().clean().orEmpty(),
+            state?.activeQueueItemId,
+            queueDiagnosticItems,
+        ).joinToString("|")
+        if (lastQueueDiagnosticSignatures[controller.packageName] != queueDiagnosticSignature) {
+            lastQueueDiagnosticSignatures[controller.packageName] = queueDiagnosticSignature
+            while (lastQueueDiagnosticSignatures.size > 32) {
+                lastQueueDiagnosticSignatures.remove(lastQueueDiagnosticSignatures.keys.first())
+            }
+            TrackTalkDebugLog.event(
+                "QUEUE_SNAPSHOT",
+                "source" to controller.packageName,
+                "queueTitle" to controller.queueTitle?.toString().clean(),
+                "queueSize" to rawQueue.size,
+                "activeQueueItemId" to state?.activeQueueItemId,
+                "activeQueuePosition" to activeQueuePosition,
+                "durationMs" to metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION)?.takeIf { it > 0L },
+                "positionMs" to state?.position?.takeIf { it >= 0L },
+                "metadataKeys" to metadata?.keySet()?.joinToString(",", prefix = "[", postfix = "]"),
+                "itemsFromActive" to queueDiagnosticItems,
+            )
+        }
+        val nextQueueIndex = activeQueuePosition?.plus(1)
+        val nextQueueItem = nextQueueIndex?.let { queue.getOrNull(it) }
+        if (nextQueueItem != null) {
+            val fields = NextTrackPrefetch.availableFields(nextQueueItem)
+            val nextDiagnosticSignature = listOf(
+                controller.packageName,
+                controller.queueTitle?.toString().clean().orEmpty(),
+                nextQueueItem.mediaId.orEmpty(),
+                nextQueueItem.title.orEmpty(),
+                nextQueueItem.artist.orEmpty(),
+                nextQueueItem.album.orEmpty(),
+                nextQueueItem.trackNumber,
+                NextTrackPrefetch.quality(nextQueueItem),
+            ).joinToString("|")
+            if (lastNextTrackDiagnosticSignatures[controller.packageName] != nextDiagnosticSignature) {
+                lastNextTrackDiagnosticSignatures[controller.packageName] = nextDiagnosticSignature
+                while (lastNextTrackDiagnosticSignatures.size > 32) {
+                    lastNextTrackDiagnosticSignatures.remove(lastNextTrackDiagnosticSignatures.keys.first())
+                }
+                TrackTalkDebugLog.event(
+                    "NEXT_TRACK_DISCOVERED",
+                    "source" to controller.packageName,
+                    "queueIndex" to nextQueueIndex,
+                    "queueItemId" to nextQueueItem.queueItemId,
+                    "quality" to NextTrackPrefetch.quality(nextQueueItem),
+                    "titlePresent" to (nextQueueItem.title != null),
+                    "artistPresent" to (nextQueueItem.artist != null),
+                    "albumPresent" to (nextQueueItem.album != null),
+                    "trackNumberPresent" to (nextQueueItem.trackNumber != null),
+                    "stableIdentity" to (
+                        !nextQueueItem.mediaId.isNullOrBlank() ||
+                            (!nextQueueItem.title.isNullOrBlank() && !nextQueueItem.artist.isNullOrBlank())
+                        ),
+                    "available" to fields.joinToString(","),
+                )
+            }
+        }
         val activeQueueDescription = activeQueuePosition?.let { position ->
             rawQueue.getOrNull(position)?.description
         }
@@ -351,6 +432,7 @@ class TrackMetadataMapper(
             ),
         album = description.extras?.getString(MediaMetadata.METADATA_KEY_ALBUM).clean(),
         trackNumber = description.extras?.intMetadata(MediaMetadata.METADATA_KEY_TRACK_NUMBER),
+        queueItemId = queueId.takeIf { it >= 0L },
     )
 
     private fun PlaybackState?.toPlaybackStatus(): PlaybackStatus = when (this?.state) {

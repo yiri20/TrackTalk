@@ -17,6 +17,8 @@ data class QueueItemSnapshot(
     val artist: String?,
     val album: String? = null,
     val trackNumber: Int? = null,
+    /** Provider queue identity, kept separate from canonical mediaId. */
+    val queueItemId: Long? = null,
 )
 
 data class PlaybackEvent(
