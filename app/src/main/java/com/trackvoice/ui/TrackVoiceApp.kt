@@ -806,7 +806,10 @@ private fun CurrentTrackCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -859,29 +862,43 @@ private fun CurrentAnnouncementSummaryRows(
     onClick: () -> Unit,
 ) {
     val strings = LocalTrackTalkStrings.current
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(role = Role.Button, onClick = onClick)
-            .padding(top = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .padding(top = 12.dp, bottom = 12.dp),
     ) {
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        Spacer(Modifier.height(4.dp))
-        AnnouncementSummaryRow(
-            label = strings.announcementLabel,
-            value = strings.homeAnnouncementBehavior(trackStartBehavior, timing, delaySeconds),
-        )
-        AnnouncementSummaryRow(
-            label = strings.readingOrderLabel,
-            value = strings.announcementFieldsSummary(configuration.fields),
-        )
-        Icon(
-            Icons.Default.ChevronRight,
-            contentDescription = strings.openGuideSettings,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.align(Alignment.End).size(18.dp),
-        )
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Spacer(Modifier.height(12.dp))
+            Box(Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(end = 28.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    AnnouncementSummaryRow(
+                        label = strings.announcementLabel,
+                        value = strings.homeAnnouncementBehavior(trackStartBehavior, timing, delaySeconds),
+                    )
+                    AnnouncementSummaryRow(
+                        label = strings.readingOrderLabel,
+                        value = strings.announcementFieldsSummary(configuration.fields),
+                    )
+                }
+                Icon(
+                    Icons.Default.ChevronRight,
+                    contentDescription = strings.openGuideSettings,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .size(18.dp),
+                )
+            }
+        }
     }
 }
 
