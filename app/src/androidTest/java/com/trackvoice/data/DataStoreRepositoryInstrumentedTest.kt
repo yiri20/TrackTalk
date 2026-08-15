@@ -169,4 +169,35 @@ class DataStoreRepositoryInstrumentedTest {
             repository.removeApp(packageName)
         }
     }
+
+    @Test
+    fun persistedAnnouncementSurvivesRepositoryRecreationAndCanBeCleared() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val repository = DataStoreRepository(context)
+        val announcement = PersistedAnnouncement(
+            sourcePackageName = "com.example.player",
+            sourceAppName = "Example Player",
+            title = "Track A",
+            artist = "Artist A",
+            album = "Album A",
+            trackNumber = 3,
+            discNumber = 1,
+            duration = 180_000L,
+            mediaId = "track-a",
+            trackNumberReliable = true,
+            trackNumberSource = "MEDIA_METADATA",
+            announcedAt = 123_456L,
+        )
+
+        try {
+            repository.savePersistedAnnouncement(announcement)
+
+            assertEquals(announcement, DataStoreRepository(context).currentPersistedAnnouncement())
+
+            repository.clearPersistedAnnouncement()
+            assertNull(DataStoreRepository(context).currentPersistedAnnouncement())
+        } finally {
+            repository.clearPersistedAnnouncement()
+        }
+    }
 }

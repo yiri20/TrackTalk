@@ -210,7 +210,7 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     val autoEnableOnConnect: String get() = t("연결하면 자동 켜기", "Enable when connected")
     val autoEnableOnConnectSummary: String get() = t("이 기기가 연결되면 안내를 켭니다.", "Enable announcements when this device connects.")
     val trackGuide: String get() = t("기본 안내", "Guide defaults")
-    val guideDefaultsSummary: String get() = t("모든 앱에 적용되는 기본 안내입니다.", "Defaults for all apps.")
+    val guideDefaultsSummary: String get() = t("현재 안내 설정", "Current guide settings")
     val trackStart: String get() = t("재생 시작", "Playback start")
     fun trackStartSummary(behavior: TrackStartBehavior): String = when (behavior) {
         TrackStartBehavior.PLAY_IMMEDIATELY -> t(
@@ -227,7 +227,7 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
         "Music pauses during the guide and resumes when it ends.",
     )
     val musicDuringGuide: String get() = t("안내 중 음악", "Music during guide")
-    val musicVolumeSummary: String get() = t("음성 음량은 음성 탭에서, 안내 중 음악 음량은 여기서 조절합니다.", "Adjust voice volume in Voice and music volume here.")
+    val musicVolumeSummary: String get() = t("안내 중 음악 음량을 조절합니다.", "Adjust music volume during the guide.")
     val musicDuckAmount: String get() = t("안내 중 음악 음량", "Music volume during guide")
     fun musicDuckPercent(percent: Int): String = t("현재 음량의 ${percent}%", "${percent}% of current volume")
     fun freeMusicDuckSummary(percent: Int): String = t(
@@ -276,12 +276,6 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
         delaySeconds: Int,
         trackStartBehavior: TrackStartBehavior? = null,
     ): String {
-        if (trackStartBehavior == TrackStartBehavior.ANNOUNCE_THEN_PLAY) {
-            return t(
-                "곡명 안내 후 재생에서는 바로 안내합니다.",
-                "Announces immediately before playback starts.",
-            )
-        }
         return when (timing) {
         AnnouncementTiming.IMMEDIATE -> t(
             "새 곡을 감지하면 바로 읽습니다. 대기 시간은 적용되지 않습니다.",
@@ -316,18 +310,18 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     val contentTypeDetails: String get() = t("유형별 설정", "Type-specific settings")
     fun contentTypeSettingsSummary(enabled: Boolean, mode: AnnouncementMode): String = if (enabled) {
         t(
-            "앨범·재생목록·추천/랜덤처럼 유형이 확인되면 각각의 설정을 사용합니다. 유형을 못 찾으면 기본 설정을 씁니다.",
-            "Use the matching album, playlist, or recommendation/shuffle settings when the type is known; otherwise use the defaults.",
+            "콘텐츠 유형을 확인하면 유형별 설정을 사용합니다.",
+            "Use the matching settings when the content type is known.",
         )
     } else {
         t(
-            "유형별 설정을 끄고 모든 콘텐츠에 기본 설정을 적용합니다.",
-            "Turn this off to apply the default settings to all content.",
+            "모든 콘텐츠에 기본 설정을 적용합니다.",
+            "Use the default settings for all content.",
         )
     }
     val contentTypeSettingsDisabledSummary: String get() = t(
-        "현재는 위의 기본 설정을 모든 콘텐츠에 적용합니다. 유형별 설정을 켜면 세부 항목이 다시 표시됩니다.",
-        "The default settings above apply to all content. Turn on content-type settings to show the individual sections.",
+        "모든 콘텐츠에 기본 설정을 적용합니다.",
+        "Use the default settings for all content.",
     )
     val contentTypeSettingsInactiveSummary: String get() = t(
         "유형별 설정은 저장되어 있지만 현재 기본 읽기 형식이 우선 적용됩니다. 유형별 설정을 쓰려면 기본 읽기 형식을 자동으로 바꾸세요.",
@@ -361,8 +355,8 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     val algorithmReadItems: String get() = t("추천·랜덤에서 읽기", "Read from recommended / shuffle")
     val contentReadSelectionHint: String get() = t("선택한 항목만 읽습니다.", "Only selected items are read.")
     val contentReadOrderHint: String get() = t(
-        "항목을 눌러 켜고 끄세요. 길게 눌러 좌우로 끌면 읽는 순서를 바꿉니다.",
-        "Tap to include or exclude. Touch and hold, then drag left or right to reorder.",
+        "탭하여 선택 · 길게 눌러 순서 변경",
+        "Tap to select · long-press to reorder",
     )
     val contentSpecificPlusSummary: String get() = t(
         "콘텐츠별 읽기 항목과 안내 순서를 따로 설정합니다.",

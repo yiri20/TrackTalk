@@ -65,11 +65,7 @@ object AnnouncementPolicy {
         val configuration = resolveConfiguration(userSettings, collection)
         val mode = resolveMode(collection, userSettings)
         val announceBeforePlayback = userSettings.trackStartBehavior == com.trackvoice.data.TrackStartBehavior.ANNOUNCE_THEN_PLAY
-        val configuredDelayMs = if (announceBeforePlayback) {
-            0L
-        } else {
-            AnnouncementTimingPolicy.effectiveDelayMs(userSettings)
-        }
+        val configuredDelayMs = AnnouncementTimingPolicy.effectiveDelayMs(userSettings)
 
         // Immediate reading (and announce-before-playback) has no meaningful
         // elapsed-playback threshold. Do not let a stale minimum value delay

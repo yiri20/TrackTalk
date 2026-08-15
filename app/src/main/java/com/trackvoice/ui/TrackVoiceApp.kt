@@ -160,7 +160,7 @@ enum class AppSection {
     DIAGNOSTICS,
 }
 
-private enum class GuideSettingsPane {
+internal enum class GuideSettingsPane {
     GUIDE,
     VOICE,
 }
@@ -843,7 +843,7 @@ private fun TrackField(label: String, value: String) {
 }
 
 @Composable
-private fun GuideSettingsScreen(
+internal fun GuideSettingsScreen(
     settings: UserSettings,
     voices: List<InstalledVoice>,
     ttsStatus: com.trackvoice.announcement.TtsState,
@@ -863,19 +863,23 @@ private fun GuideSettingsScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .background(
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                    RoundedCornerShape(16.dp),
+                )
+                .padding(4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            FilterChip(
+            GuidePaneSegment(
                 selected = selectedPane == GuideSettingsPane.GUIDE,
                 onClick = { onPaneSelected(GuideSettingsPane.GUIDE) },
-                label = { Text(strings.text("안내", "Guide")) },
+                label = strings.text("안내", "Guide"),
                 modifier = Modifier.weight(1f),
             )
-            FilterChip(
+            GuidePaneSegment(
                 selected = selectedPane == GuideSettingsPane.VOICE,
                 onClick = { onPaneSelected(GuideSettingsPane.VOICE) },
-                label = { Text(strings.text("음성", "Voice")) },
+                label = strings.text("음성", "Voice"),
                 modifier = Modifier.weight(1f),
             )
         }
@@ -905,7 +909,46 @@ private fun GuideSettingsScreen(
 }
 
 @Composable
-private fun GeneralSettingsScreen(
+private fun GuidePaneSegment(
+    selected: Boolean,
+    onClick: () -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
+) {
+    val shape = RoundedCornerShape(12.dp)
+    Box(
+        modifier = modifier
+            .heightIn(min = 44.dp)
+            .clip(shape)
+            .background(
+                if (selected) MaterialTheme.colorScheme.primaryContainer
+                else MaterialTheme.colorScheme.surface,
+            )
+            .border(
+                1.dp,
+                if (selected) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.outlineVariant,
+                shape,
+            )
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.fillMaxWidth(),
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+            else MaterialTheme.colorScheme.onSurface,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+        )
+    }
+}
+
+@Composable
+internal fun GeneralSettingsScreen(
     settings: UserSettings,
     isPremium: Boolean,
     onUpdate: ((UserSettings) -> UserSettings) -> Unit,
@@ -974,11 +1017,6 @@ private fun GeneralSettingsScreen(
         }
         item {
             SettingCard(strings.trackGuide) {
-                Text(
-                    strings.guideDefaultsSummary,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
                 if (isPremium) {
                     OptionDropdown(strings.trackStart, settings.trackStartBehavior, TrackStartBehavior.values().toList(), strings::trackStartBehavior) { value ->
                         onUpdate { current ->
@@ -1030,11 +1068,6 @@ private fun GeneralSettingsScreen(
                                 }
                             }
                         }
-                        Text(
-                            strings.musicVolumeSummary,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
                     }
                     val timingOptions = listOf(
                         AnnouncementTiming.IMMEDIATE,
@@ -1060,9 +1093,8 @@ private fun GeneralSettingsScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    val playbackThresholdsActive = settings.timing != AnnouncementTiming.IMMEDIATE &&
-                        settings.trackStartBehavior != TrackStartBehavior.ANNOUNCE_THEN_PLAY
-                    if (playbackThresholdsActive) {
+                    val delayedTimingActive = settings.timing == AnnouncementTiming.DELAYED
+                    if (delayedTimingActive) {
                         SliderSetting(
                             strings.announcementDelay,
                             AnnouncementTimingPolicy.normalizeStoredDelaySeconds(settings.timing, settings.delaySeconds).toFloat(),
@@ -1071,12 +1103,14 @@ private fun GeneralSettingsScreen(
                         ) { value ->
                             onUpdate { it.copy(delaySeconds = value.toInt()) }
                         }
-                        SliderSetting(
-                            strings.minimumPlayback,
-                            settings.minimumPlaybackSeconds.toFloat(),
-                            0f..60f,
-                            { value -> strings.seconds(value.toInt()) },
-                        ) { value -> onUpdate { it.copy(minimumPlaybackSeconds = value.toInt()) } }
+                        if (settings.trackStartBehavior != TrackStartBehavior.ANNOUNCE_THEN_PLAY) {
+                            SliderSetting(
+                                strings.minimumPlayback,
+                                settings.minimumPlaybackSeconds.toFloat(),
+                                0f..60f,
+                                { value -> strings.seconds(value.toInt()) },
+                            ) { value -> onUpdate { it.copy(minimumPlaybackSeconds = value.toInt()) } }
+                        }
                     }
                     SettingSwitchRow(strings.repeatTrack, strings.repeatTrackSummary, settings.allowRepeatAnnouncements) { enabled ->
                         onUpdate { current -> current.copy(allowRepeatAnnouncements = enabled) }
@@ -1100,11 +1134,6 @@ private fun GeneralSettingsScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (isPremium) {
-                    Text(
-                        strings.contentReadPresetHint,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
                     SettingSwitchRow(
                         strings.contentTypeSettings,
                         strings.contentTypeSettingsSummary(settings.useContentTypeSettings, settings.defaultMode),
@@ -1120,11 +1149,6 @@ private fun GeneralSettingsScreen(
                     ) { selectedMode ->
                         onUpdate { current -> current.copy(defaultMode = selectedMode) }
                     }
-                    Text(
-                        strings.globalReadContentSummary(settings.defaultMode, settings.useContentTypeSettings),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
                     OptionDropdown(
                         strings.allContentPresetLabel,
                         settings.defaultReadFields.toContentReadPreset(DEFAULT_GLOBAL_READ_FIELDS),
@@ -1151,13 +1175,6 @@ private fun GeneralSettingsScreen(
                                 announcementOrder = AnnouncementOrder.DEFAULT,
                             )
                         }
-                    }
-                    if (!settings.useContentTypeSettings) {
-                        Text(
-                            strings.contentTypeSettingsDisabledSummary,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
                     }
                 } else {
                     NavigationEntryContent(
@@ -1913,7 +1930,6 @@ private fun BasicPlaybackDefaults(musicDuckPercent: Int) {
         Text(strings.freeGuideWithMusic)
         Text(strings.freeMusicDuckSummary(musicDuckPercent))
         Text(strings.defaultVoiceVolumeSummary(DEFAULT_TTS_VOLUME_PERCENT))
-        Text(strings.separateVoiceVolumeSummary)
     }
 }
 
@@ -1938,12 +1954,7 @@ private fun ContentReadOrderPicker(
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         Text(
-            hint ?: strings.contentReadSelectionHint,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(
-            strings.contentReadOrderHint,
+            hint ?: strings.contentReadOrderHint,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

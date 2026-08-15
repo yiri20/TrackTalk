@@ -224,6 +224,17 @@ class DuplicateSuppressor(
         }
     }
 
+    /**
+     * Restores the last accepted track after the Android process is recreated.
+     * Controller/session objects are disposable infrastructure; announcement
+     * history must not be tied to their lifetime.
+     */
+    fun restoreAnnounced(event: PlaybackEvent, now: Long) {
+        announcedTracks.clear()
+        lastSpeech = null
+        announcedTracks[TrackFingerprint.announcement(event)] = AnnouncedTrack.from(event, now)
+    }
+
     fun clear() {
         announcedTracks.clear()
         lastSpeech = null

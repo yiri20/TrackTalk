@@ -566,6 +566,25 @@ class AnnouncementPolicyTest {
         assertEquals(0L, decision.delayMs)
     }
 
+    @Test
+    fun announceBeforePlaybackStillUsesDelayedTiming() {
+        val decision = AnnouncementPolicy.decide(
+            event().copy(playbackPosition = 0L),
+            UserSettings(
+                outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS,
+                timing = AnnouncementTiming.DELAYED,
+                delaySeconds = 2,
+                trackStartBehavior = com.trackvoice.data.TrackStartBehavior.ANNOUNCE_THEN_PLAY,
+                minimumPlaybackSeconds = 30,
+            ),
+            null,
+            externalAudioOutput = true,
+        )
+
+        assertTrue(decision.shouldAnnounce)
+        assertEquals(2_000L, decision.delayMs)
+    }
+
     private fun event() = PlaybackEvent(
         sourcePackageName = "com.youtube.music",
         sourceAppName = "YouTube Music",

@@ -125,7 +125,7 @@ class TemporalPlaybackContextResolverTest {
         resolver.resolve(stopped, "session")
 
         val decision = resolver.resolve(
-            track(number = 3, observedAt = 190_000L, position = 0L),
+            track(number = 3, observedAt = 200_000L, position = 0L),
             "session",
         )
 
@@ -133,6 +133,55 @@ class TemporalPlaybackContextResolverTest {
         assertTrue(decision.stateReset)
         assertEquals("RESET_PLAYBACK_SESSION_RESTARTED", decision.reason)
         assertEquals(0, decision.sameAlbumNaturalTransitions)
+    }
+
+    @Test
+    fun shortStoppedBridgePreservesNaturalAlbumContinuity() {
+        val resolver = TemporalPlaybackContextResolver()
+
+        resolver.resolve(track(number = 1, observedAt = 1_000L, position = 170_000L), "session")
+        resolver.resolve(track(number = 2, observedAt = 181_000L, position = 0L), "session")
+        resolver.resolve(
+            track(number = 2, observedAt = 360_100L, position = 170_000L).copy(
+                playbackState = PlaybackStatus.STOPPED,
+            ),
+            "session",
+        )
+
+        val decision = resolver.resolve(
+            track(number = 3, observedAt = 361_000L, position = 0L),
+            "session",
+        )
+
+        assertFalse(decision.stateReset)
+        assertTrue(decision.naturalTransition)
+        assertEquals(2, decision.sameAlbumNaturalTransitions)
+        assertEquals(PlaybackCollection.ALBUM, decision.collection)
+    }
+
+    @Test
+    fun providerStyleQueueRefreshDoesNotErasePlayingPredecessor() {
+        val resolver = TemporalPlaybackContextResolver()
+
+        resolver.resolve(track(number = 1, observedAt = 1_000L, position = 170_000L), "session")
+        resolver.resolve(
+            track(number = 1, observedAt = 1_100L, position = 170_000L).copy(
+                queueTitle = "다음 트랙",
+                queueOrderChanged = true,
+            ),
+            "session",
+        )
+        val decision = resolver.resolve(
+            track(number = 2, observedAt = 181_000L, position = 0L).copy(
+                queueTitle = "다음 트랙",
+                queueOrderChanged = true,
+            ),
+            "session",
+        )
+
+        assertFalse(decision.stateReset)
+        assertTrue(decision.naturalTransition)
+        assertEquals(1, decision.sameAlbumNaturalTransitions)
     }
 
     @Test

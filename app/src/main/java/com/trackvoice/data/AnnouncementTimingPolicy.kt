@@ -21,10 +21,7 @@ object AnnouncementTimingPolicy {
         value.coerceIn(0, MAX_DELAY_SECONDS)
     }
 
-    fun effectiveDelaySeconds(settings: UserSettings): Int = if (
-        settings.trackStartBehavior == TrackStartBehavior.ANNOUNCE_THEN_PLAY ||
-        !isDelayed(settings.timing)
-    ) {
+    fun effectiveDelaySeconds(settings: UserSettings): Int = if (!isDelayed(settings.timing)) {
         0
     } else {
         normalizeStoredDelaySeconds(settings.timing, settings.delaySeconds)

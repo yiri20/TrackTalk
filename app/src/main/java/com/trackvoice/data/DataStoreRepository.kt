@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -29,6 +30,21 @@ private const val CONTENT_READ_DEFAULT_VERSION = 1
 private const val CONTENT_READ_ORDER_VERSION = 1
 private const val AUDIO_OUTPUT_POLICY_VERSION = 1
 private const val APP_ANNOUNCEMENT_SOURCE_VERSION = 1
+
+data class PersistedAnnouncement(
+    val sourcePackageName: String,
+    val sourceAppName: String,
+    val title: String?,
+    val artist: String?,
+    val album: String?,
+    val trackNumber: Int?,
+    val discNumber: Int?,
+    val duration: Long?,
+    val mediaId: String?,
+    val trackNumberReliable: Boolean,
+    val trackNumberSource: String,
+    val announcedAt: Long,
+)
 
 class DataStoreRepository(private val context: Context) {
     private val dataStore = context.trackVoiceDataStore
@@ -53,6 +69,46 @@ class DataStoreRepository(private val context: Context) {
 
     suspend fun currentUserSettings(): UserSettings = userSettings.first()
     suspend fun currentAppSettings(): Map<String, AppSettings> = appSettings.first()
+
+    suspend fun currentPersistedAnnouncement(): PersistedAnnouncement? =
+        dataStore.data.first().toPersistedAnnouncement()
+
+    suspend fun savePersistedAnnouncement(announcement: PersistedAnnouncement) {
+        dataStore.edit { preferences ->
+            preferences[Keys.lastAnnouncementPackage] = announcement.sourcePackageName
+            preferences[Keys.lastAnnouncementAppName] = announcement.sourceAppName
+            setOptional(preferences, Keys.lastAnnouncementTitle, announcement.title)
+            setOptional(preferences, Keys.lastAnnouncementArtist, announcement.artist)
+            setOptional(preferences, Keys.lastAnnouncementAlbum, announcement.album)
+            setOptional(preferences, Keys.lastAnnouncementMediaId, announcement.mediaId)
+            announcement.trackNumber?.let { preferences[Keys.lastAnnouncementTrackNumber] = it }
+                ?: preferences.remove(Keys.lastAnnouncementTrackNumber)
+            announcement.discNumber?.let { preferences[Keys.lastAnnouncementDiscNumber] = it }
+                ?: preferences.remove(Keys.lastAnnouncementDiscNumber)
+            announcement.duration?.let { preferences[Keys.lastAnnouncementDuration] = it }
+                ?: preferences.remove(Keys.lastAnnouncementDuration)
+            preferences[Keys.lastAnnouncementTrackNumberReliable] = announcement.trackNumberReliable
+            preferences[Keys.lastAnnouncementTrackNumberSource] = announcement.trackNumberSource
+            preferences[Keys.lastAnnouncementAt] = announcement.announcedAt
+        }
+    }
+
+    suspend fun clearPersistedAnnouncement() {
+        dataStore.edit { preferences ->
+            preferences.remove(Keys.lastAnnouncementPackage)
+            preferences.remove(Keys.lastAnnouncementAppName)
+            preferences.remove(Keys.lastAnnouncementTitle)
+            preferences.remove(Keys.lastAnnouncementArtist)
+            preferences.remove(Keys.lastAnnouncementAlbum)
+            preferences.remove(Keys.lastAnnouncementTrackNumber)
+            preferences.remove(Keys.lastAnnouncementDiscNumber)
+            preferences.remove(Keys.lastAnnouncementDuration)
+            preferences.remove(Keys.lastAnnouncementMediaId)
+            preferences.remove(Keys.lastAnnouncementTrackNumberReliable)
+            preferences.remove(Keys.lastAnnouncementTrackNumberSource)
+            preferences.remove(Keys.lastAnnouncementAt)
+        }
+    }
 
     suspend fun migrateTtsVolumeDefault() {
         dataStore.edit { preferences ->
@@ -261,7 +317,7 @@ class DataStoreRepository(private val context: Context) {
         }
     }
 
-    private object Keys {
+    internal object Keys {
         val enabled = booleanPreferencesKey("enabled")
         val appLanguage = stringPreferencesKey("app_language")
         val autoEnableOnScreenOff = booleanPreferencesKey("auto_enable_screen_off")
@@ -310,6 +366,18 @@ class DataStoreRepository(private val context: Context) {
         val deviceVolumePercent = intPreferencesKey("device_volume_percent")
         val knownPackages = stringSetPreferencesKey("known_app_packages")
         val knownDeviceKeys = stringSetPreferencesKey("known_audio_devices")
+        val lastAnnouncementPackage = stringPreferencesKey("last_announcement_package")
+        val lastAnnouncementAppName = stringPreferencesKey("last_announcement_app_name")
+        val lastAnnouncementTitle = stringPreferencesKey("last_announcement_title")
+        val lastAnnouncementArtist = stringPreferencesKey("last_announcement_artist")
+        val lastAnnouncementAlbum = stringPreferencesKey("last_announcement_album")
+        val lastAnnouncementMediaId = stringPreferencesKey("last_announcement_media_id")
+        val lastAnnouncementTrackNumber = intPreferencesKey("last_announcement_track_number")
+        val lastAnnouncementDiscNumber = intPreferencesKey("last_announcement_disc_number")
+        val lastAnnouncementDuration = longPreferencesKey("last_announcement_duration")
+        val lastAnnouncementTrackNumberReliable = booleanPreferencesKey("last_announcement_track_number_reliable")
+        val lastAnnouncementTrackNumberSource = stringPreferencesKey("last_announcement_track_number_source")
+        val lastAnnouncementAt = longPreferencesKey("last_announcement_at")
     }
 
     private object AppKeys {
@@ -543,6 +611,36 @@ class DataStoreRepository(private val context: Context) {
     private inline fun <reified T : Enum<T>> enumOrDefault(value: String?, default: T): T =
         value?.let { runCatching { enumValueOf<T>(it) }.getOrNull() } ?: default
 
+}
+
+private fun Preferences.toPersistedAnnouncement(): PersistedAnnouncement? {
+    val sourcePackageName = this[DataStoreRepository.Keys.lastAnnouncementPackage]
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?: return null
+    val announcedAt = this[DataStoreRepository.Keys.lastAnnouncementAt] ?: return null
+    return PersistedAnnouncement(
+        sourcePackageName = sourcePackageName,
+        sourceAppName = this[DataStoreRepository.Keys.lastAnnouncementAppName].orEmpty(),
+        title = this[DataStoreRepository.Keys.lastAnnouncementTitle],
+        artist = this[DataStoreRepository.Keys.lastAnnouncementArtist],
+        album = this[DataStoreRepository.Keys.lastAnnouncementAlbum],
+        trackNumber = this[DataStoreRepository.Keys.lastAnnouncementTrackNumber],
+        discNumber = this[DataStoreRepository.Keys.lastAnnouncementDiscNumber],
+        duration = this[DataStoreRepository.Keys.lastAnnouncementDuration],
+        mediaId = this[DataStoreRepository.Keys.lastAnnouncementMediaId],
+        trackNumberReliable = this[DataStoreRepository.Keys.lastAnnouncementTrackNumberReliable] ?: true,
+        trackNumberSource = this[DataStoreRepository.Keys.lastAnnouncementTrackNumberSource] ?: "UNSPECIFIED",
+        announcedAt = announcedAt,
+    )
+}
+
+private fun setOptional(
+    preferences: MutablePreferences,
+    key: Preferences.Key<String>,
+    value: String?,
+) {
+    if (value.isNullOrBlank()) preferences.remove(key) else preferences[key] = value
 }
 
 private fun AnnouncementTiming.normalizedForSettings(): AnnouncementTiming = when (this) {

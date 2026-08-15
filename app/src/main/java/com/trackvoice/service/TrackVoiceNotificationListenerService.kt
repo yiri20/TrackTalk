@@ -4,7 +4,9 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.os.Bundle
 import android.service.notification.NotificationListenerService
+import android.service.notification.StatusBarNotification
 import androidx.core.content.ContextCompat
 import androidx.core.app.NotificationCompat
 import android.app.NotificationChannel
@@ -20,6 +22,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import com.trackvoice.TrackVoiceApplication
+import com.trackvoice.diagnostics.TrackTalkDebugLog
 
 class TrackVoiceNotificationListenerService : NotificationListenerService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -37,6 +40,19 @@ class TrackVoiceNotificationListenerService : NotificationListenerService() {
 
     private val application: TrackVoiceApplication
         get() = getApplication() as TrackVoiceApplication
+
+    override fun onNotificationPosted(sbn: StatusBarNotification) {
+        if (sbn.packageName != "com.google.android.apps.youtube.music") return
+        val extras = sbn.notification.extras
+        TrackTalkDebugLog.event(
+            "NOTIFICATION_MEDIA_EVIDENCE",
+            "package" to sbn.packageName,
+            "category" to sbn.notification.category,
+            "ongoing" to sbn.isOngoing,
+            "extras" to extras?.keySet()?.sorted()?.joinToString(",", prefix = "[", postfix = "]"),
+            "trackLikeCandidates" to extras.trackLikeNumericCandidates(),
+        )
+    }
 
     override fun onListenerConnected() {
         super.onListenerConnected()
@@ -124,4 +140,28 @@ class TrackVoiceNotificationListenerService : NotificationListenerService() {
         runCatching { unregisterReceiver(screenReceiver) }
         receiverRegistered = false
     }
+
+    private fun Bundle?.trackLikeNumericCandidates(): String = this
+        ?.keySet()
+        ?.asSequence()
+        ?.filter { key ->
+            val normalized = key.lowercase(java.util.Locale.ROOT)
+            normalized.contains("track") ||
+                normalized.contains("disc") ||
+                normalized.contains("number") ||
+                normalized.contains("position") ||
+                normalized.contains("index")
+        }
+        ?.sorted()
+        ?.mapNotNull { key ->
+            runCatching {
+                when (val value = get(key)) {
+                    is Byte, is Short, is Int, is Long, is Float, is Double -> "$key=$value"
+                    is String -> value.trim().toLongOrNull()?.let { "$key=$it" }
+                    else -> null
+                }
+            }.getOrNull()
+        }
+        ?.joinToString(",")
+        .orEmpty()
 }

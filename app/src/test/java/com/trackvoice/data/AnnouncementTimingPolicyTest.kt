@@ -40,9 +40,9 @@ class AnnouncementTimingPolicyTest {
     }
 
     @Test
-    fun announceThenPlayRemainsImmediateEvenIfDelayedValueIsStored() {
+    fun announceThenPlayUsesTheSelectedDelayWhenTimingIsDelayed() {
         assertEquals(
-            0L,
+            2_000L,
             AnnouncementTimingPolicy.effectiveDelayMs(
                 UserSettings(
                     timing = AnnouncementTiming.DELAYED,

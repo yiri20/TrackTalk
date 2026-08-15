@@ -423,6 +423,9 @@ data class MediaMonitorUpdate(
     val activeSessionCount: Int,
     val eventType: MediaEventType,
     val observedAt: Long,
+    val eventSequenceNumber: Long = 0L,
+    val selectedSessionKey: String? = null,
+    val callbackThread: String? = null,
 )
 
 object TrackFingerprint {

@@ -53,6 +53,8 @@ class TrackMetadataMapper(
             queue.getOrNull(position)?.trackNumber
         }
         val metadataTrackNumber = metadata.intMetadata(MediaMetadata.METADATA_KEY_TRACK_NUMBER)
+        val metadataDiscNumber = metadata.intMetadata(MediaMetadata.METADATA_KEY_DISC_NUMBER)
+        val metadataTotalTracks = metadata.intMetadata(MediaMetadata.METADATA_KEY_NUM_TRACKS)
         val mediaId = metadataMediaId ?: activeQueueDescription?.mediaId.clean()
         val trackKey = mediaId?.let { trackKey(controller.packageName, it) }
         val cachedTrackNumber = trackKey?.let(knownTrackNumbers::get)
@@ -102,6 +104,23 @@ class TrackMetadataMapper(
             "activeQueuePosition" to activeQueuePosition,
         )
         TrackTalkDebugLog.event(
+            "TRACK_NUMBER_SOURCE_SCAN",
+            "source" to controller.packageName,
+            "mediaId" to mediaId,
+            "metadataTrackNumber" to metadataTrackNumber,
+            "metadataDiscNumber" to metadataDiscNumber,
+            "metadataNumTracks" to metadataTotalTracks,
+            "metadataTrackLikeCandidates" to metadata.trackLikeNumericCandidates(),
+            "activeQueueDescriptionExtras" to activeQueueDescription?.extras.trackLikeNumericCandidates(),
+            "queueItemTrackData" to rawQueue.mapIndexedNotNull { index, item ->
+                item.description.extras.trackLikeNumericCandidates()
+                    .takeIf { it.isNotBlank() }
+                    ?.let { "$index:$it" }
+            }.joinToString(";"),
+            "sessionExtrasTrackData" to controller.extras.trackLikeNumericCandidates(),
+            "playbackStateExtrasTrackData" to state?.extras.trackLikeNumericCandidates(),
+        )
+        TrackTalkDebugLog.event(
             "TRACK_NUMBER_RESOLUTION",
             "source" to controller.packageName,
             "mediaId" to mediaId,
@@ -148,8 +167,8 @@ class TrackMetadataMapper(
                 ?: activeQueueDescription?.extras?.getString(MediaMetadata.METADATA_KEY_ALBUM).clean(),
             albumArtist = metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST).clean(),
             trackNumber = resolvedTrackNumber,
-            totalTracks = metadata?.getLong(MediaMetadata.METADATA_KEY_NUM_TRACKS)?.safeInt(),
-            discNumber = metadata?.getLong(MediaMetadata.METADATA_KEY_DISC_NUMBER)?.safeInt(),
+            totalTracks = metadataTotalTracks,
+            discNumber = metadataDiscNumber,
             duration = metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION)?.takeIf { it > 0L },
             mediaId = mediaId,
             playbackState = state.toPlaybackStatus(),
@@ -222,6 +241,48 @@ class TrackMetadataMapper(
         .asSequence()
         .mapNotNull { key -> runCatching { this?.getString(key) }.getOrNull().clean() }
         .firstOrNull()
+
+    private fun android.os.Bundle?.trackLikeNumericCandidates(): String = this
+        ?.keySet()
+        ?.asSequence()
+        ?.filter(::isTrackLikeKey)
+        ?.sorted()
+        ?.mapNotNull { key -> numericValue(key)?.let { "$key=$it" } }
+        ?.joinToString(",")
+        .orEmpty()
+
+    private fun MediaMetadata?.trackLikeNumericCandidates(): String = this
+        ?.keySet()
+        ?.asSequence()
+        ?.filter(::isTrackLikeKey)
+        ?.sorted()
+        ?.mapNotNull { key ->
+            val longValue = runCatching { getLong(key) }.getOrNull()
+                ?.takeIf { it > 0L }
+            val stringValue = runCatching { getString(key)?.trim()?.toLongOrNull() }
+                .getOrNull()
+                ?.takeIf { it > 0L }
+            (longValue ?: stringValue)?.let { "$key=$it" }
+        }
+        ?.joinToString(",")
+        .orEmpty()
+
+    private fun android.os.Bundle.numericValue(key: String): String? = runCatching {
+        when (val value = get(key)) {
+            is Byte, is Short, is Int, is Long, is Float, is Double -> value.toString()
+            is String -> value.trim().toLongOrNull()?.toString()
+            else -> null
+        }
+    }.getOrNull()
+
+    private fun isTrackLikeKey(key: String): Boolean {
+        val normalized = key.lowercase(java.util.Locale.ROOT)
+        return normalized.contains("track") ||
+            normalized.contains("disc") ||
+            normalized.contains("number") ||
+            normalized.contains("position") ||
+            normalized.contains("index")
+    }
 
     private fun Long.safeInt(): Int? = toInt().takeIf { it > 0 && it.toLong() == this }
 

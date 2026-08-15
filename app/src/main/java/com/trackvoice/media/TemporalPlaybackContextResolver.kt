@@ -15,6 +15,8 @@ class TemporalPlaybackContextResolver(
     private val albumConfirmationTransitions: Int = 2,
     private val naturalTransitionMinimumGapMs: Long = 5_000L,
     private val rapidTransitionWindowMs: Long = 2_000L,
+    private val transientPlaybackBridgeMs: Long = 5_000L,
+    private val longStopResetMs: Long = 15_000L,
 ) {
     private var state: ContextState? = null
 
@@ -29,6 +31,7 @@ class TemporalPlaybackContextResolver(
         val directDecision = PlaybackCollectionResolver.resolveWithEvidence(event)
         val previousState = state
         val resetReason = previousState?.let { boundaryReason(it, event, sessionKey) }
+        val currentQueueGeneration = queueGeneration(event)
 
         if (previousState == null || resetReason != null) {
             val collection = directDecision.collection
@@ -36,9 +39,11 @@ class TemporalPlaybackContextResolver(
                 sessionKey = sessionKey ?: previousState?.sessionKey,
                 sourcePackageName = event.sourcePackageName,
                 lastEvent = event,
+                lastPlayingEvent = event.takeIf { it.isPlaying },
                 collection = collection,
                 sameAlbumNaturalTransitions = 0,
                 mixedNaturalTransitions = 0,
+                queueGeneration = currentQueueGeneration,
             )
             return TemporalPlaybackContextDecision(
                 collection = collection,
@@ -50,15 +55,53 @@ class TemporalPlaybackContextResolver(
                 naturalTransition = false,
                 sameAlbumNaturalTransitions = 0,
                 mixedNaturalTransitions = 0,
+                previousTrackIdentity = previousState?.lastEvent?.trackIdentity(),
+                currentTrackIdentity = event.trackIdentity(),
+                albumSameAsPrevious = previousState?.lastPlayingEvent?.let { sameAlbum(it, event) },
+                artistSameAsPrevious = previousState?.lastPlayingEvent?.let { sameArtist(it, event) },
+                transitionKind = resetReason?.let { "RESET_$it" } ?: "INITIAL",
+                previousPosition = previousState?.lastPlayingEvent?.playbackPosition,
+                previousDuration = previousState?.lastPlayingEvent?.duration,
+                sessionContinuous = false,
+                queueGeneration = currentQueueGeneration,
+                queueChanged = previousState?.queueGeneration != currentQueueGeneration,
+                evidenceAdded = 0,
+                evidenceRemoved = previousState?.sameAlbumNaturalTransitions ?: 0,
+                resetReason = resetReason,
+                stateBeforeHypothesis = previousState?.collection,
+                stateAfterHypothesis = collection,
+                confidence = confidence(collection, directDecision.reason, 0),
+                stateBeforeSameAlbumNaturalTransitions = previousState?.sameAlbumNaturalTransitions ?: 0,
+                stateBeforeMixedNaturalTransitions = previousState?.mixedNaturalTransitions ?: 0,
             )
         }
 
         val previousEvent = previousState.lastEvent
-        val transition = !sameLogicalTrack(previousEvent, event)
-        val naturalTransition = transition && isLikelyNaturalTransition(previousEvent, event)
+        val previousPlayingEvent = previousState.lastPlayingEvent
+        val transitionPreviousEvent = if (
+            previousPlayingEvent != null &&
+            !previousEvent.isPlaying &&
+            event.isPlaying &&
+            !sameLogicalTrack(previousPlayingEvent, event)
+        ) {
+            previousPlayingEvent
+        } else {
+            previousEvent
+        }
+        val transition = !sameLogicalTrack(transitionPreviousEvent, event)
+        val naturalPreviousEvent = if (
+            !transitionPreviousEvent.isPlaying &&
+            previousPlayingEvent != null &&
+            (event.observedAt - transitionPreviousEvent.observedAt).coerceAtLeast(0L) <= transientPlaybackBridgeMs
+        ) {
+            previousPlayingEvent
+        } else {
+            transitionPreviousEvent
+        }
+        val naturalTransition = transition && isLikelyNaturalTransition(naturalPreviousEvent, event)
         var sameAlbumTransitions = previousState.sameAlbumNaturalTransitions
         var mixedTransitions = previousState.mixedNaturalTransitions
-        val sameAlbum = sameAlbum(previousEvent, event)
+        val sameAlbum = sameAlbum(naturalPreviousEvent, event)
 
         if (transition && naturalTransition) {
             if (sameAlbum) {
@@ -76,7 +119,7 @@ class TemporalPlaybackContextResolver(
         val transitionDecision = if (transition && naturalTransition) {
             PlaybackCollectionResolver.resolve(
                 event = event,
-                previousEvent = previousEvent,
+                previousEvent = naturalPreviousEvent,
                 previousCollection = previousState.collection,
             )
         } else {
@@ -112,9 +155,11 @@ class TemporalPlaybackContextResolver(
         state = previousState.copy(
             sessionKey = sessionKey ?: previousState.sessionKey,
             lastEvent = event,
+            lastPlayingEvent = event.takeIf { it.isPlaying } ?: previousState.lastPlayingEvent,
             collection = collection,
             sameAlbumNaturalTransitions = sameAlbumTransitions,
             mixedNaturalTransitions = mixedTransitions,
+            queueGeneration = currentQueueGeneration,
         )
         return TemporalPlaybackContextDecision(
             collection = collection,
@@ -125,6 +170,29 @@ class TemporalPlaybackContextResolver(
             naturalTransition = naturalTransition,
             sameAlbumNaturalTransitions = sameAlbumTransitions,
             mixedNaturalTransitions = mixedTransitions,
+            previousTrackIdentity = transitionPreviousEvent.trackIdentity(),
+            currentTrackIdentity = event.trackIdentity(),
+            albumSameAsPrevious = sameAlbum(naturalPreviousEvent, event),
+            artistSameAsPrevious = sameArtist(naturalPreviousEvent, event),
+            transitionKind = when {
+                !transition -> "SAME_LOGICAL_TRACK"
+                naturalTransition && naturalPreviousEvent !== transitionPreviousEvent -> "BRIDGED_NATURAL_TRANSITION"
+                naturalTransition -> "NATURAL_TRANSITION"
+                else -> "MANUAL_OR_UNCONFIRMED_TRANSITION"
+            },
+            previousPosition = naturalPreviousEvent.playbackPosition,
+            previousDuration = naturalPreviousEvent.duration,
+            sessionContinuous = true,
+            queueGeneration = currentQueueGeneration,
+            queueChanged = previousState.queueGeneration != currentQueueGeneration,
+            evidenceAdded = if (naturalTransition && sameAlbum) 1 else 0,
+            evidenceRemoved = if (naturalTransition && !sameAlbum) previousState.sameAlbumNaturalTransitions else 0,
+            resetReason = null,
+            stateBeforeHypothesis = previousState.collection,
+            stateAfterHypothesis = collection,
+            confidence = confidence(collection, directDecision.reason, sameAlbumTransitions),
+            stateBeforeSameAlbumNaturalTransitions = previousState.sameAlbumNaturalTransitions,
+            stateBeforeMixedNaturalTransitions = previousState.mixedNaturalTransitions,
         )
     }
 
@@ -137,8 +205,10 @@ class TemporalPlaybackContextResolver(
         if (previous.sessionKey != null && sessionKey != null && previous.sessionKey != sessionKey) {
             return "MEDIA_SESSION_CHANGED"
         }
-        if (previous.lastEvent.playbackState == PlaybackStatus.STOPPED ||
-            previous.lastEvent.playbackState == PlaybackStatus.NONE
+        if (
+            (previous.lastEvent.playbackState == PlaybackStatus.STOPPED ||
+                previous.lastEvent.playbackState == PlaybackStatus.NONE) &&
+            (current.observedAt - previous.lastEvent.observedAt).coerceAtLeast(0L) > longStopResetMs
         ) {
             return "PLAYBACK_SESSION_RESTARTED"
         }
@@ -211,6 +281,38 @@ class TemporalPlaybackContextResolver(
         return previousAlbum == currentAlbum
     }
 
+    private fun sameArtist(previous: PlaybackEvent, current: PlaybackEvent): Boolean =
+        compatibleText(previous.artist, current.artist) &&
+            compatibleText(previous.albumArtist, current.albumArtist)
+
+    private fun confidence(
+        collection: PlaybackCollection,
+        directReason: String,
+        sameAlbumTransitions: Int,
+    ): Int = when {
+        collection == PlaybackCollection.UNKNOWN -> 0
+        directReason.startsWith("EXPLICIT_") ||
+            directReason == "ALGORITHMIC_QUEUE_TITLE" ||
+            directReason == "CANONICAL_ALBUM_QUEUE_METADATA" -> 100
+        collection == PlaybackCollection.ALBUM && sameAlbumTransitions >= albumConfirmationTransitions -> 80
+        else -> 70
+    }
+
+    private fun queueGeneration(event: PlaybackEvent): String? {
+        val queueTitle = event.queueTitle?.trim()?.takeIf { it.isNotEmpty() }
+        if (queueTitle == null && event.queue.isEmpty() && !event.queueOrderChanged) return null
+        val itemIdsHash = event.queue
+            .map { it.mediaId?.trim().orEmpty() }
+            .hashCode()
+        return listOf(queueTitle.orEmpty(), event.queue.size, itemIdsHash).joinToString(":")
+    }
+
+    private fun PlaybackEvent.trackIdentity(): String? =
+        mediaId?.trim()?.takeIf { it.isNotEmpty() }
+            ?: listOfNotNull(title?.trim(), artist?.trim(), album?.trim())
+                .takeIf { it.isNotEmpty() }
+                ?.joinToString(" / ")
+
     private fun compatibleText(previous: String?, current: String?): Boolean =
         previous.normalizedOrNull() == null ||
             current.normalizedOrNull() == null ||
@@ -226,9 +328,11 @@ class TemporalPlaybackContextResolver(
         val sessionKey: String?,
         val sourcePackageName: String,
         val lastEvent: PlaybackEvent,
+        val lastPlayingEvent: PlaybackEvent?,
         val collection: PlaybackCollection,
         val sameAlbumNaturalTransitions: Int,
         val mixedNaturalTransitions: Int,
+        val queueGeneration: String?,
     )
 }
 
@@ -241,4 +345,22 @@ data class TemporalPlaybackContextDecision(
     val naturalTransition: Boolean,
     val sameAlbumNaturalTransitions: Int,
     val mixedNaturalTransitions: Int,
+    val previousTrackIdentity: String? = null,
+    val currentTrackIdentity: String? = null,
+    val albumSameAsPrevious: Boolean? = null,
+    val artistSameAsPrevious: Boolean? = null,
+    val transitionKind: String = "UNKNOWN",
+    val previousPosition: Long? = null,
+    val previousDuration: Long? = null,
+    val sessionContinuous: Boolean = false,
+    val queueGeneration: String? = null,
+    val queueChanged: Boolean = false,
+    val evidenceAdded: Int = 0,
+    val evidenceRemoved: Int = 0,
+    val resetReason: String? = null,
+    val stateBeforeHypothesis: PlaybackCollection? = null,
+    val stateAfterHypothesis: PlaybackCollection? = null,
+    val confidence: Int = 0,
+    val stateBeforeSameAlbumNaturalTransitions: Int = 0,
+    val stateBeforeMixedNaturalTransitions: Int = 0,
 )

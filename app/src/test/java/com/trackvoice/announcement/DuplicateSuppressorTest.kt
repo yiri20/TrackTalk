@@ -143,6 +143,130 @@ class DuplicateSuppressorTest {
     }
 
     @Test
+    fun restoredProcessHistorySuppressesSameTrack() {
+        val firstProcess = DuplicateSuppressor()
+        val secondProcess = DuplicateSuppressor()
+        val announced = event().copy(mediaId = "provider://track-3")
+        val refreshedAfterRestart = announced.copy(
+            mediaId = "provider://session-refresh-3",
+            observedAt = 2_000L,
+        )
+
+        firstProcess.markAnnounced(announced, 1_000L, announcementText = "Glass Eyes, Radiohead.")
+        secondProcess.restoreAnnounced(announced, 1_000L)
+
+        assertFalse(
+            secondProcess.shouldAnnounce(
+                refreshedAfterRestart,
+                allowRepeat = false,
+                now = 2_000L,
+                announcementText = "Glass Eyes, Radiohead.",
+            ),
+        )
+    }
+
+    @Test
+    fun adversarialRefreshBeforeHistoryTransferStillSuppressesTrack() {
+        val suppressor = DuplicateSuppressor()
+        val track = event()
+        val metadataRefresh = track.copy(artist = null, album = null, trackNumber = null)
+
+        assertTrue(suppressor.shouldAnnounce(track, allowRepeat = false, now = 1_000L))
+        suppressor.markAnnounced(track, 1_000L)
+        assertFalse(suppressor.shouldAnnounce(metadataRefresh, false, 1_001L))
+
+        val restored = DuplicateSuppressor()
+        restored.restoreAnnounced(track, 1_000L)
+        assertFalse(restored.shouldAnnounce(metadataRefresh, false, 1_002L))
+    }
+
+    @Test
+    fun repeatedMetadataAndPlaybackCallbacksDoNotRepeat() {
+        val suppressor = DuplicateSuppressor()
+        val track = event()
+
+        assertTrue(suppressor.shouldAnnounce(track, false, 1_000L))
+        suppressor.markAnnounced(track, 1_000L)
+        repeat(20) { index ->
+            assertFalse(
+                suppressor.shouldAnnounce(
+                    track.copy(observedAt = 1_001L + index),
+                    allowRepeat = false,
+                    now = 1_001L + index,
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun announcedTrackThenNextTrackAllowsOnlyNextTrack() {
+        val suppressor = DuplicateSuppressor()
+        val first = event()
+        val next = first.copy(title = "Next song", mediaId = "track-4", trackNumber = 4)
+
+        assertTrue(suppressor.shouldAnnounce(first, false, 1_000L))
+        suppressor.markAnnounced(first, 1_000L)
+        assertFalse(suppressor.shouldAnnounce(first.copy(observedAt = 1_001L), false, 1_001L))
+        assertTrue(suppressor.shouldAnnounce(next, false, 1_002L))
+        suppressor.markAnnounced(next, 1_002L)
+        assertFalse(suppressor.shouldAnnounce(next.copy(observedAt = 1_003L), false, 1_003L))
+    }
+
+    @Test
+    fun twoCloseCallbacksOnlyFirstCanBeAccepted() {
+        val suppressor = DuplicateSuppressor()
+        val first = event().copy(mediaId = "queue-item-3")
+        val second = first.copy(mediaId = "canonical-item-3", album = "Updated album")
+
+        assertTrue(suppressor.shouldAnnounce(first, false, 1_000L))
+        suppressor.markAnnounced(first, 1_000L)
+        assertFalse(suppressor.shouldAnnounce(second, false, 1_001L))
+    }
+
+    @Test
+    fun staleOldControllerCallbackCannotRepeatAnEarlierTrack() {
+        val suppressor = DuplicateSuppressor()
+        val first = event().copy(mediaId = "controller-a-track-3")
+        val next = first.copy(title = "Next song", mediaId = "controller-b-track-4", trackNumber = 4)
+        val staleOldController = first.copy(mediaId = "controller-a-refresh-track-3")
+
+        suppressor.markAnnounced(first, 1_000L)
+        assertTrue(suppressor.shouldAnnounce(next, false, 1_001L))
+        suppressor.markAnnounced(next, 1_001L)
+        assertFalse(suppressor.shouldAnnounce(staleOldController, false, 1_002L))
+    }
+
+    @Test
+    fun deterministicRefreshStressNeverRepeatsAndNextTrackSpeaksOnce() {
+        repeat(500) { seed ->
+            val suppressor = DuplicateSuppressor()
+            val first = event().copy(mediaId = "track-a-$seed")
+            val next = first.copy(
+                title = "Next song",
+                mediaId = "track-b-$seed",
+                trackNumber = 4,
+            )
+            val refreshes = listOf(
+                first.copy(artist = null, album = null, trackNumber = null),
+                first.copy(mediaId = "canonical-a-$seed", album = "Updated album"),
+                first.copy(mediaId = "queue-a-$seed", activeQueuePosition = 2, queueTitle = "A Moon Shaped Pool"),
+                first.copy(observedAt = seed.toLong() + 2L),
+            )
+            val rotation = seed % refreshes.size
+            val ordered = refreshes.drop(rotation) + refreshes.take(rotation)
+
+            assertTrue(suppressor.shouldAnnounce(first, false, 1_000L))
+            suppressor.markAnnounced(first, 1_000L)
+            ordered.forEachIndexed { index, refresh ->
+                assertFalse(suppressor.shouldAnnounce(refresh, false, 1_001L + index))
+            }
+            assertTrue(suppressor.shouldAnnounce(next, false, 1_010L))
+            suppressor.markAnnounced(next, 1_010L)
+            assertFalse(suppressor.shouldAnnounce(next.copy(observedAt = 1_011L), false, 1_011L))
+        }
+    }
+
+    @Test
     fun queueDescriptionChangingToCanonicalTitleDoesNotReadAgain() {
         val suppressor = DuplicateSuppressor()
         val queueDescription = event().copy(

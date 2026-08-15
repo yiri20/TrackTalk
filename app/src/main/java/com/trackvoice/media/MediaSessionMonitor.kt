@@ -29,6 +29,7 @@ class MediaSessionMonitor(
     private var selectedSessionKey: String? = null
     private var resumeRequestId = 0L
     private var lastPublishedSelection: PublishedSelection? = null
+    private var eventSequenceNumber = 0L
 
     val activeSessionCount: Int get() = sessions.size
 
@@ -36,6 +37,12 @@ class MediaSessionMonitor(
         if (!started) return@OnActiveSessionsChangedListener
         runCatching {
             updateControllers(controllers.orEmpty())
+            TrackTalkDebugLog.event(
+                "ACTIVE_SESSIONS_CHANGED",
+                "timestamp" to System.currentTimeMillis(),
+                "controllerCount" to controllers.orEmpty().size,
+                "thread" to Thread.currentThread().name,
+            )
             publish(MediaEventType.ACTIVE_SESSIONS)
         }
     }
@@ -159,6 +166,12 @@ class MediaSessionMonitor(
         val nextKeys = controllers.map { sessionKey(it) }.toSet()
         sessions.keys.toList().filterNot(nextKeys::contains).forEach { key ->
             sessions.remove(key)?.let { tracked ->
+                TrackTalkDebugLog.event(
+                    "CONTROLLER_UNREGISTERED",
+                    "sessionKey" to key,
+                    "package" to tracked.controller.packageName,
+                    "thread" to Thread.currentThread().name,
+                )
                 runCatching { tracked.controller.unregisterCallback(tracked.callback) }
             }
         }
@@ -172,6 +185,13 @@ class MediaSessionMonitor(
                     .onFailure { return@forEach }
                 val now = System.currentTimeMillis()
                 sessions[key] = TrackedSession(controller, sessionCallback, now, now, now)
+                TrackTalkDebugLog.event(
+                    "CONTROLLER_REGISTERED",
+                    "sessionKey" to key,
+                    "package" to controller.packageName,
+                    "controllerToken" to controller.sessionToken.hashCode(),
+                    "thread" to Thread.currentThread().name,
+                )
             } else {
                 if (existing.controller !== controller) {
                     TrackTalkDebugLog.event(
@@ -180,6 +200,13 @@ class MediaSessionMonitor(
                         "package" to controller.packageName,
                         "sameSessionToken" to (existing.controller.sessionToken == controller.sessionToken),
                         "controllerInstanceChanged" to true,
+                    )
+                    TrackTalkDebugLog.event(
+                        "CONTROLLER_RESELECTED",
+                        "sessionKey" to key,
+                        "package" to controller.packageName,
+                        "sameSessionToken" to (existing.controller.sessionToken == controller.sessionToken),
+                        "thread" to Thread.currentThread().name,
                     )
                     runCatching { existing.controller.unregisterCallback(existing.callback) }
                     val sessionCallback = callbackFor(key)
@@ -208,6 +235,13 @@ class MediaSessionMonitor(
         override fun onSessionDestroyed() {
             if (!started) return
             sessions.remove(sessionKey)?.let { tracked ->
+                TrackTalkDebugLog.event(
+                    "CONTROLLER_UNREGISTERED",
+                    "sessionKey" to sessionKey,
+                    "package" to tracked.controller.packageName,
+                    "reason" to "SESSION_DESTROYED",
+                    "thread" to Thread.currentThread().name,
+                )
                 runCatching { tracked.controller.unregisterCallback(tracked.callback) }
                 if (selectedSessionKey == sessionKey) selectedSessionKey = null
                 publish(MediaEventType.ACTIVE_SESSIONS)
@@ -218,6 +252,20 @@ class MediaSessionMonitor(
     private fun publish(eventType: MediaEventType, changedSessionKey: String? = null) {
         if (!started) return
         val now = System.currentTimeMillis()
+        val sequence = ++eventSequenceNumber
+        TrackTalkDebugLog.event(
+            when (eventType) {
+                MediaEventType.ACTIVE_SESSIONS -> "ACTIVE_SESSIONS_CHANGED"
+                MediaEventType.METADATA -> "METADATA_CALLBACK"
+                MediaEventType.PLAYBACK_STATE -> "PLAYBACK_STATE_CALLBACK"
+                MediaEventType.QUEUE -> "QUEUE_CALLBACK"
+                else -> "MEDIA_CALLBACK"
+            },
+            "timestamp" to now,
+            "eventSequenceNumber" to sequence,
+            "sessionKey" to changedSessionKey,
+            "thread" to Thread.currentThread().name,
+        )
         changedSessionKey?.let { key ->
             sessions[key]?.let { tracked ->
                 when (eventType) {
@@ -255,6 +303,7 @@ class MediaSessionMonitor(
         ) {
             TrackTalkDebugLog.event(
                 "ACTIVE_SESSION_REFRESH",
+                "eventSequenceNumber" to sequence,
                 "oldSessionKey" to previousSelection.sessionKey,
                 "newSessionKey" to selected.sessionKey,
                 "oldPackage" to previousSelection.event.sourcePackageName,
@@ -266,8 +315,33 @@ class MediaSessionMonitor(
         }
         selectedSessionKey = selected?.sessionKey
         lastPublishedSelection = selected?.let { PublishedSelection(it.sessionKey, it.event) }
+        if (previousSelection != null && selected != null && (
+                eventType == MediaEventType.ACTIVE_SESSIONS ||
+                    previousSelection.sessionKey != selected.sessionKey
+                )
+        ) {
+            TrackTalkDebugLog.event(
+                "CONTROLLER_SELECTED",
+                "eventSequenceNumber" to sequence,
+                "sessionKey" to selected.sessionKey,
+                "package" to selected.event.sourcePackageName,
+                "sameLogicalTrack" to (previousSelection?.let { sameLogicalTrack(it.event, selected.event) } ?: false),
+                "thread" to Thread.currentThread().name,
+            )
+        }
+        if (previousSelection == null && selected != null) {
+            TrackTalkDebugLog.event(
+                "CONTROLLER_SELECTED",
+                "eventSequenceNumber" to sequence,
+                "sessionKey" to selected.sessionKey,
+                "package" to selected.event.sourcePackageName,
+                "sameLogicalTrack" to false,
+                "thread" to Thread.currentThread().name,
+            )
+        }
         TrackTalkDebugLog.event(
             "media_update",
+            "eventSequenceNumber" to sequence,
             "type" to eventType,
             "activeSessions" to sessions.size,
             "source" to selected?.event?.sourcePackageName,
@@ -284,6 +358,7 @@ class MediaSessionMonitor(
             "queueTrackCoverage" to selected?.event?.queue?.count { it.trackNumber != null },
             "playing" to selected?.event?.isPlaying,
             "observedAt" to now,
+            "thread" to Thread.currentThread().name,
         )
         runCatching {
             onUpdate(
@@ -292,6 +367,9 @@ class MediaSessionMonitor(
                     activeSessionCount = sessions.size,
                     eventType = eventType,
                     observedAt = now,
+                    eventSequenceNumber = sequence,
+                    selectedSessionKey = selected?.sessionKey,
+                    callbackThread = Thread.currentThread().name,
                 ),
             )
         }
