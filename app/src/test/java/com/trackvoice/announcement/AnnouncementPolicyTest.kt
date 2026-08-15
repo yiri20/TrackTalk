@@ -124,7 +124,7 @@ class AnnouncementPolicyTest {
             event().copy(queueTitle = "출근길 재생목록"),
             UserSettings(
                 outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS,
-                playlistReadFields = setOf(
+                playlistReadFields = listOf(
                     AnnouncementReadField.COLLECTION,
                     AnnouncementReadField.ALBUM,
                     AnnouncementReadField.TRACK_NUMBER,
@@ -168,7 +168,7 @@ class AnnouncementPolicyTest {
             UserSettings(
                 outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS,
                 algorithmMode = AnnouncementMode.TITLE_ONLY,
-                algorithmReadFields = setOf(AnnouncementReadField.TITLE),
+                algorithmReadFields = listOf(AnnouncementReadField.TITLE),
             ),
             null,
             externalAudioOutput = true,
@@ -196,7 +196,7 @@ class AnnouncementPolicyTest {
             userSettings = UserSettings(
                 outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS,
                 algorithmMode = AnnouncementMode.ALBUM,
-                algorithmReadFields = setOf(
+                algorithmReadFields = listOf(
                     AnnouncementReadField.TITLE,
                     AnnouncementReadField.ARTIST,
                     AnnouncementReadField.ALBUM,
@@ -207,7 +207,7 @@ class AnnouncementPolicyTest {
             externalAudioOutput = true,
         )
 
-        assertEquals("A Moon Shaped Pool, 트랙 3번, Glass Eyes, Radiohead.", decision.text)
+        assertEquals("Glass Eyes, Radiohead, A Moon Shaped Pool, 트랙 3번.", decision.text)
     }
 
     @Test
@@ -217,7 +217,7 @@ class AnnouncementPolicyTest {
             userSettings = UserSettings(
                 outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS,
                 algorithmMode = AnnouncementMode.ALBUM,
-                algorithmReadFields = setOf(AnnouncementReadField.ALBUM),
+                algorithmReadFields = listOf(AnnouncementReadField.ALBUM),
             ),
             appSettings = null,
             externalAudioOutput = true,
@@ -233,7 +233,7 @@ class AnnouncementPolicyTest {
             userSettings = UserSettings(
                 outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS,
                 useContentTypeSettings = false,
-                defaultReadFields = setOf(
+                defaultReadFields = listOf(
                     AnnouncementReadField.TITLE,
                     AnnouncementReadField.ARTIST,
                 ),
@@ -253,8 +253,8 @@ class AnnouncementPolicyTest {
                 outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS,
                 defaultMode = AnnouncementMode.TITLE_ONLY,
                 useContentTypeSettings = true,
-                defaultReadFields = setOf(AnnouncementReadField.TITLE),
-                albumReadFields = setOf(
+                defaultReadFields = listOf(AnnouncementReadField.TITLE),
+                albumReadFields = listOf(
                     AnnouncementReadField.ALBUM,
                     AnnouncementReadField.TRACK_NUMBER,
                     AnnouncementReadField.TITLE,
@@ -274,7 +274,7 @@ class AnnouncementPolicyTest {
             event = event(),
             userSettings = UserSettings(
                 outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS,
-                albumReadFields = setOf(
+                albumReadFields = listOf(
                     AnnouncementReadField.ALBUM,
                     AnnouncementReadField.TITLE,
                     AnnouncementReadField.ARTIST,
@@ -294,7 +294,7 @@ class AnnouncementPolicyTest {
             userSettings = UserSettings(
                 outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS,
                 albumMode = AnnouncementMode.ALBUM,
-                albumReadFields = setOf(
+                albumReadFields = listOf(
                     AnnouncementReadField.TITLE,
                     AnnouncementReadField.TRACK_NUMBER,
                 ),
@@ -303,10 +303,26 @@ class AnnouncementPolicyTest {
             externalAudioOutput = true,
         )
 
-        assertEquals("트랙 3번, Glass Eyes.", decision.text)
+        assertEquals("Glass Eyes, 트랙 3번.", decision.text)
         assertTrue(decision.formatOptions.readTrackNumber)
         assertFalse(decision.formatOptions.readAlbum)
         assertFalse(decision.formatOptions.readArtist)
+    }
+
+    @Test
+    fun emptyContentSpecificSelectionFallsBackToAReadableAnnouncement() {
+        val decision = AnnouncementPolicy.decide(
+            event = event(),
+            userSettings = UserSettings(
+                outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS,
+                albumReadFields = emptyList(),
+            ),
+            appSettings = null,
+            externalAudioOutput = true,
+        )
+
+        assertTrue(decision.shouldAnnounce)
+        assertEquals("A Moon Shaped Pool, 트랙 3번, Glass Eyes, Radiohead.", decision.text)
     }
 
     @Test
@@ -316,7 +332,7 @@ class AnnouncementPolicyTest {
             userSettings = UserSettings(
                 outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS,
                 albumMode = AnnouncementMode.ALBUM,
-                albumReadFields = setOf(
+                albumReadFields = listOf(
                     AnnouncementReadField.TITLE,
                     AnnouncementReadField.TRACK_NUMBER,
                 ),

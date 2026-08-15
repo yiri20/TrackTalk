@@ -2,6 +2,7 @@ package com.trackvoice.announcement
 
 import com.trackvoice.data.AnnouncementMode
 import com.trackvoice.data.AnnouncementOrder
+import com.trackvoice.data.AnnouncementReadField
 import com.trackvoice.media.PlaybackEvent
 import com.trackvoice.media.PlaybackCollection
 import com.trackvoice.media.PlaybackCollectionResolver
@@ -22,6 +23,12 @@ data class AnnouncementFormatOptions(
     val readCollection: Boolean = true,
     val albumNameFirstTrackOnly: Boolean = false,
     val announcementOrder: AnnouncementOrder = AnnouncementOrder.DEFAULT,
+    /**
+     * Canonical ordered fields from content-specific settings. When present,
+     * this list is the exact order sent to the formatter; the legacy boolean
+     * flags remain for app-level and old saved settings compatibility.
+     */
+    val orderedFields: List<AnnouncementReadField>? = null,
 )
 
 fun AnnouncementFormatOptions.shouldReadAlbum(
@@ -76,7 +83,18 @@ object AnnouncementFormatter {
             mode
         }
 
-        val parts = when (resolvedMode) {
+        val parts = options.orderedFields?.map { field ->
+            field.toAnnouncementPart() to when (field) {
+                // The field name is already visible in the settings. Speaking
+                // "Album <name>" makes the album value sound duplicated,
+                // especially with an English voice. Read the title itself.
+                AnnouncementReadField.ALBUM -> album
+                AnnouncementReadField.TRACK_NUMBER -> track?.let { textLanguage.trackLabel(it) }
+                AnnouncementReadField.TITLE -> title
+                AnnouncementReadField.ARTIST -> artist
+                AnnouncementReadField.COLLECTION -> collectionTitle?.let { textLanguage.playlistLabel(it) }
+            }
+        } ?: when (resolvedMode) {
             AnnouncementMode.TITLE_ONLY -> listOf(
                 AnnouncementPart.TITLE to title,
             )
@@ -85,9 +103,6 @@ object AnnouncementFormatter {
                 AnnouncementPart.ARTIST to artist,
             )
             AnnouncementMode.ALBUM -> listOf(
-                // The field name is already visible in the settings. Speaking
-                // "Album <name>" makes the album value sound duplicated,
-                // especially with an English voice. Read the title itself.
                 AnnouncementPart.ALBUM to album,
                 AnnouncementPart.TRACK_NUMBER to track?.let { textLanguage.trackLabel(it) },
                 AnnouncementPart.TITLE to title,
@@ -116,6 +131,14 @@ object AnnouncementFormatter {
         TRACK_NUMBER,
         TITLE,
         ARTIST,
+    }
+
+    private fun AnnouncementReadField.toAnnouncementPart(): AnnouncementPart = when (this) {
+        AnnouncementReadField.COLLECTION -> AnnouncementPart.COLLECTION
+        AnnouncementReadField.ALBUM -> AnnouncementPart.ALBUM
+        AnnouncementReadField.TRACK_NUMBER -> AnnouncementPart.TRACK_NUMBER
+        AnnouncementReadField.TITLE -> AnnouncementPart.TITLE
+        AnnouncementReadField.ARTIST -> AnnouncementPart.ARTIST
     }
 
     private fun orderParts(

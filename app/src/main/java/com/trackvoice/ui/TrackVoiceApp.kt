@@ -30,7 +30,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -56,7 +58,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -82,11 +83,13 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -124,6 +127,9 @@ import com.trackvoice.data.DEFAULT_ALGORITHMIC_READ_FIELDS
 import com.trackvoice.data.DEFAULT_GLOBAL_READ_FIELDS
 import com.trackvoice.data.DEFAULT_PLAYLIST_READ_FIELDS
 import com.trackvoice.data.DEFAULT_TTS_VOLUME_PERCENT
+import com.trackvoice.data.normalizeAnnouncementReadFields
+import com.trackvoice.data.reorderAnnouncementReadField
+import com.trackvoice.data.toggleAnnouncementReadField
 import com.trackvoice.announcement.ConnectedAudioDevice
 import com.trackvoice.data.MAX_MUSIC_DUCK_PERCENT
 import com.trackvoice.data.MIN_MUSIC_DUCK_PERCENT
@@ -138,6 +144,7 @@ import com.trackvoice.monetization.promoCodeRedeemUrl
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.abs
 
 enum class AppSection {
     HOME,
@@ -1108,19 +1115,6 @@ private fun GeneralSettingsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     OptionDropdown(
-                        strings.announcementOrder,
-                        settings.announcementOrder,
-                        AnnouncementOrder.values().toList(),
-                        strings::announcementOrder,
-                    ) { selectedOrder ->
-                        onUpdate { current -> current.copy(announcementOrder = selectedOrder) }
-                    }
-                    Text(
-                        strings.announcementOrderSummary,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    OptionDropdown(
                         strings.allContentPresetLabel,
                         settings.defaultReadFields.toContentReadPreset(DEFAULT_GLOBAL_READ_FIELDS),
                         CONTENT_READ_PRESET_OPTIONS,
@@ -1128,7 +1122,7 @@ private fun GeneralSettingsScreen(
                     ) { preset ->
                         onUpdate { it.withGlobalReadPreset(preset) }
                     }
-                    ContentReadChecklist(
+                    ContentReadOrderPicker(
                         title = strings.allContentReadItems,
                         availableFields = listOf(
                             AnnouncementReadField.TITLE,
@@ -1139,7 +1133,13 @@ private fun GeneralSettingsScreen(
                         ),
                         selectedFields = settings.defaultReadFields,
                     ) { fields ->
-                        onUpdate { it.copy(defaultMode = AnnouncementMode.SMART, defaultReadFields = fields) }
+                        onUpdate {
+                            it.copy(
+                                defaultMode = AnnouncementMode.SMART,
+                                defaultReadFields = fields,
+                                announcementOrder = AnnouncementOrder.DEFAULT,
+                            )
+                        }
                     }
                     if (!settings.useContentTypeSettings) {
                         Text(
@@ -1167,7 +1167,7 @@ private fun GeneralSettingsScreen(
                         CONTENT_READ_PRESET_OPTIONS,
                         strings::contentReadPreset,
                     ) { preset -> onUpdate { it.withAlbumReadPreset(preset) } }
-                    ContentReadChecklist(
+                    ContentReadOrderPicker(
                         title = strings.albumReadItems,
                         availableFields = listOf(
                             AnnouncementReadField.ALBUM,
@@ -1176,7 +1176,15 @@ private fun GeneralSettingsScreen(
                             AnnouncementReadField.ARTIST,
                         ),
                         selectedFields = settings.albumReadFields,
-                    ) { fields -> onUpdate { it.copy(albumMode = AnnouncementMode.ALBUM, albumReadFields = fields) } }
+                    ) { fields ->
+                        onUpdate {
+                            it.copy(
+                                albumMode = AnnouncementMode.ALBUM,
+                                albumReadFields = fields,
+                                announcementOrder = AnnouncementOrder.DEFAULT,
+                            )
+                        }
+                    }
                     SettingSwitchRow(
                         strings.albumNameFirstTrackOnly,
                         strings.albumNameFirstTrackOnlySummary,
@@ -1192,7 +1200,7 @@ private fun GeneralSettingsScreen(
                         CONTENT_READ_PRESET_OPTIONS,
                         strings::contentReadPreset,
                     ) { preset -> onUpdate { it.withPlaylistReadPreset(preset) } }
-                    ContentReadChecklist(
+                    ContentReadOrderPicker(
                         title = strings.playlistReadItems,
                         availableFields = listOf(
                             AnnouncementReadField.COLLECTION,
@@ -1202,7 +1210,15 @@ private fun GeneralSettingsScreen(
                             AnnouncementReadField.ARTIST,
                         ),
                         selectedFields = settings.playlistReadFields,
-                    ) { fields -> onUpdate { it.copy(playlistMode = AnnouncementMode.PLAYLIST, playlistReadFields = fields) } }
+                    ) { fields ->
+                        onUpdate {
+                            it.copy(
+                                playlistMode = AnnouncementMode.PLAYLIST,
+                                playlistReadFields = fields,
+                                announcementOrder = AnnouncementOrder.DEFAULT,
+                            )
+                        }
+                    }
                 }
             }
             item {
@@ -1213,7 +1229,7 @@ private fun GeneralSettingsScreen(
                         CONTENT_READ_PRESET_OPTIONS,
                         strings::contentReadPreset,
                     ) { preset -> onUpdate { it.withAlgorithmReadPreset(preset) } }
-                    ContentReadChecklist(
+                    ContentReadOrderPicker(
                         title = strings.algorithmReadItems,
                         availableFields = listOf(
                             AnnouncementReadField.TITLE,
@@ -1227,6 +1243,7 @@ private fun GeneralSettingsScreen(
                             it.copy(
                                 algorithmMode = fields.toAlgorithmAnnouncementMode(),
                                 algorithmReadFields = fields,
+                                announcementOrder = AnnouncementOrder.DEFAULT,
                             )
                         }
                     }
@@ -1890,43 +1907,149 @@ private fun BasicPlaybackDefaults(musicDuckPercent: Int) {
 }
 
 @Composable
-private fun ContentReadChecklist(
+private fun ContentReadOrderPicker(
     title: String,
     hint: String? = null,
     availableFields: List<AnnouncementReadField>,
-    selectedFields: Set<AnnouncementReadField>,
-    onUpdate: (Set<AnnouncementReadField>) -> Unit,
+    selectedFields: List<AnnouncementReadField>,
+    onUpdate: (List<AnnouncementReadField>) -> Unit,
 ) {
     val strings = LocalTrackTalkStrings.current
+    val normalizedFields = normalizeAnnouncementReadFields(
+        fields = selectedFields,
+        allowedFields = availableFields,
+        fallbackFields = availableFields,
+    )
+    val visibleFields = normalizedFields + availableFields.filterNot { it in normalizedFields }
+    val listState = rememberLazyListState()
+    var draggingField by remember { mutableStateOf<AnnouncementReadField?>(null) }
+    var draggedDistance by remember { mutableFloatStateOf(0f) }
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         Text(
-            hint ?: strings.contentReadChecklistHint,
+            hint ?: strings.contentReadSelectionHint,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        availableFields.forEach { field ->
-            CheckRow(strings.readField(field), field in selectedFields) { checked ->
-                onUpdate(if (checked) selectedFields + field else selectedFields - field)
+        Text(
+            strings.contentReadOrderHint,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        LazyRow(
+            state = listState,
+            userScrollEnabled = draggingField == null,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(end = 4.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            items(visibleFields, key = { it.name }) { field ->
+                val active = field in normalizedFields
+                val currentFields by rememberUpdatedState(normalizedFields)
+                val currentActive by rememberUpdatedState(active)
+                val currentUpdate by rememberUpdatedState(onUpdate)
+                FilterChip(
+                    selected = active,
+                    onClick = {
+                        onUpdate(
+                            toggleAnnouncementReadField(
+                                fields = normalizedFields,
+                                field = field,
+                                enabled = !active,
+                                allowedFields = availableFields,
+                                fallbackFields = availableFields,
+                            ),
+                        )
+                    },
+                    label = {
+                        Text(
+                            strings.readField(field),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    },
+                    leadingIcon = if (active) {
+                        {
+                            Icon(
+                                Icons.Default.Check,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                    } else {
+                        null
+                    },
+                    modifier = Modifier.pointerInput(field) {
+                        detectDragGesturesAfterLongPress(
+                            onDragStart = {
+                                if (currentActive) {
+                                    draggingField = field
+                                    draggedDistance = 0f
+                                }
+                            },
+                            onDragCancel = {
+                                draggingField = null
+                                draggedDistance = 0f
+                            },
+                            onDragEnd = {
+                                draggingField = null
+                                draggedDistance = 0f
+                            },
+                            onDrag = { _, amount ->
+                                if (!currentActive || draggingField != field) return@detectDragGesturesAfterLongPress
+                                draggedDistance += amount.x
+                                val fields = currentFields
+                                val fromIndex = fields.indexOf(field)
+                                val draggedItem = listState.layoutInfo.visibleItemsInfo
+                                    .firstOrNull { it.index == fromIndex }
+                                val target = listState.layoutInfo.visibleItemsInfo
+                                    .filter { it.index in fields.indices && it.index != fromIndex }
+                                    .minByOrNull { item ->
+                                        val center = item.offset + item.size / 2f
+                                        val draggedCenter = (draggedItem?.offset ?: 0) +
+                                            (draggedItem?.size ?: 0) / 2f + draggedDistance
+                                        abs(center - draggedCenter)
+                                    }
+                                if (target != null && abs(
+                                        target.offset + target.size / 2f -
+                                            ((draggedItem?.offset ?: 0) + (draggedItem?.size ?: 0) / 2f + draggedDistance),
+                                    ) <= target.size / 2f
+                                ) {
+                                    val reordered = reorderAnnouncementReadField(
+                                        fields = fields,
+                                        field = field,
+                                        targetIndex = target.index,
+                                        allowedFields = availableFields,
+                                        fallbackFields = availableFields,
+                                    )
+                                    if (reordered != fields) {
+                                        currentUpdate(reordered)
+                                        draggedDistance = 0f
+                                    }
+                                }
+                            },
+                        )
+                    },
+                )
             }
         }
     }
 }
 
-private fun AnnouncementMode.toReadFields(defaultFields: Set<AnnouncementReadField>): Set<AnnouncementReadField> = when (this) {
-    AnnouncementMode.ALBUM -> setOf(
+private fun AnnouncementMode.toReadFields(defaultFields: List<AnnouncementReadField>): List<AnnouncementReadField> = when (this) {
+    AnnouncementMode.ALBUM -> listOf(
         AnnouncementReadField.ALBUM,
         AnnouncementReadField.TRACK_NUMBER,
         AnnouncementReadField.TITLE,
         AnnouncementReadField.ARTIST,
     )
-    AnnouncementMode.PLAYLIST -> setOf(
+    AnnouncementMode.PLAYLIST -> listOf(
         AnnouncementReadField.COLLECTION,
         AnnouncementReadField.TITLE,
         AnnouncementReadField.ARTIST,
     )
-    AnnouncementMode.TITLE_ONLY -> setOf(AnnouncementReadField.TITLE)
-    AnnouncementMode.TITLE_AND_ARTIST -> setOf(
+    AnnouncementMode.TITLE_ONLY -> listOf(AnnouncementReadField.TITLE)
+    AnnouncementMode.TITLE_AND_ARTIST -> listOf(
         AnnouncementReadField.TITLE,
         AnnouncementReadField.ARTIST,
     )
@@ -1939,10 +2062,10 @@ private val CONTENT_READ_PRESET_OPTIONS = listOf(
     ContentReadPreset.TITLE_ONLY,
 )
 
-private fun Set<AnnouncementReadField>.toContentReadPreset(defaultFields: Set<AnnouncementReadField>): ContentReadPreset = when {
+private fun List<AnnouncementReadField>.toContentReadPreset(defaultFields: List<AnnouncementReadField>): ContentReadPreset = when {
     this == defaultFields -> ContentReadPreset.DEFAULT
-    this == setOf(AnnouncementReadField.TITLE, AnnouncementReadField.ARTIST) -> ContentReadPreset.TITLE_AND_ARTIST
-    this == setOf(AnnouncementReadField.TITLE) -> ContentReadPreset.TITLE_ONLY
+    this == listOf(AnnouncementReadField.TITLE, AnnouncementReadField.ARTIST) -> ContentReadPreset.TITLE_AND_ARTIST
+    this == listOf(AnnouncementReadField.TITLE) -> ContentReadPreset.TITLE_ONLY
     else -> ContentReadPreset.CUSTOM
 }
 
@@ -1956,19 +2079,22 @@ private fun ContentReadPreset.toAnnouncementMode(defaultMode: AnnouncementMode):
 private fun UserSettings.withAlbumReadPreset(preset: ContentReadPreset): UserSettings = copy(
     albumMode = preset.toAnnouncementMode(AnnouncementMode.ALBUM),
     albumReadFields = preset.toReadFields(DEFAULT_ALBUM_READ_FIELDS),
+    announcementOrder = AnnouncementOrder.DEFAULT,
 )
 
 private fun UserSettings.withPlaylistReadPreset(preset: ContentReadPreset): UserSettings = copy(
     playlistMode = preset.toAnnouncementMode(AnnouncementMode.PLAYLIST),
     playlistReadFields = preset.toReadFields(DEFAULT_PLAYLIST_READ_FIELDS),
+    announcementOrder = AnnouncementOrder.DEFAULT,
 )
 
 private fun UserSettings.withAlgorithmReadPreset(preset: ContentReadPreset): UserSettings = copy(
     algorithmMode = preset.toAnnouncementMode(AnnouncementMode.TITLE_AND_ARTIST),
     algorithmReadFields = preset.toReadFields(DEFAULT_ALGORITHMIC_READ_FIELDS),
+    announcementOrder = AnnouncementOrder.DEFAULT,
 )
 
-private fun Set<AnnouncementReadField>.toAlgorithmAnnouncementMode(): AnnouncementMode = when {
+private fun List<AnnouncementReadField>.toAlgorithmAnnouncementMode(): AnnouncementMode = when {
     AnnouncementReadField.ALBUM in this || AnnouncementReadField.TRACK_NUMBER in this -> AnnouncementMode.ALBUM
     AnnouncementReadField.TITLE in this && AnnouncementReadField.ARTIST in this -> AnnouncementMode.TITLE_AND_ARTIST
     AnnouncementReadField.TITLE in this -> AnnouncementMode.TITLE_ONLY
@@ -1978,12 +2104,13 @@ private fun Set<AnnouncementReadField>.toAlgorithmAnnouncementMode(): Announceme
 private fun UserSettings.withGlobalReadPreset(preset: ContentReadPreset): UserSettings = copy(
     defaultMode = preset.toAnnouncementMode(AnnouncementMode.SMART),
     defaultReadFields = preset.toReadFields(DEFAULT_GLOBAL_READ_FIELDS),
+    announcementOrder = AnnouncementOrder.DEFAULT,
 )
 
-private fun ContentReadPreset.toReadFields(defaultFields: Set<AnnouncementReadField>): Set<AnnouncementReadField> = when (this) {
+private fun ContentReadPreset.toReadFields(defaultFields: List<AnnouncementReadField>): List<AnnouncementReadField> = when (this) {
     ContentReadPreset.DEFAULT -> defaultFields
-    ContentReadPreset.TITLE_AND_ARTIST -> setOf(AnnouncementReadField.TITLE, AnnouncementReadField.ARTIST)
-    ContentReadPreset.TITLE_ONLY -> setOf(AnnouncementReadField.TITLE)
+    ContentReadPreset.TITLE_AND_ARTIST -> listOf(AnnouncementReadField.TITLE, AnnouncementReadField.ARTIST)
+    ContentReadPreset.TITLE_ONLY -> listOf(AnnouncementReadField.TITLE)
     ContentReadPreset.CUSTOM -> defaultFields
 }
 
@@ -1999,14 +2126,6 @@ private fun SettingSwitchRow(title: String, summary: String, checked: Boolean, o
             Text(summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Switch(checked = checked, onCheckedChange = onCheckedChange)
-    }
-}
-
-@Composable
-private fun CheckRow(title: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Checkbox(checked = checked, onCheckedChange = onCheckedChange)
-        Text(title)
     }
 }
 

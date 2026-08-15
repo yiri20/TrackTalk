@@ -32,27 +32,43 @@ class AudioOutputDetector(context: Context) {
      */
     fun hasExternalOutput(): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val routedDevices = runCatching {
+            val routedTypes = runCatching {
                 audioManager.getAudioDevicesForAttributes(mediaAttributes)
-            }.getOrNull()
-            if (routedDevices != null) {
-                val types = routedDevices.map(AudioDeviceInfo::getType)
-                val external = hasExternalOutputType(types)
-                logRoute(types, external)
+            }.getOrNull()?.map(AudioDeviceInfo::getType)
+            if (routedTypes != null) {
+                // Samsung can return an empty attribute route even while an
+                // A2DP session is actively playing. In that specific case,
+                // use only the legacy *active-route* flags as a fallback;
+                // never use the full connected-device inventory here because
+                // a connected Bluetooth device may still be idle.
+                val external = classifyRoutedOutput(
+                    routedTypes = routedTypes,
+                    activeLegacyExternalOutput = hasActiveLegacyExternalOutput(),
+                )
+                logRoute(
+                    types = routedTypes,
+                    external = external,
+                    source = if (routedTypes.isEmpty()) "attributes_empty_legacy_active" else "attributes",
+                )
                 return external
             }
         }
 
         val external = hasLegacyExternalOutput()
-        logRoute(outputDevices().map(AudioDeviceInfo::getType), external)
+        logRoute(outputDevices().map(AudioDeviceInfo::getType), external, "legacy_inventory")
         return external
     }
 
-    private fun logRoute(types: List<Int>, external: Boolean) {
-        val signature = "${types.sorted()}|$external"
+    private fun logRoute(types: List<Int>, external: Boolean, source: String) {
+        val signature = "$source|${types.sorted()}|$external"
         if (signature == lastLoggedRoute) return
         lastLoggedRoute = signature
-        TrackTalkDebugLog.event("audio_route", "types" to types.sorted(), "external" to external)
+        TrackTalkDebugLog.event(
+            "audio_route",
+            "source" to source,
+            "types" to types.sorted(),
+            "external" to external,
+        )
     }
 
     fun hasBluetoothOutput(): Boolean = outputDevices().any { device ->
@@ -65,6 +81,7 @@ class AudioOutputDetector(context: Context) {
         )
     }
 
+    @Suppress("DEPRECATION")
     private fun hasLegacyExternalOutput(): Boolean = runCatching {
         audioManager.isWiredHeadsetOn ||
             audioManager.isBluetoothA2dpOn ||
@@ -74,6 +91,13 @@ class AudioOutputDetector(context: Context) {
             }
     }.getOrDefault(false)
 
+    @Suppress("DEPRECATION")
+    private fun hasActiveLegacyExternalOutput(): Boolean = runCatching {
+        audioManager.isWiredHeadsetOn ||
+            audioManager.isBluetoothA2dpOn ||
+            audioManager.isBluetoothScoOn
+    }.getOrDefault(false)
+
     private fun outputDevices(): Array<AudioDeviceInfo> = runCatching {
         audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
     }.getOrDefault(emptyArray())
@@ -81,6 +105,17 @@ class AudioOutputDetector(context: Context) {
     internal companion object {
         /** Pure route classification kept separate so it can be unit tested. */
         fun hasExternalOutputType(types: Iterable<Int>): Boolean = types.any(::isExternalOutputType)
+
+        /**
+         * Some Android/Samsung builds return an empty attribute route while a
+         * legacy active-route flag still identifies Bluetooth or wired audio.
+         */
+        fun classifyRoutedOutput(
+            routedTypes: Iterable<Int>,
+            activeLegacyExternalOutput: Boolean,
+        ): Boolean = routedTypes.toList().let { types ->
+            if (types.isEmpty()) activeLegacyExternalOutput else hasExternalOutputType(types)
+        }
 
         private fun isExternalOutputType(type: Int): Boolean = type in externalOutputTypes
 

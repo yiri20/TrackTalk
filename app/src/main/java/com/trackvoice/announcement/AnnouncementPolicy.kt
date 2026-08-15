@@ -5,6 +5,13 @@ import com.trackvoice.data.AnnouncementOrder
 import com.trackvoice.data.AnnouncementReadField
 import com.trackvoice.data.AppSettings
 import com.trackvoice.data.UserSettings
+import com.trackvoice.data.DEFAULT_ALBUM_READ_FIELDS
+import com.trackvoice.data.DEFAULT_ALGORITHMIC_READ_FIELDS
+import com.trackvoice.data.DEFAULT_GLOBAL_READ_FIELDS
+import com.trackvoice.data.DEFAULT_PLAYLIST_READ_FIELDS
+import com.trackvoice.data.ALL_ANNOUNCEMENT_READ_FIELDS
+import com.trackvoice.data.normalizeAnnouncementReadFields
+import com.trackvoice.data.withLegacyAnnouncementOrder
 import com.trackvoice.media.PlaybackEvent
 import com.trackvoice.media.PlaybackCollection
 import com.trackvoice.media.PlaybackCollectionResolver
@@ -147,9 +154,10 @@ object AnnouncementPolicy {
         // checklist from silently discarding checked album/track fields.
         if (typeSpecificActive) {
             return when (collection) {
-                PlaybackCollection.ALBUM -> userSettings.albumReadFields.toAlbumMode()
-                PlaybackCollection.PLAYLIST -> userSettings.playlistReadFields.toPlaylistMode()
-                PlaybackCollection.ALGORITHMIC -> userSettings.algorithmReadFields.toConfiguredMode(userSettings.algorithmMode)
+                PlaybackCollection.ALBUM -> userSettings.readFieldsFor(collection).toAlbumMode()
+                PlaybackCollection.PLAYLIST -> userSettings.readFieldsFor(collection).toPlaylistMode()
+                PlaybackCollection.ALGORITHMIC -> userSettings.readFieldsFor(collection)
+                    .toConfiguredMode(userSettings.algorithmMode)
                 PlaybackCollection.UNKNOWN -> error("unreachable")
             }
         }
@@ -181,7 +189,7 @@ object AnnouncementPolicy {
 
         if (!userSettings.useContentTypeSettings) {
             return if (userSettings.defaultMode == AnnouncementMode.SMART) {
-                userSettings.defaultReadFields.toAnnouncementMode()
+                userSettings.readFieldsFor(PlaybackCollection.UNKNOWN).toAnnouncementMode()
             } else {
                 userSettings.defaultMode
             }
@@ -190,16 +198,16 @@ object AnnouncementPolicy {
         if (userSettings.defaultMode != AnnouncementMode.SMART) return userSettings.defaultMode
 
         return when (collection) {
-            PlaybackCollection.UNKNOWN -> userSettings.defaultReadFields.toAnnouncementMode()
+            PlaybackCollection.UNKNOWN -> userSettings.readFieldsFor(PlaybackCollection.UNKNOWN).toAnnouncementMode()
             PlaybackCollection.ALBUM,
             PlaybackCollection.PLAYLIST,
             PlaybackCollection.ALGORITHMIC,
-            -> userSettings.defaultReadFields.toAnnouncementMode()
+            -> userSettings.readFieldsFor(PlaybackCollection.UNKNOWN).toAnnouncementMode()
         }
     }
 
-    private fun UserSettings.readFieldsFor(collection: PlaybackCollection): Set<AnnouncementReadField> =
-        if (!useContentTypeSettings) {
+    private fun UserSettings.readFieldsFor(collection: PlaybackCollection): List<AnnouncementReadField> {
+        val rawFields = if (!useContentTypeSettings) {
             defaultReadFields
         } else {
             when (collection) {
@@ -209,9 +217,23 @@ object AnnouncementPolicy {
                 PlaybackCollection.UNKNOWN -> defaultReadFields
             }
         }
+        val allowedFields = when (collection) {
+            PlaybackCollection.ALBUM -> DEFAULT_ALBUM_READ_FIELDS
+            PlaybackCollection.PLAYLIST -> DEFAULT_PLAYLIST_READ_FIELDS
+            PlaybackCollection.ALGORITHMIC -> DEFAULT_ALGORITHMIC_READ_FIELDS
+            PlaybackCollection.UNKNOWN -> ALL_ANNOUNCEMENT_READ_FIELDS
+        }
+        val fallbackFields = when (collection) {
+            PlaybackCollection.ALBUM -> DEFAULT_ALBUM_READ_FIELDS
+            PlaybackCollection.PLAYLIST -> DEFAULT_PLAYLIST_READ_FIELDS
+            PlaybackCollection.ALGORITHMIC -> DEFAULT_ALGORITHMIC_READ_FIELDS
+            PlaybackCollection.UNKNOWN -> DEFAULT_GLOBAL_READ_FIELDS
+        }
+        return normalizeAnnouncementReadFields(rawFields, allowedFields, fallbackFields)
+    }
 }
 
-private fun Set<AnnouncementReadField>.toFormatOptions(
+private fun List<AnnouncementReadField>.toFormatOptions(
     albumNameFirstTrackOnly: Boolean = false,
     announcementOrder: AnnouncementOrder = AnnouncementOrder.DEFAULT,
 ) = AnnouncementFormatOptions(
@@ -222,9 +244,10 @@ private fun Set<AnnouncementReadField>.toFormatOptions(
     readCollection = AnnouncementReadField.COLLECTION in this,
     albumNameFirstTrackOnly = albumNameFirstTrackOnly,
     announcementOrder = announcementOrder,
+    orderedFields = withLegacyAnnouncementOrder(announcementOrder),
 )
 
-private fun Set<AnnouncementReadField>.toAnnouncementMode(): AnnouncementMode = when {
+private fun List<AnnouncementReadField>.toAnnouncementMode(): AnnouncementMode = when {
     AnnouncementReadField.ALBUM in this || AnnouncementReadField.TRACK_NUMBER in this -> AnnouncementMode.ALBUM
     AnnouncementReadField.COLLECTION in this -> AnnouncementMode.PLAYLIST
     AnnouncementReadField.TITLE in this && AnnouncementReadField.ARTIST in this -> AnnouncementMode.TITLE_AND_ARTIST
@@ -232,7 +255,7 @@ private fun Set<AnnouncementReadField>.toAnnouncementMode(): AnnouncementMode = 
     else -> AnnouncementMode.TITLE_AND_ARTIST
 }
 
-private fun Set<AnnouncementReadField>.toConfiguredMode(configuredMode: AnnouncementMode): AnnouncementMode {
+private fun List<AnnouncementReadField>.toConfiguredMode(configuredMode: AnnouncementMode): AnnouncementMode {
     // The checklist is the source of truth for metadata fields. Older saved
     // settings may still contain TITLE_AND_ARTIST in the legacy mode field;
     // do not let that stale value hide a newly checked album or track number.
@@ -244,14 +267,14 @@ private fun Set<AnnouncementReadField>.toConfiguredMode(configuredMode: Announce
     }
 }
 
-private fun Set<AnnouncementReadField>.toAlbumMode(): AnnouncementMode = when {
+private fun List<AnnouncementReadField>.toAlbumMode(): AnnouncementMode = when {
     AnnouncementReadField.ALBUM in this || AnnouncementReadField.TRACK_NUMBER in this -> AnnouncementMode.ALBUM
     AnnouncementReadField.TITLE in this && AnnouncementReadField.ARTIST in this -> AnnouncementMode.TITLE_AND_ARTIST
     AnnouncementReadField.TITLE in this -> AnnouncementMode.TITLE_ONLY
     else -> AnnouncementMode.TITLE_AND_ARTIST
 }
 
-private fun Set<AnnouncementReadField>.toPlaylistMode(): AnnouncementMode = when {
+private fun List<AnnouncementReadField>.toPlaylistMode(): AnnouncementMode = when {
     AnnouncementReadField.COLLECTION in this ||
         AnnouncementReadField.ALBUM in this ||
         AnnouncementReadField.TRACK_NUMBER in this -> AnnouncementMode.PLAYLIST

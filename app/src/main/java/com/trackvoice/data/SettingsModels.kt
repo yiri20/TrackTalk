@@ -81,14 +81,25 @@ enum class AnnouncementReadField {
     COLLECTION,
 }
 
-val DEFAULT_ALBUM_READ_FIELDS = setOf(
+/** Every field that can be selected in the global reading configuration. */
+val ALL_ANNOUNCEMENT_READ_FIELDS = listOf(
+    AnnouncementReadField.TITLE,
+    AnnouncementReadField.ARTIST,
+    AnnouncementReadField.ALBUM,
+    AnnouncementReadField.TRACK_NUMBER,
+    AnnouncementReadField.COLLECTION,
+)
+
+/** The canonical default order for album announcements. */
+val DEFAULT_ALBUM_READ_FIELDS = listOf(
     AnnouncementReadField.ALBUM,
     AnnouncementReadField.TRACK_NUMBER,
     AnnouncementReadField.TITLE,
     AnnouncementReadField.ARTIST,
 )
 
-val DEFAULT_PLAYLIST_READ_FIELDS = setOf(
+/** The canonical default order for playlist announcements. */
+val DEFAULT_PLAYLIST_READ_FIELDS = listOf(
     AnnouncementReadField.COLLECTION,
     AnnouncementReadField.ALBUM,
     AnnouncementReadField.TRACK_NUMBER,
@@ -96,7 +107,8 @@ val DEFAULT_PLAYLIST_READ_FIELDS = setOf(
     AnnouncementReadField.ARTIST,
 )
 
-val DEFAULT_ALGORITHMIC_READ_FIELDS = setOf(
+/** The canonical default order for recommendation/shuffle announcements. */
+val DEFAULT_ALGORITHMIC_READ_FIELDS = listOf(
     AnnouncementReadField.ALBUM,
     AnnouncementReadField.TRACK_NUMBER,
     AnnouncementReadField.TITLE,
@@ -106,6 +118,84 @@ val DEFAULT_ALGORITHMIC_READ_FIELDS = setOf(
 // A safe global fallback that works across players even when album or queue
 // metadata is missing.
 val DEFAULT_GLOBAL_READ_FIELDS = DEFAULT_ALGORITHMIC_READ_FIELDS
+
+/**
+ * Removes duplicates/unsupported values while preserving the user's order.
+ * A reading configuration must never become empty: old or corrupt storage is
+ * normalized to its content-specific default, then to the first supported
+ * field as a final safety net.
+ */
+fun normalizeAnnouncementReadFields(
+    fields: Iterable<AnnouncementReadField>,
+    allowedFields: List<AnnouncementReadField>,
+    fallbackFields: List<AnnouncementReadField>,
+): List<AnnouncementReadField> {
+    val allowed = allowedFields.toSet()
+    val normalized = fields
+        .filter { it in allowed }
+        .distinct()
+    if (normalized.isNotEmpty()) return normalized
+
+    val fallback = fallbackFields
+        .filter { it in allowed }
+        .distinct()
+    return fallback.ifEmpty { allowedFields.distinct().take(1) }
+}
+
+/**
+ * Toggles a field in the canonical ordered selection. The final active field
+ * cannot be removed, preventing a silent no-text configuration in the UI.
+ */
+fun toggleAnnouncementReadField(
+    fields: List<AnnouncementReadField>,
+    field: AnnouncementReadField,
+    enabled: Boolean,
+    allowedFields: List<AnnouncementReadField>,
+    fallbackFields: List<AnnouncementReadField> = allowedFields,
+): List<AnnouncementReadField> {
+    val normalized = normalizeAnnouncementReadFields(fields, allowedFields, fallbackFields)
+    return when {
+        enabled && field !in normalized && field in allowedFields -> normalized + field
+        !enabled && field in normalized && normalized.size > 1 -> normalized - field
+        else -> normalized
+    }
+}
+
+/** Reorders one active field without changing the active/inactive selection. */
+fun reorderAnnouncementReadField(
+    fields: List<AnnouncementReadField>,
+    field: AnnouncementReadField,
+    targetIndex: Int,
+    allowedFields: List<AnnouncementReadField>,
+    fallbackFields: List<AnnouncementReadField> = allowedFields,
+): List<AnnouncementReadField> {
+    val normalized = normalizeAnnouncementReadFields(fields, allowedFields, fallbackFields)
+    val currentIndex = normalized.indexOf(field)
+    if (currentIndex < 0 || normalized.size < 2) return normalized
+    val mutable = normalized.toMutableList()
+    val item = mutable.removeAt(currentIndex)
+    mutable.add(targetIndex.coerceIn(0, mutable.size), item)
+    return mutable
+}
+
+/**
+ * Applies the old single-first-field setting while migrating legacy data.
+ * New UI changes store the full order and reset this compatibility value.
+ */
+fun List<AnnouncementReadField>.withLegacyAnnouncementOrder(
+    order: AnnouncementOrder,
+): List<AnnouncementReadField> {
+    val first = when (order) {
+        AnnouncementOrder.DEFAULT -> null
+        AnnouncementOrder.TITLE_FIRST -> AnnouncementReadField.TITLE
+        AnnouncementOrder.ALBUM_FIRST -> AnnouncementReadField.ALBUM
+        AnnouncementOrder.TRACK_NUMBER_FIRST -> AnnouncementReadField.TRACK_NUMBER
+        AnnouncementOrder.ARTIST_FIRST -> AnnouncementReadField.ARTIST
+        AnnouncementOrder.COLLECTION_FIRST -> AnnouncementReadField.COLLECTION
+    } ?: return this
+    if (first !in this) return this
+    return listOf(first) + filterNot { it == first }
+}
 
 enum class AnnouncementTiming(val label: String) {
     IMMEDIATE("즉시"),
@@ -170,17 +260,17 @@ data class UserSettings(
     val delaySeconds: Int = 0,
     val defaultMode: AnnouncementMode = AnnouncementMode.SMART,
     val useContentTypeSettings: Boolean = true,
-    val defaultReadFields: Set<AnnouncementReadField> = DEFAULT_GLOBAL_READ_FIELDS,
+    val defaultReadFields: List<AnnouncementReadField> = DEFAULT_GLOBAL_READ_FIELDS,
     val announcementOrder: AnnouncementOrder = AnnouncementOrder.DEFAULT,
     val allowRepeatAnnouncements: Boolean = false,
     val minimumPlaybackSeconds: Int = 0,
     val albumMode: AnnouncementMode = AnnouncementMode.ALBUM,
     val playlistMode: AnnouncementMode = AnnouncementMode.PLAYLIST,
     val algorithmMode: AnnouncementMode = AnnouncementMode.TITLE_AND_ARTIST,
-    val albumReadFields: Set<AnnouncementReadField> = DEFAULT_ALBUM_READ_FIELDS,
+    val albumReadFields: List<AnnouncementReadField> = DEFAULT_ALBUM_READ_FIELDS,
     val albumNameFirstTrackOnly: Boolean = false,
-    val playlistReadFields: Set<AnnouncementReadField> = DEFAULT_PLAYLIST_READ_FIELDS,
-    val algorithmReadFields: Set<AnnouncementReadField> = DEFAULT_ALGORITHMIC_READ_FIELDS,
+    val playlistReadFields: List<AnnouncementReadField> = DEFAULT_PLAYLIST_READ_FIELDS,
+    val algorithmReadFields: List<AnnouncementReadField> = DEFAULT_ALGORITHMIC_READ_FIELDS,
     val voiceLanguage: VoiceLanguage = VoiceLanguage.AUTO,
     val voiceName: String? = null,
     val genderFilter: GenderFilter = GenderFilter.ANY,

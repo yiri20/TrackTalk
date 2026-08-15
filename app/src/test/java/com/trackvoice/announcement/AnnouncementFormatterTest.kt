@@ -2,6 +2,7 @@
 
 import com.trackvoice.data.AnnouncementMode
 import com.trackvoice.data.AnnouncementOrder
+import com.trackvoice.data.AnnouncementReadField
 import com.trackvoice.media.PlaybackEvent
 import com.trackvoice.media.PlaybackCollection
 import com.trackvoice.media.PlaybackStatus
@@ -12,6 +13,26 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class AnnouncementFormatterTest {
+    @Test
+    fun orderedFieldsAreSpokenInTheSameOrderAsTheSelection() {
+        assertEquals(
+            "트랙 3번, Glass Eyes, A Moon Shaped Pool, Radiohead.",
+            AnnouncementFormatter.format(
+                event(),
+                AnnouncementMode.ALBUM,
+                AnnouncementFormatOptions(
+                    orderedFields = listOf(
+                        AnnouncementReadField.TRACK_NUMBER,
+                        AnnouncementReadField.TITLE,
+                        AnnouncementReadField.ALBUM,
+                        AnnouncementReadField.ARTIST,
+                    ),
+                ),
+                collection = PlaybackCollection.ALBUM,
+            ),
+        )
+    }
+
     @Test
     fun titleOnlyReadsTitle() {
         assertEquals("Glass Eyes.", AnnouncementFormatter.format(event(), AnnouncementMode.TITLE_ONLY))

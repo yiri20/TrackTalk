@@ -95,4 +95,29 @@ class DataStoreRepositoryInstrumentedTest {
             repository.updateUserSettings { original }
         }
     }
+
+    @Test
+    fun orderedContentReadFieldsSurviveRepositoryRecreation() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val repository = DataStoreRepository(context)
+        val original = repository.currentUserSettings()
+        val selectedOrder = listOf(
+            AnnouncementReadField.TRACK_NUMBER,
+            AnnouncementReadField.TITLE,
+        )
+
+        try {
+            repository.updateUserSettings { current ->
+                current.copy(
+                    albumReadFields = selectedOrder,
+                    announcementOrder = AnnouncementOrder.DEFAULT,
+                )
+            }
+
+            val recreatedRepository = DataStoreRepository(context)
+            assertEquals(selectedOrder, recreatedRepository.currentUserSettings().albumReadFields)
+        } finally {
+            repository.updateUserSettings { original }
+        }
+    }
 }

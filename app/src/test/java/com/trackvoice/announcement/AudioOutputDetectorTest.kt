@@ -54,6 +54,32 @@ class AudioOutputDetectorTest {
     }
 
     @Test
+    fun emptyAttributeRouteFallsBackToAnActiveLegacyExternalRoute() {
+        assertTrue(
+            AudioOutputDetector.classifyRoutedOutput(
+                routedTypes = emptyList(),
+                activeLegacyExternalOutput = true,
+            ),
+        )
+        assertFalse(
+            AudioOutputDetector.classifyRoutedOutput(
+                routedTypes = emptyList(),
+                activeLegacyExternalOutput = false,
+            ),
+        )
+    }
+
+    @Test
+    fun nonEmptyAttributeRouteRemainsAuthoritativeOverLegacyInventory() {
+        assertFalse(
+            AudioOutputDetector.classifyRoutedOutput(
+                routedTypes = listOf(AudioDeviceInfo.TYPE_BUILTIN_SPEAKER),
+                activeLegacyExternalOutput = true,
+            ),
+        )
+    }
+
+    @Test
     fun UsbAndHdmiRoutesAreExternal() {
         assertTrue(
             AudioOutputDetector.hasExternalOutputType(

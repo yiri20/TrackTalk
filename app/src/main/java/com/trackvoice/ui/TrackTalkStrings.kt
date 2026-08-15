@@ -339,7 +339,11 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     )
     val playlistReadItems: String get() = t("재생목록에서 읽기", "Read from playlists")
     val algorithmReadItems: String get() = t("추천·랜덤에서 읽기", "Read from recommended / shuffle")
-    val contentReadChecklistHint: String get() = t("체크한 항목만 읽습니다.", "Only checked items are read.")
+    val contentReadSelectionHint: String get() = t("선택한 항목만 읽습니다.", "Only selected items are read.")
+    val contentReadOrderHint: String get() = t(
+        "항목을 눌러 켜고 끄세요. 길게 눌러 좌우로 끌면 읽는 순서를 바꿉니다.",
+        "Tap to include or exclude. Touch and hold, then drag left or right to reorder.",
+    )
     val contentSpecificPlusSummary: String get() = t(
         "콘텐츠별 읽기 항목과 안내 순서를 따로 설정합니다.",
         "Set reading fields and announcement order for each content type.",

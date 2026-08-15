@@ -17,6 +17,7 @@ import com.trackvoice.announcement.TtsEngine
 import com.trackvoice.announcement.TtsState
 import com.trackvoice.announcement.shouldReadAlbum
 import com.trackvoice.data.AnnouncementMode
+import com.trackvoice.data.AnnouncementReadField
 import com.trackvoice.data.AppGuideEnablementPolicy
 import com.trackvoice.data.AppSettings
 import com.trackvoice.data.DataStoreRepository
@@ -127,7 +128,10 @@ class TrackVoiceController(
 
     init {
         scope.launch(Dispatchers.IO) { repository.migrateTtsVolumeDefault() }
-        scope.launch(Dispatchers.IO) { repository.migrateContentReadDefaults() }
+        scope.launch(Dispatchers.IO) {
+            repository.migrateContentReadDefaults()
+            repository.migrateContentReadOrder()
+        }
         scope.launch(Dispatchers.IO) { repository.migrateAudioOutputPolicy() }
         scope.launch {
             userSettings.collectLatest { settings ->
@@ -573,6 +577,24 @@ class TrackVoiceController(
             externalAudioOutput = externalOutput,
             collectionOverride = collection,
         )
+        val configSource = when {
+            settings.useContentTypeSettings && collection != PlaybackCollection.UNKNOWN -> "CONTENT_TYPE"
+            app?.useCustomGuideSettings == true -> "APP"
+            else -> "DEFAULT"
+        }
+        TrackTalkDebugLog.event(
+            "CONTENT_TYPE",
+            "mediaId" to event.mediaId,
+            "resolved" to collection,
+            "source" to configSource,
+        )
+        TrackTalkDebugLog.event(
+            "ANNOUNCEMENT_CONFIG",
+            "source" to configSource,
+            "selected" to decision.formatOptions.orderedFields?.joinToString(","),
+            "legacyOrder" to decision.formatOptions.announcementOrder,
+            "mode" to decision.mode,
+        )
         TrackTalkDebugLog.event(
             "announcement_policy",
             "mediaId" to event.mediaId,
@@ -588,6 +610,14 @@ class TrackVoiceController(
             "shouldAnnounce" to decision.shouldAnnounce,
             "skipReason" to decision.skipReason,
             "delayMs" to decision.delayMs,
+        )
+        TrackTalkDebugLog.event(
+            "ANNOUNCEMENT_DECISION",
+            "stage" to "INITIAL",
+            "mediaId" to event.mediaId,
+            "shouldAnnounce" to decision.shouldAnnounce,
+            "skipReason" to decision.skipReason,
+            "textAvailable" to (decision.text != null),
         )
         if (decision.shouldAnnounce) {
             logAnnouncementComponents(
@@ -737,6 +767,14 @@ class TrackVoiceController(
                     externalAudioOutput = outputDetector.hasExternalOutput(),
                     collectionOverride = _mediaState.value.currentCollection,
                 )
+                TrackTalkDebugLog.event(
+                    "ANNOUNCEMENT_DECISION",
+                    "stage" to "FINAL",
+                    "mediaId" to current.mediaId,
+                    "shouldAnnounce" to currentDecision.shouldAnnounce,
+                    "skipReason" to currentDecision.skipReason,
+                    "textAvailable" to (currentDecision.text != null),
+                )
                 if (!currentDecision.shouldAnnounce || currentDecision.text == null) return@launch
 
                 logAnnouncementComponents(
@@ -754,9 +792,11 @@ class TrackVoiceController(
                     announcementText = currentDecision.text,
                 )
                 TrackTalkDebugLog.event(
-                    "tts_request",
+                    "TTS_REQUESTED",
                     "mediaId" to current.mediaId,
                     "title" to current.title,
+                    "artist" to current.artist,
+                    "album" to current.album,
                     "observedAt" to current.observedAt,
                     "elapsedSinceObservedMs" to (announcedAt - current.observedAt),
                     "collection" to currentDecision.collection,
@@ -807,11 +847,12 @@ class TrackVoiceController(
         val available = required.filter { componentAvailable(event, decision, it) }
         val missing = required.filterNot(available::contains)
         TrackTalkDebugLog.event(
-            "ANNOUNCEMENT_COMPONENTS",
+            "METADATA_AVAILABILITY",
             "trackIdentity" to TrackFingerprint.announcementBase(event),
             "mediaId" to event.mediaId,
             "collection" to decision.collection,
             "mode" to decision.mode,
+            "selected" to decision.formatOptions.orderedFields?.joinToString(","),
             "required" to required.joinToString(",", prefix = "[", postfix = "]"),
             "available" to available.joinToString(",", prefix = "[", postfix = "]"),
             "missing" to missing.joinToString(",", prefix = "[", postfix = "]"),
@@ -853,6 +894,13 @@ class TrackVoiceController(
             else -> decision.mode
         }
         val options = decision.formatOptions
+        options.orderedFields?.let { orderedFields ->
+            return orderedFields
+                .filter { field ->
+                    field != AnnouncementReadField.ALBUM || options.shouldReadAlbum(event, decision.collection)
+                }
+                .map(AnnouncementReadField::name)
+        }
         return when (mode) {
             AnnouncementMode.TITLE_ONLY -> listOf("TITLE")
             AnnouncementMode.TITLE_AND_ARTIST -> buildList {
