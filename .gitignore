@@ -18,6 +18,13 @@ outputs/
 captures/
 .codex-remote-attachments/
 
+# Workspace-local Android/Gradle state and disposable visual verification
+# captures. Production resources belong under app/src/main/res and are not
+# covered by these rules.
+.android-user-home/
+.gradle-user-home/
+artifacts/screenshots/
+
 # OS metadata
 .DS_Store
 Thumbs.db
