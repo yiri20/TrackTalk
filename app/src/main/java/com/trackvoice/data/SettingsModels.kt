@@ -135,13 +135,18 @@ val DEFAULT_ALGORITHMIC_READ_FIELDS = listOf(
     AnnouncementReadField.ARTIST,
 )
 
-// A safe global fallback that works across players even when album metadata
-// is missing. Track number remains available in the internal field model, but
-// is intentionally not part of the beta default.
+// The canonical order is also the order used to place inactive chips after
+// the active selection. A new user starts with only the title active, while
+// Artist and Album remain available immediately after it.
 val DEFAULT_GLOBAL_READ_FIELDS = listOf(
-    AnnouncementReadField.ALBUM,
     AnnouncementReadField.TITLE,
     AnnouncementReadField.ARTIST,
+    AnnouncementReadField.ALBUM,
+)
+
+/** Fields enabled for a genuinely new/untouched global configuration. */
+val DEFAULT_GLOBAL_ENABLED_READ_FIELDS = listOf(
+    AnnouncementReadField.TITLE,
 )
 
 /**
@@ -179,7 +184,7 @@ fun mergeBetaVisibleAnnouncementReadFields(
     val visible = normalizeAnnouncementReadFields(
         fields = visibleFields,
         allowedFields = BETA_VISIBLE_ANNOUNCEMENT_READ_FIELDS,
-        fallbackFields = DEFAULT_GLOBAL_READ_FIELDS,
+        fallbackFields = DEFAULT_GLOBAL_ENABLED_READ_FIELDS,
     )
     val hidden = storedFields
         .filter { it in GLOBAL_ANNOUNCEMENT_READ_FIELDS && it !in BETA_VISIBLE_ANNOUNCEMENT_READ_FIELDS }
@@ -321,7 +326,7 @@ data class UserSettings(
     // Playback source context is not a reliable MediaSession fact. The
     // runtime and UI therefore use one global field order.
     val useContentTypeSettings: Boolean = false,
-    val defaultReadFields: List<AnnouncementReadField> = DEFAULT_GLOBAL_READ_FIELDS,
+    val defaultReadFields: List<AnnouncementReadField> = DEFAULT_GLOBAL_ENABLED_READ_FIELDS,
     val announcementOrder: AnnouncementOrder = AnnouncementOrder.DEFAULT,
     val allowRepeatAnnouncements: Boolean = false,
     val minimumPlaybackSeconds: Int = 0,

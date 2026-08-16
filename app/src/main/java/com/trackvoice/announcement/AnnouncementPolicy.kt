@@ -7,7 +7,7 @@ import com.trackvoice.data.AppSettings
 import com.trackvoice.data.UserSettings
 import com.trackvoice.data.DEFAULT_ALBUM_READ_FIELDS
 import com.trackvoice.data.DEFAULT_ALGORITHMIC_READ_FIELDS
-import com.trackvoice.data.DEFAULT_GLOBAL_READ_FIELDS
+import com.trackvoice.data.DEFAULT_GLOBAL_ENABLED_READ_FIELDS
 import com.trackvoice.data.DEFAULT_PLAYLIST_READ_FIELDS
 import com.trackvoice.data.ALL_ANNOUNCEMENT_READ_FIELDS
 import com.trackvoice.data.BETA_VISIBLE_ANNOUNCEMENT_READ_FIELDS
@@ -150,7 +150,7 @@ object AnnouncementPolicy {
             fields = normalizeAnnouncementReadFields(
                 userSettings.defaultReadFields,
                 BETA_VISIBLE_ANNOUNCEMENT_READ_FIELDS,
-                DEFAULT_GLOBAL_READ_FIELDS,
+                DEFAULT_GLOBAL_ENABLED_READ_FIELDS,
             ),
             typeSpecificSettingsEnabled = false,
         )

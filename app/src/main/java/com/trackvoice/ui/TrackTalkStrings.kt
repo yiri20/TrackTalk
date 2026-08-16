@@ -432,6 +432,11 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
         GenderFilter.MALE -> t("남성 음성", "male")
     }
 
+    val automaticVoiceSelection: String get() = t(
+        "언어에 맞는 음성을 자동으로 선택합니다.",
+        "Automatically chooses a compatible voice for each language.",
+    )
+
     companion object {
         fun forLanguage(appLanguage: AppLanguage, systemLanguage: String): TrackTalkStrings =
             TrackTalkStrings(appLanguage.resolve(systemLanguage))

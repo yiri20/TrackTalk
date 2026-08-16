@@ -10,6 +10,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.trackvoice.announcement.AnnouncementPolicy
 import com.trackvoice.data.AnnouncementOutputPolicy
+import com.trackvoice.data.AnnouncementReadField
 import com.trackvoice.data.UserSettings
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -134,7 +135,14 @@ class TrackMetadataMapperInstrumentedTest {
             .map(MediaController(context, session.sessionToken), observedAt = 235L)
         val decision = AnnouncementPolicy.decide(
             event = event,
-            userSettings = UserSettings(outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS),
+            userSettings = UserSettings(
+                outputPolicy = AnnouncementOutputPolicy.ALL_OUTPUTS,
+                defaultReadFields = listOf(
+                    AnnouncementReadField.ALBUM,
+                    AnnouncementReadField.TITLE,
+                    AnnouncementReadField.ARTIST,
+                ),
+            ),
             appSettings = null,
             externalAudioOutput = true,
             collectionOverride = PlaybackCollection.ALBUM,

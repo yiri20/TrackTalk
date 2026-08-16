@@ -9,7 +9,6 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import com.trackvoice.data.UserSettings
 import com.trackvoice.data.VoiceLanguage
-import com.trackvoice.data.GenderFilter
 import com.trackvoice.diagnostics.TrackTalkDebugLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -27,15 +26,6 @@ data class TtsState(
     val status: TtsStatus = TtsStatus.INITIALIZING,
     val message: String = "TTS 초기화 중",
     val fallbackUsed: Boolean = false,
-)
-
-data class InstalledVoice(
-    val name: String,
-    val label: String,
-    val localeTag: String,
-    val quality: Int,
-    val requiresNetwork: Boolean,
-    val gender: GenderFilter,
 )
 
 object TtsLocaleResolver {
@@ -96,30 +86,32 @@ object MixedLanguageSegmenter {
     }
 }
 
-class TtsEngine(context: Context) : TextToSpeech.OnInitListener {
+class TtsEngine(context: Context) {
     private val appContext = context.applicationContext
     private val mainHandler = Handler(Looper.getMainLooper())
     private val _state = MutableStateFlow(TtsState())
     private val _voices = MutableStateFlow<List<InstalledVoice>>(emptyList())
-    private var textToSpeech: TextToSpeech? = null
+    private val ttsProvider: TtsProvider = AndroidSystemTtsProvider(appContext)
 
     val state: StateFlow<TtsState> = _state.asStateFlow()
     val voices: StateFlow<List<InstalledVoice>> = _voices.asStateFlow()
 
     init {
-        mainHandler.post { textToSpeech = TextToSpeech(appContext, this) }
+        mainHandler.post { ttsProvider.initialize(::onProviderInitialized) }
     }
 
-    override fun onInit(status: Int) {
-        TrackTalkDebugLog.event("tts_init", "status" to status)
-        if (status != TextToSpeech.SUCCESS) {
+    private fun onProviderInitialized(success: Boolean) {
+        TrackTalkDebugLog.event(
+            "tts_init",
+            "status" to if (success) TextToSpeech.SUCCESS else TextToSpeech.ERROR,
+        )
+        if (!success) {
             _state.value = TtsState(TtsStatus.ERROR, "기본 TTS 엔진을 초기화하지 못했습니다.")
             return
         }
-        val engine = textToSpeech ?: return
-        runCatching { engine.setOnUtteranceProgressListener(progressListener) }
+        runCatching { ttsProvider.setProgressListener(progressListener) }
         val audioAttributes = TrackTalkAudioAttributes.speech()
-        val audioAttributesApplied = runCatching { engine.setAudioAttributes(audioAttributes); true }
+        val audioAttributesApplied = runCatching { ttsProvider.setAudioAttributes(audioAttributes) }
             .getOrDefault(false)
         TrackTalkDebugLog.event(
             "TTS_AUDIO_ATTRIBUTES",
@@ -128,8 +120,8 @@ class TtsEngine(context: Context) : TextToSpeech.OnInitListener {
             "ttsContentType" to TrackTalkAudioAttributes.CONTENT_TYPE_LABEL,
             "volumeControlStream" to audioAttributes.volumeControlStream,
         )
-        runCatching { refreshVoices(engine) }
-        _state.value = TtsState(TtsStatus.READY, "사용 가능한 TTS 음성을 준비했습니다.")
+        runCatching { refreshVoices() }
+        _state.value = TtsState(TtsStatus.READY, "TTS 준비 완료")
     }
 
     fun speak(
@@ -143,8 +135,7 @@ class TtsEngine(context: Context) : TextToSpeech.OnInitListener {
                 onFinished(false, "읽을 내용이 없습니다.")
                 return@post
             }
-            val engine = textToSpeech
-            if (engine == null || _state.value.status != TtsStatus.READY) {
+            if (_state.value.status != TtsStatus.READY) {
                 onFinished(false, "TTS가 아직 준비되지 않았습니다.")
                 return@post
             }
@@ -160,11 +151,11 @@ class TtsEngine(context: Context) : TextToSpeech.OnInitListener {
             }
             pendingResults.clear()
             utteranceTransitionAtMs.clear()
-            runCatching { engine.stop() }
-            val supportedLocales = runCatching { engine.voices.orEmpty().map { it.locale }.toSet() }
+            runCatching { ttsProvider.stop() }
+            val supportedLocales = runCatching { ttsProvider.supportedLocales() }
                 .getOrDefault(emptySet())
-            runCatching { engine.setSpeechRate(settings.speechRate.coerceIn(0.5f, 2f)) }
-            runCatching { engine.setPitch(settings.pitch.coerceIn(0.5f, 2f)) }
+            runCatching { ttsProvider.setSpeechRate(settings.speechRate.coerceIn(0.5f, 2f)) }
+            runCatching { ttsProvider.setPitch(settings.pitch.coerceIn(0.5f, 2f)) }
             val ttsParamVolume = TtsVolumeMapping.parameterForUiVolume(settings.volume)
             val params = Bundle().apply {
                 putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, ttsParamVolume)
@@ -189,18 +180,18 @@ class TtsEngine(context: Context) : TextToSpeech.OnInitListener {
                     supported = supportedLocales,
                     systemDefault = fallbackLocale,
                 )
-                val languageResult = runCatching { engine.setLanguage(resolvedLocale) }
+                val languageResult = runCatching { ttsProvider.setLanguage(resolvedLocale) }
                     .getOrDefault(TextToSpeech.LANG_NOT_SUPPORTED)
                 val segmentFallback = localeFallback || languageResult == TextToSpeech.LANG_MISSING_DATA ||
                     languageResult == TextToSpeech.LANG_NOT_SUPPORTED
                 localeFallbackUsed = localeFallbackUsed || segmentFallback
                 genderFallbackUsed = genderFallbackUsed || runCatching {
-                    selectVoice(engine, resolvedLocale, settings)
+                    selectVoice(ttsProvider, resolvedLocale, settings)
                 }.getOrDefault(true)
                 val utteranceId = "trackvoice-${System.nanoTime()}-$index"
                 pendingResults[utteranceId] = batch
                 utteranceTransitionAtMs[utteranceId] = transitionAtMs
-                val result = runCatching { engine.speak(
+                val result = runCatching { ttsProvider.speak(
                     segment.text,
                     if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD,
                     params,
@@ -217,7 +208,7 @@ class TtsEngine(context: Context) : TextToSpeech.OnInitListener {
                     localeFallbackUsed && genderFallbackUsed -> "일부 언어 또는 성별 음성이 없어 기본 음성으로 안내합니다."
                     localeFallbackUsed -> "일부 언어 음성이 없어 기본 음성으로 안내합니다."
                     genderFallbackUsed -> "일부 언어에 지정한 성별 음성이 없어 가능한 기본 음성으로 안내합니다."
-                    else -> "다국어 TTS 준비 완료"
+                    else -> "TTS 준비 완료"
                 },
                 fallbackUsed = localeFallbackUsed || genderFallbackUsed,
             )
@@ -296,9 +287,8 @@ class TtsEngine(context: Context) : TextToSpeech.OnInitListener {
 
     fun shutdown() {
         mainHandler.post {
-            runCatching { textToSpeech?.stop() }
-            runCatching { textToSpeech?.shutdown() }
-            textToSpeech = null
+            runCatching { ttsProvider.stop() }
+            runCatching { ttsProvider.shutdown() }
             pendingResults.clear()
             utteranceTransitionAtMs.clear()
             _state.value = TtsState(TtsStatus.CLOSED, "TTS 종료")
@@ -369,54 +359,35 @@ class TtsEngine(context: Context) : TextToSpeech.OnInitListener {
         batch.completed = true
         pendingResults.filterValues { it === batch }.keys.forEach(utteranceTransitionAtMs::remove)
         pendingResults.entries.removeAll { it.value === batch }
-        runCatching { textToSpeech?.stop() }
+        runCatching { ttsProvider.stop() }
         runCatching { batch.callback(false, message) }
     }
 
-    private fun selectVoice(engine: TextToSpeech, locale: Locale, settings: UserSettings): Boolean {
-        val compatibleVoices = engine.voices.orEmpty().filter { it.locale.language == locale.language }
+    private fun selectVoice(provider: TtsProvider, locale: Locale, settings: UserSettings): Boolean {
+        val compatibleVoices = provider.availableVoices().filter {
+            Locale.forLanguageTag(it.localeTag).language == locale.language
+        }
         val candidates = compatibleVoices.map { voice ->
             VoiceCandidate(
                 name = voice.name,
-                gender = inferGender(voice.name, voice.features),
+                gender = voice.gender,
                 quality = voice.quality,
-                requiresNetwork = voice.isNetworkConnectionRequired,
+                requiresNetwork = voice.requiresNetwork,
             )
         }
-        val selection = VoiceSelectionPolicy.choose(candidates, settings.voiceName, settings.genderFilter)
+        val selection = VoiceSelectionPolicy.choose(
+            candidates = candidates,
+            explicitName = settings.voiceName.takeIf { settings.voiceLanguage != VoiceLanguage.AUTO },
+            requestedGender = settings.genderFilter,
+        )
         selection.name
             ?.let { name -> compatibleVoices.firstOrNull { it.name == name } }
-            ?.let(engine::setVoice)
+            ?.let { provider.setVoice(it.name) }
         return selection.usedGenderFallback
     }
 
-    private fun refreshVoices(engine: TextToSpeech) {
-        val voiceIndexes = mutableMapOf<String, Int>()
-        _voices.value = engine.voices.orEmpty()
-            .sortedWith(compareBy({ it.locale.toLanguageTag() }, { it.name }))
-            .map { voice ->
-                val localeTag = voice.locale.toLanguageTag()
-                val gender = inferGender(voice.name, voice.features)
-                val indexKey = "$localeTag:${gender.name}"
-                val index = (voiceIndexes[indexKey] ?: 0) + 1
-                voiceIndexes[indexKey] = index
-                val region = voice.locale.getDisplayCountry(Locale.KOREAN)
-                    .ifBlank { voice.locale.getDisplayLanguage(Locale.KOREAN) }
-                val source = if (voice.isNetworkConnectionRequired) "온라인" else "기기 내장"
-                val genderLabel = when (gender) {
-                    GenderFilter.FEMALE -> "여성"
-                    GenderFilter.MALE -> "남성"
-                    else -> "기본"
-                }
-                InstalledVoice(
-                    name = voice.name,
-                    label = "$region $genderLabel 음성 $index · $source",
-                    localeTag = localeTag,
-                    quality = voice.quality,
-                    requiresNetwork = voice.isNetworkConnectionRequired,
-                    gender = gender,
-                )
-            }
+    private fun refreshVoices() {
+        _voices.value = ttsProvider.availableVoices()
     }
 
     private fun VoiceLanguage.toLocale(text: String): Locale = when (this) {
@@ -431,33 +402,5 @@ class TtsEngine(context: Context) : TextToSpeech.OnInitListener {
         if (letters.isEmpty()) return Locale.getDefault()
         val hangul = letters.count { it.code in 0xAC00..0xD7A3 || it.code in 0x3131..0x318E }
         return if (hangul * 2 >= letters.length) Locale.KOREAN else Locale.ENGLISH
-    }
-
-    private fun inferGender(name: String, features: Set<String> = emptySet()): GenderFilter {
-        val normalized = (name + " " + features.joinToString(" ")).lowercase(Locale.ROOT)
-        return when {
-            listOf("female", "woman", "fem", "-f-", "_f_").any(normalized::contains) -> GenderFilter.FEMALE
-            listOf("male", "man", "masc", "-m-", "_m_").any(normalized::contains) -> GenderFilter.MALE
-            googleFemaleVoiceCodes.any(normalized::contains) -> GenderFilter.FEMALE
-            googleMaleVoiceCodes.any(normalized::contains) -> GenderFilter.MALE
-            else -> GenderFilter.UNSPECIFIED
-        }
-    }
-
-    private companion object {
-        val googleFemaleVoiceCodes = listOf(
-            "en-us-language", "en-us-x-iob", "en-us-x-iog", "en-us-x-sfg", "en-us-x-tpc", "en-us-x-tpf",
-            "ko-kr-language", "ko-kr-x-ism", "ko-kr-x-kob",
-            "en-au-language", "en-au-x-aua", "en-au-x-auc", "en-au-x-afh",
-            "en-gb-language", "en-gb-x-gba", "en-gb-x-gbc", "en-gb-x-gbg", "en-gb-x-fis",
-            "en-in-language", "en-in-x-ahp", "en-in-x-cxx", "en-in-x-ena", "en-in-x-enc",
-        )
-        val googleMaleVoiceCodes = listOf(
-            "en-us-x-iol", "en-us-x-iom", "en-us-x-tpd",
-            "ko-kr-x-koc", "ko-kr-x-kod",
-            "en-au-x-aub", "en-au-x-aud",
-            "en-gb-x-gbb", "en-gb-x-gbd", "en-gb-x-rjs",
-            "en-in-x-end", "en-in-x-ene",
-        )
     }
 }

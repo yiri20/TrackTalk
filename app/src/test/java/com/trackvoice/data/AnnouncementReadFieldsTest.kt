@@ -12,6 +12,79 @@ class AnnouncementReadFieldsTest {
     )
 
     @Test
+    fun newSettingsEnableOnlyTitle() {
+        assertEquals(
+            listOf(AnnouncementReadField.TITLE),
+            UserSettings().defaultReadFields,
+        )
+    }
+
+    @Test
+    fun canonicalGlobalDefaultOrderKeepsInactiveFieldsAfterTitle() {
+        assertEquals(
+            listOf(
+                AnnouncementReadField.TITLE,
+                AnnouncementReadField.ARTIST,
+                AnnouncementReadField.ALBUM,
+            ),
+            DEFAULT_GLOBAL_READ_FIELDS,
+        )
+        assertEquals(
+            listOf(AnnouncementReadField.TITLE),
+            orderedFieldsFromStorage(
+                storedOrder = null,
+                legacyFields = null,
+                allowedFields = GLOBAL_ANNOUNCEMENT_READ_FIELDS,
+                fallbackFields = DEFAULT_GLOBAL_ENABLED_READ_FIELDS,
+                legacyOrder = AnnouncementOrder.DEFAULT,
+            ),
+        )
+    }
+
+    @Test
+    fun explicitSavedSelectionIsNotReplacedByNewDefault() {
+        val saved = listOf(AnnouncementReadField.ALBUM, AnnouncementReadField.TITLE)
+        assertEquals(
+            saved,
+            normalizeAnnouncementReadFields(
+                fields = saved,
+                allowedFields = GLOBAL_ANNOUNCEMENT_READ_FIELDS,
+                fallbackFields = DEFAULT_GLOBAL_ENABLED_READ_FIELDS,
+            ),
+        )
+    }
+
+    @Test
+    fun untouchedStorageMigratesToTitleOnlyWithCanonicalOrder() {
+        assertEquals(
+            GlobalReadDefaultsMigration(
+                fields = setOf(AnnouncementReadField.TITLE.name),
+                order = "TITLE",
+            ),
+            migrateUntouchedGlobalReadDefaults(
+                storedFields = null,
+                storedOrder = null,
+                announcementOrder = AnnouncementOrder.DEFAULT,
+            ),
+        )
+    }
+
+    @Test
+    fun explicitSavedOrderIsNotReplacedByTheNewDefaultMigration() {
+        assertEquals(
+            GlobalReadDefaultsMigration(fields = null, order = null),
+            migrateUntouchedGlobalReadDefaults(
+                storedFields = setOf(
+                    AnnouncementReadField.TITLE.name,
+                    AnnouncementReadField.ARTIST.name,
+                ),
+                storedOrder = "ARTIST,TITLE",
+                announcementOrder = AnnouncementOrder.DEFAULT,
+            ),
+        )
+    }
+
+    @Test
     fun emptyOrInvalidSelectionFallsBackToTheContentDefault() {
         assertEquals(
             albumFields,

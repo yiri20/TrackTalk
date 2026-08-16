@@ -123,7 +123,7 @@ class AnnouncementPolicyTest {
             externalAudioOutput = true,
         )
 
-        assertEquals("A Moon Shaped Pool, Glass Eyes, Radiohead.", decision.text)
+        assertEquals("Glass Eyes.", decision.text)
     }
 
     @Test
@@ -138,7 +138,7 @@ class AnnouncementPolicyTest {
             externalAudioOutput = true,
         )
 
-        assertEquals("A Moon Shaped Pool, Glass Eyes, Radiohead.", decision.text)
+        assertEquals("Glass Eyes.", decision.text)
     }
 
     @Test
@@ -155,8 +155,8 @@ class AnnouncementPolicyTest {
             null,
             externalAudioOutput = true,
         )
-        assertEquals("A Moon Shaped Pool, Glass Eyes, Radiohead.", smart.text)
-        assertEquals("Glass Eyes, Radiohead.", noAlbum.text)
+        assertEquals("Glass Eyes.", smart.text)
+        assertEquals("Glass Eyes.", noAlbum.text)
     }
 
     @Test
@@ -167,7 +167,7 @@ class AnnouncementPolicyTest {
             null,
             externalAudioOutput = true,
         )
-        assertEquals("A Moon Shaped Pool, Glass Eyes, Radiohead.", decision.text)
+        assertEquals("Glass Eyes.", decision.text)
     }
 
     @Test
@@ -188,7 +188,7 @@ class AnnouncementPolicyTest {
             externalAudioOutput = true,
         )
 
-        assertEquals("A Moon Shaped Pool, Glass Eyes, Radiohead.", decision.text)
+        assertEquals("Glass Eyes.", decision.text)
     }
 
     @Test
@@ -225,7 +225,7 @@ class AnnouncementPolicyTest {
             externalAudioOutput = true,
         )
 
-        assertEquals("A Moon Shaped Pool, Glass Eyes, Radiohead.", decision.text)
+        assertEquals("Glass Eyes.", decision.text)
     }
 
     @Test
@@ -237,7 +237,7 @@ class AnnouncementPolicyTest {
             externalAudioOutput = true,
         )
 
-        assertEquals("A Moon Shaped Pool, Glass Eyes, Radiohead.", decision.text)
+        assertEquals("Glass Eyes.", decision.text)
     }
 
     @Test
@@ -369,7 +369,7 @@ class AnnouncementPolicyTest {
         )
 
         assertTrue(decision.shouldAnnounce)
-        assertEquals("A Moon Shaped Pool, Glass Eyes, Radiohead.", decision.text)
+        assertEquals("Glass Eyes.", decision.text)
     }
 
     @Test
@@ -431,8 +431,8 @@ class AnnouncementPolicyTest {
             externalAudioOutput = true,
         )
 
-        assertEquals("A Moon Shaped Pool, Glass Eyes, Radiohead.", first.text)
-        assertEquals("A Moon Shaped Pool, Second Song, Radiohead.", second.text)
+        assertEquals("Glass Eyes.", first.text)
+        assertEquals("Second Song.", second.text)
     }
 
     @Test
@@ -471,7 +471,7 @@ class AnnouncementPolicyTest {
             externalAudioOutput = true,
         )
 
-        assertEquals("A Moon Shaped Pool, Glass Eyes, Radiohead.", decision.text)
+        assertEquals("Glass Eyes.", decision.text)
     }
 
     private fun queueItem(title: String = "Glass Eyes", album: String? = null) = com.trackvoice.media.QueueItemSnapshot(

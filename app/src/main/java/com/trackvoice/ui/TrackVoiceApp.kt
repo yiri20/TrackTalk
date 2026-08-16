@@ -118,6 +118,7 @@ import com.trackvoice.TrackVoiceViewModel
 import com.trackvoice.announcement.AnnouncementPolicy
 import com.trackvoice.announcement.InstalledVoice
 import com.trackvoice.announcement.TtsStatus
+import com.trackvoice.announcement.VoiceCatalogPolicy
 import com.trackvoice.data.AnnouncementMode
 import com.trackvoice.data.AnnouncementOrder
 import com.trackvoice.data.AnnouncementOutputPolicy
@@ -1043,7 +1044,9 @@ internal fun GeneralSettingsScreen(
 ) {
     val strings = LocalTrackTalkStrings.current
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag(GENERAL_SETTINGS_SCREEN_TAG),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -1371,12 +1374,6 @@ private fun AppSettingsScreen(
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        TextButton(
-                            onClick = onRefresh,
-                            contentPadding = PaddingValues(horizontal = 8.dp),
-                        ) {
-                            Text(strings.refresh)
-                        }
                     }
                 }
             }
@@ -1384,11 +1381,23 @@ private fun AppSettingsScreen(
         if (apps.isNotEmpty()) {
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        strings.visibleCategories,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(
+                            strings.visibleCategories,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        TextButton(
+                            onClick = onRefresh,
+                            contentPadding = PaddingValues(horizontal = 8.dp),
+                        ) {
+                            Text(strings.refresh)
+                        }
+                    }
                     Box(Modifier.fillMaxWidth()) {
                         Row(
                             modifier = Modifier
@@ -1612,30 +1621,31 @@ private fun VoiceSettingsScreen(
                 OptionDropdown(strings.gender, visibleGender, genderOptions, strings::genderLabel) { selectedGender ->
                     onUpdate { current -> current.copy(genderFilter = selectedGender, voiceName = null) }
                 }
-                val languageCode = when (settings.voiceLanguage) {
-                    VoiceLanguage.AUTO -> null
-                    VoiceLanguage.SYSTEM -> Locale.getDefault().language
-                    VoiceLanguage.KOREAN -> "ko"
-                    VoiceLanguage.ENGLISH -> "en"
+                if (VoiceCatalogPolicy.showsManualVoicePicker(settings.voiceLanguage)) {
+                    val filteredVoices = VoiceCatalogPolicy.visibleVoices(
+                        voices = voices,
+                        language = settings.voiceLanguage,
+                        gender = visibleGender,
+                    )
+                    val selectedVoice = filteredVoices.firstOrNull { it.name == settings.voiceName }
+                    OptionDropdown(
+                        strings.voice,
+                        selectedVoice,
+                        listOf(null) + filteredVoices,
+                        { voice -> voice?.label ?: strings.autoSelect },
+                    ) { voice -> onUpdate { it.copy(voiceName = voice?.name) } }
+                    Text(
+                        if (filteredVoices.isEmpty()) strings.noMatchingVoices
+                        else strings.availableVoices(visibleGender, filteredVoices.size),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                } else {
+                    Text(
+                        strings.automaticVoiceSelection,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
-                val languageVoices = voices.filter { voice ->
-                    languageCode == null || Locale.forLanguageTag(voice.localeTag).language == languageCode
-                }
-                val filteredVoices = languageVoices.filter { voice ->
-                    visibleGender == GenderFilter.ANY || voice.gender == visibleGender
-                }
-                val selectedVoice = filteredVoices.firstOrNull { it.name == settings.voiceName }
-                OptionDropdown(
-                    strings.voice,
-                    selectedVoice,
-                    listOf(null) + filteredVoices,
-                    { voice -> voice?.label ?: strings.autoSelect },
-                ) { voice -> onUpdate { it.copy(voiceName = voice?.name) } }
-                Text(
-                    if (filteredVoices.isEmpty()) strings.noMatchingVoices
-                    else strings.availableVoices(visibleGender, filteredVoices.size),
-                    style = MaterialTheme.typography.bodySmall,
-                )
                 if (ttsStatus.status == TtsStatus.ERROR) {
                     Text(
                         ttsStatus.message,
@@ -2026,6 +2036,7 @@ internal fun ContentReadOrderPicker(
 }
 
 internal const val CONTENT_READ_ORDER_PICKER_TAG = "content-read-order-picker"
+internal const val GENERAL_SETTINGS_SCREEN_TAG = "general-settings-screen"
 
 internal fun contentReadFieldItemKey(
     field: AnnouncementReadField,

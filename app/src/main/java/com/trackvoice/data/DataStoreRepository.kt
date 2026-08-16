@@ -31,8 +31,8 @@ private fun appKey(packageName: String, suffix: String): Preferences.Key<String>
     stringPreferencesKey("app.$packageName.$suffix")
 
 private const val TTS_VOLUME_DEFAULT_VERSION = 3
-private const val CONTENT_READ_DEFAULT_VERSION = 1
-private const val CONTENT_READ_ORDER_VERSION = 1
+private const val CONTENT_READ_DEFAULT_VERSION = 2
+private const val CONTENT_READ_ORDER_VERSION = 2
 private const val AUDIO_OUTPUT_POLICY_VERSION = 1
 private const val APP_ANNOUNCEMENT_SOURCE_VERSION = 1
 private const val PLAYBACK_CONTEXT_SETTINGS_VERSION = 1
@@ -153,24 +153,35 @@ class DataStoreRepository(private val context: Context) {
                 return@edit
             }
 
-            // Only migrate the old untouched defaults. Any other set is a
-            // user choice and must remain intact.
-            val oldGlobalDefaults = setOf(
-                AnnouncementReadField.TITLE.name,
-                AnnouncementReadField.ARTIST.name,
-            )
+            // Only migrate values that can be identified as an untouched
+            // default. Any other set/order is a user choice and must remain
+            // intact. The exact three-field order is the default written by
+            // the previous beta migration, so it is safe to move that one
+            // known legacy state to the new Title-only default.
+            migrateUntouchedGlobalReadDefaults(
+                storedFields = preferences[Keys.defaultReadFields],
+                storedOrder = preferences[Keys.defaultReadOrder],
+                announcementOrder = enumOrDefault(
+                    preferences[Keys.announcementOrder],
+                    AnnouncementOrder.DEFAULT,
+                ),
+            ).let { migration ->
+                migration.fields?.let { preferences[Keys.defaultReadFields] = it }
+                migration.order?.let { preferences[Keys.defaultReadOrder] = it }
+            }
+
             val oldPlaylistDefaults = setOf(
                 AnnouncementReadField.COLLECTION.name,
                 AnnouncementReadField.TITLE.name,
                 AnnouncementReadField.ARTIST.name,
             )
-            if (preferences[Keys.defaultReadFields] == oldGlobalDefaults) {
-                preferences[Keys.defaultReadFields] = DEFAULT_GLOBAL_READ_FIELDS.map(AnnouncementReadField::name).toSet()
-            }
             if (preferences[Keys.playlistReadFields] == oldPlaylistDefaults) {
                 preferences[Keys.playlistReadFields] = DEFAULT_PLAYLIST_READ_FIELDS.map(AnnouncementReadField::name).toSet()
             }
-            if (preferences[Keys.algorithmReadFields] == oldGlobalDefaults) {
+            if (preferences[Keys.algorithmReadFields] == setOf(
+                    AnnouncementReadField.TITLE.name,
+                    AnnouncementReadField.ARTIST.name,
+                )) {
                 preferences[Keys.algorithmReadFields] = DEFAULT_ALGORITHMIC_READ_FIELDS.map(AnnouncementReadField::name).toSet()
             }
             preferences[Keys.contentReadDefaultVersion] = CONTENT_READ_DEFAULT_VERSION
@@ -195,8 +206,8 @@ class DataStoreRepository(private val context: Context) {
             val defaultFields = orderedFieldsFromStorage(
                 storedOrder = preferences[Keys.defaultReadOrder],
                 legacyFields = preferences[Keys.defaultReadFields],
-                allowedFields = ALL_ANNOUNCEMENT_READ_FIELDS,
-                fallbackFields = DEFAULT_GLOBAL_READ_FIELDS,
+                allowedFields = GLOBAL_ANNOUNCEMENT_READ_FIELDS,
+                fallbackFields = DEFAULT_GLOBAL_ENABLED_READ_FIELDS,
                 legacyOrder = legacyOrder,
             )
             val albumFields = orderedFieldsFromStorage(
@@ -477,7 +488,7 @@ class DataStoreRepository(private val context: Context) {
                 storedOrder = this[Keys.defaultReadOrder],
                 legacyFields = this[Keys.defaultReadFields],
                 allowedFields = GLOBAL_ANNOUNCEMENT_READ_FIELDS,
-                fallbackFields = DEFAULT_GLOBAL_READ_FIELDS,
+                fallbackFields = DEFAULT_GLOBAL_ENABLED_READ_FIELDS,
                 legacyOrder = announcementOrder,
             ),
             announcementOrder = announcementOrder,
@@ -576,7 +587,7 @@ class DataStoreRepository(private val context: Context) {
         val defaultFields = normalizeAnnouncementReadFields(
             settings.defaultReadFields,
             GLOBAL_ANNOUNCEMENT_READ_FIELDS,
-            DEFAULT_GLOBAL_READ_FIELDS,
+            DEFAULT_GLOBAL_ENABLED_READ_FIELDS,
         )
         val albumFields = normalizeAnnouncementReadFields(
             settings.albumReadFields,
@@ -718,6 +729,50 @@ internal fun orderedFieldsFromStorage(
     val orderedLegacy = migrationOrder.filter { it in legacy }
     return normalizeAnnouncementReadFields(orderedLegacy, allowedFields, fallbackFields)
         .withLegacyAnnouncementOrder(legacyOrder)
+}
+
+internal data class GlobalReadDefaultsMigration(
+    val fields: Set<String>?,
+    val order: String?,
+)
+
+/**
+ * Applies the Title-only default only to fresh storage or a known untouched
+ * default from an earlier beta. Any other persisted selection/order is user
+ * data and must remain unchanged.
+ */
+internal fun migrateUntouchedGlobalReadDefaults(
+    storedFields: Set<String>?,
+    storedOrder: String?,
+    announcementOrder: AnnouncementOrder,
+): GlobalReadDefaultsMigration {
+    val oldGlobalDefaults = setOf(
+        AnnouncementReadField.TITLE.name,
+        AnnouncementReadField.ARTIST.name,
+    )
+    val previousBetaGlobalDefaults = setOf(
+        AnnouncementReadField.TITLE.name,
+        AnnouncementReadField.ARTIST.name,
+        AnnouncementReadField.ALBUM.name,
+    )
+    val previousBetaGlobalOrder = listOf(
+        AnnouncementReadField.ALBUM,
+        AnnouncementReadField.TITLE,
+        AnnouncementReadField.ARTIST,
+    ).joinToString(",") { it.name }
+    val untouched = (storedFields == null && storedOrder == null) ||
+        (storedFields == oldGlobalDefaults && storedOrder == null) ||
+        (storedFields == previousBetaGlobalDefaults &&
+            storedOrder == previousBetaGlobalOrder &&
+            announcementOrder == AnnouncementOrder.DEFAULT)
+    return if (untouched) {
+        GlobalReadDefaultsMigration(
+            fields = DEFAULT_GLOBAL_ENABLED_READ_FIELDS.map(AnnouncementReadField::name).toSet(),
+            order = DEFAULT_GLOBAL_ENABLED_READ_FIELDS.joinToString(",") { it.name },
+        )
+    } else {
+        GlobalReadDefaultsMigration(fields = null, order = null)
+    }
 }
 
 private fun List<AnnouncementReadField>.encodeReadFields(): String =

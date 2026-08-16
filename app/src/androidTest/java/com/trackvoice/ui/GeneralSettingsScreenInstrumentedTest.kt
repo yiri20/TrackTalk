@@ -17,6 +17,8 @@ import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.performScrollToNode
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.trackvoice.data.AnnouncementOutputPolicy
 import com.trackvoice.data.AnnouncementReadField
@@ -72,7 +74,9 @@ class GeneralSettingsScreenInstrumentedTest {
         }
 
         setScreen()
-        composeRule.onNodeWithText("재생 시작").performScrollTo()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(GENERAL_SETTINGS_SCREEN_TAG)
+            .performScrollToNode(hasText("재생 시작"))
         composeRule.onNodeWithText("바로 읽기").performClick()
         composeRule.onNodeWithText("몇 초 후 읽기").performClick()
 
@@ -120,7 +124,9 @@ class GeneralSettingsScreenInstrumentedTest {
             }
         }
 
-        composeRule.onNodeWithText("재생 시작").performScrollTo()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(GENERAL_SETTINGS_SCREEN_TAG)
+            .performScrollToNode(hasText("재생 시작"))
         composeRule.onNodeWithText("읽기 전 대기").assertDoesNotExist()
     }
 
