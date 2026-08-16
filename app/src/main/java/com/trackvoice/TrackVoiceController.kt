@@ -7,6 +7,7 @@ import com.trackvoice.announcement.AnnouncementTrackMatcher
 import com.trackvoice.announcement.AudioFocusManager
 import com.trackvoice.announcement.AudioOutputDetector
 import com.trackvoice.announcement.DuplicateSuppressor
+import com.trackvoice.announcement.RepeatCycleDetector
 import com.trackvoice.announcement.AudioDeviceMonitor
 import com.trackvoice.announcement.AnnouncementPlaybackPlanner
 import com.trackvoice.announcement.AnnouncementAudioTiming
@@ -189,6 +190,10 @@ class TrackVoiceController(
     private var lastAnnouncedSessionKey: String? = null
     private var selectedSessionKey: String? = null
     private var lastEventSessionKey: String? = null
+    /** Set only after the monitor observes that every active media session ended. */
+    private var hardPlaybackBoundaryPending = false
+    private var hardPlaybackBoundarySessionKey: String? = null
+    private var hardPlaybackBoundaryAllowsSameSession = false
     private var lastActualTrackChangeAtMs: Long? = null
     private var monitorGeneration = 0L
     private var logicalSessionGeneration = 0L
@@ -334,6 +339,9 @@ class TrackVoiceController(
             lastAnnouncedSessionKey = null
             duplicateSuppressor.clear()
             temporalContextResolver.reset()
+            hardPlaybackBoundaryPending = false
+            hardPlaybackBoundarySessionKey = null
+            hardPlaybackBoundaryAllowsSameSession = false
             persistenceScope.launch {
                 persistenceMutex.withLock { repository.clearPersistedAnnouncement() }
             }
@@ -504,6 +512,9 @@ class TrackVoiceController(
         lastAnnouncedSessionKey = null
         selectedSessionKey = null
         lastActualTrackChangeAtMs = null
+        hardPlaybackBoundaryPending = false
+        hardPlaybackBoundarySessionKey = null
+        hardPlaybackBoundaryAllowsSameSession = false
         preparedNextTrack = null
         externalMetadataLookupJobs.values.forEach(Job::cancel)
         externalMetadataLookupJobs.clear()
@@ -621,6 +632,12 @@ class TrackVoiceController(
             )
         }
         val previousEvent = _mediaState.value.currentEvent
+        val resumedAfterHardPlaybackBoundary = hardPlaybackBoundaryPending && (
+            hardPlaybackBoundaryAllowsSameSession ||
+                hardPlaybackBoundarySessionKey == null ||
+                incomingSessionKey == null ||
+                incomingSessionKey != hardPlaybackBoundarySessionKey
+            )
         val actualTrackChange = previousEvent != null && event != null &&
             !AnnouncementTrackMatcher.matchesForDuplicateSuppression(
                 expected = previousEvent,
@@ -667,6 +684,20 @@ class TrackVoiceController(
             !NextTrackPrefetch.anchorMatches(preparedNextTrack!!, event, incomingSessionKey)
         ) {
             invalidatePreparedNextTrack("ANCHOR_CHANGED")
+        }
+        val newRepeatOneCycle = previousEvent != null && event != null &&
+            RepeatCycleDetector.isNewRepeatOneCycle(previousEvent, event)
+        if (newRepeatOneCycle) {
+            TrackTalkDebugLog.event(
+                "REPEAT_CYCLE_DETECTED",
+                "source" to event?.sourcePackageName,
+                "mediaId" to event?.mediaId,
+                "title" to event?.title,
+                "previousPositionMs" to previousEvent?.playbackPosition,
+                "currentPositionMs" to event?.playbackPosition,
+                "durationMs" to event?.duration,
+                "repeatMode" to event?.repeatMode,
+            )
         }
         TrackTalkDebugLog.event(
             "TRACK_CANDIDATE",
@@ -802,6 +833,10 @@ class TrackVoiceController(
             if (noActiveSessions) {
                 temporalContextResolver.reset()
                 selectedSessionKey = null
+                if (!hardPlaybackBoundaryAllowsSameSession) {
+                    hardPlaybackBoundaryPending = true
+                    hardPlaybackBoundarySessionKey = lastEventSessionKey
+                }
             }
             TrackTalkDebugLog.event(
                 "PLAYBACK_CONTEXT_BOUNDARY",
@@ -815,6 +850,21 @@ class TrackVoiceController(
             cancelPendingAnnouncement()
             return
         }
+        if (event.playbackState == PlaybackStatus.STOPPED) {
+            // A real STOPPED state is a stronger listening-context boundary
+            // than PAUSED. The next start of the same song must be eligible,
+            // while pause/resume remains one continuous occurrence.
+            hardPlaybackBoundaryPending = true
+            hardPlaybackBoundarySessionKey = incomingSessionKey
+            hardPlaybackBoundaryAllowsSameSession = true
+            TrackTalkDebugLog.event(
+                "PLAYBACK_CONTEXT_BOUNDARY",
+                "reason" to "STOPPED_STATE",
+                "source" to event.sourcePackageName,
+                "mediaId" to event.mediaId,
+            )
+        }
+        val newPlaybackOccurrence = actualTrackChange || resumedAfterHardPlaybackBoundary
         refreshPreparedNextTrack(event, incomingSessionKey)
         if (!event.isPlaying) {
             // A media session commonly reports PAUSED while audio focus is
@@ -846,6 +896,8 @@ class TrackVoiceController(
             collection = collection,
             sessionKey = incomingSessionKey,
             sessionRefresh = sessionRefresh,
+            isNewPlaybackOccurrence = newPlaybackOccurrence,
+            isNewRepeatCycle = newRepeatOneCycle,
             eventSequenceNumber = update.eventSequenceNumber,
             logicalSessionGeneration = logicalSessionGeneration,
         )
@@ -931,6 +983,8 @@ class TrackVoiceController(
         collection: PlaybackCollection,
         sessionKey: String?,
         sessionRefresh: Boolean,
+        isNewPlaybackOccurrence: Boolean,
+        isNewRepeatCycle: Boolean,
         eventSequenceNumber: Long = 0L,
         logicalSessionGeneration: Long = 0L,
     ) {
@@ -1023,10 +1077,9 @@ class TrackVoiceController(
 
         // MediaSession can emit several callbacks for one playback start:
         // queue description, canonical metadata, focus-induced pause/resume,
-        // and a refreshed media ID. The suppressor handles history, while
-        // this latch prevents the current playback epoch from being scheduled
-        // again after the first speech has already completed.
-        val now = System.currentTimeMillis()
+        // and a refreshed media ID. Only the current playback occurrence may
+        // suppress this event. A previous occurrence of the same song (A -> B
+        // -> A) must remain announceable.
         if (
             lastAnnouncedTrack?.let {
                 AnnouncementTrackMatcher.matchesForDuplicateSuppression(
@@ -1035,11 +1088,16 @@ class TrackVoiceController(
                     requireSameSource = true,
                 )
             } == true &&
-            (!settings.allowRepeatAnnouncements || now - lastAnnouncedAt < REPEAT_ANNOUNCEMENT_COOLDOWN_MS)
+            !isNewPlaybackOccurrence &&
+            !(isNewRepeatCycle && settings.allowRepeatAnnouncements)
         ) {
             TrackTalkDebugLog.event(
                 "duplicate_suppressed",
-                "reason" to if (sessionRefresh) "SAME_LOGICAL_TRACK_SESSION_REFRESH" else "completed_track",
+                "reason" to when {
+                    sessionRefresh -> "SAME_LOGICAL_TRACK_SESSION_REFRESH"
+                    isNewRepeatCycle -> "REPEAT_CYCLE_SETTING_OFF"
+                    else -> "SAME_PLAYBACK_OCCURRENCE"
+                },
                 "mediaId" to event.mediaId,
                 "lastSessionKey" to lastAnnouncedSessionKey,
                 "sessionKey" to sessionKey,
@@ -1111,11 +1169,13 @@ class TrackVoiceController(
             allowRepeat = settings.allowRepeatAnnouncements,
             now = System.currentTimeMillis(),
             announcementText = decision.text,
+            isNewPlaybackOccurrence = isNewPlaybackOccurrence,
+            isNewRepeatCycle = isNewRepeatCycle,
         )
         ) {
             TrackTalkDebugLog.event(
                 "duplicate_suppressed",
-                "reason" to "history",
+                "reason" to "current_playback_occurrence",
                 "mediaId" to event.mediaId,
                 "sameLogicalTrack" to (lastAnnouncedTrack?.let {
                     AnnouncementTrackMatcher.matchesForDuplicateSuppression(it, event, requireSameSource = true)
@@ -1223,6 +1283,9 @@ class TrackVoiceController(
                 lastAnnouncedTrack = current
                 lastAnnouncedAt = announcedAt
                 lastAnnouncedSessionKey = sessionKey
+                hardPlaybackBoundaryPending = false
+                hardPlaybackBoundarySessionKey = null
+                hardPlaybackBoundaryAllowsSameSession = false
                 duplicateSuppressor.markAnnounced(
                     event = current,
                     now = announcedAt,
@@ -1768,7 +1831,6 @@ class TrackVoiceController(
         const val METADATA_SETTLE_DELAY_MS = 250L
         const val EXTERNAL_METADATA_SETTLE_DELAY_MS = 450L
         const val EXTERNAL_METADATA_TIMEOUT_MS = 600L
-        const val REPEAT_ANNOUNCEMENT_COOLDOWN_MS = 30_000L
     }
 
     private fun effectiveSettings(): UserSettings =

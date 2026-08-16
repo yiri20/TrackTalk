@@ -43,6 +43,8 @@ data class PlaybackEvent(
     val shuffleState: ShuffleState = ShuffleState.UNKNOWN,
     val trackNumberReliable: Boolean = true,
     val trackNumberSource: TrackNumberSource = TrackNumberSource.UNSPECIFIED,
+    /** Framework MediaController does not expose this reliably; adapters may supply it. */
+    val repeatMode: RepeatMode = RepeatMode.UNKNOWN,
 ) {
     val hasTitle: Boolean get() = !title.isNullOrBlank()
     /**
@@ -57,6 +59,14 @@ data class PlaybackEvent(
             trackNumber != null ||
             activeQueuePosition != null
     val isPlaying: Boolean get() = playbackState == PlaybackStatus.PLAYING
+}
+
+enum class RepeatMode {
+    UNKNOWN,
+    NONE,
+    ONE,
+    ALL,
+    GROUP,
 }
 
 enum class ShuffleState {

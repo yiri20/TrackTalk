@@ -2,6 +2,7 @@ package com.trackvoice.announcement
 
 import com.trackvoice.media.PlaybackEvent
 import com.trackvoice.media.PlaybackStatus
+import com.trackvoice.media.RepeatMode
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -166,6 +167,23 @@ class DuplicateSuppressorTest {
     }
 
     @Test
+    fun restoredTrackCanBeAnnouncedAfterAConfirmedNewPlaybackOccurrence() {
+        val suppressor = DuplicateSuppressor()
+        val restoredTrack = event().copy(mediaId = "provider://track-a")
+
+        suppressor.restoreAnnounced(restoredTrack, 1_000L)
+
+        assertTrue(
+            suppressor.shouldAnnounce(
+                restoredTrack.copy(observedAt = 2_000L),
+                allowRepeat = false,
+                now = 2_000L,
+                isNewPlaybackOccurrence = true,
+            ),
+        )
+    }
+
+    @Test
     fun adversarialRefreshBeforeHistoryTransferStillSuppressesTrack() {
         val suppressor = DuplicateSuppressor()
         val track = event()
@@ -224,16 +242,79 @@ class DuplicateSuppressorTest {
     }
 
     @Test
-    fun staleOldControllerCallbackCannotRepeatAnEarlierTrack() {
+    fun aAfterBIsEligibleNotAHistoryDuplicate() {
         val suppressor = DuplicateSuppressor()
         val first = event().copy(mediaId = "controller-a-track-3")
         val next = first.copy(title = "Next song", mediaId = "controller-b-track-4", trackNumber = 4)
-        val staleOldController = first.copy(mediaId = "controller-a-refresh-track-3")
+        val returnedToFirst = first.copy(mediaId = "controller-a-refresh-track-3")
 
         suppressor.markAnnounced(first, 1_000L)
         assertTrue(suppressor.shouldAnnounce(next, false, 1_001L))
         suppressor.markAnnounced(next, 1_001L)
-        assertFalse(suppressor.shouldAnnounce(staleOldController, false, 1_002L))
+        assertTrue(suppressor.shouldAnnounce(returnedToFirst, false, 1_002L))
+    }
+
+    @Test
+    fun aThenBThenAAnnouncesAgainWithRepeatAnnouncementsOff() {
+        val suppressor = DuplicateSuppressor()
+        val first = event().copy(title = "A", mediaId = "track-a")
+        val second = event().copy(title = "B", mediaId = "track-b")
+
+        assertTrue(suppressor.shouldAnnounce(first, false, 1_000L))
+        suppressor.markAnnounced(first, 1_000L)
+        assertTrue(suppressor.shouldAnnounce(second, false, 2_000L))
+        suppressor.markAnnounced(second, 2_000L)
+        assertTrue(suppressor.shouldAnnounce(first.copy(observedAt = 3_000L), false, 3_000L))
+        suppressor.markAnnounced(first.copy(observedAt = 3_000L), 3_000L)
+        assertFalse(suppressor.shouldAnnounce(first.copy(observedAt = 3_001L), false, 3_001L))
+    }
+
+    @Test
+    fun aThenBThenCThenAAnnouncesASecondTime() {
+        val suppressor = DuplicateSuppressor()
+        val first = event().copy(title = "A", mediaId = "track-a")
+        val second = event().copy(title = "B", mediaId = "track-b")
+        val third = event().copy(title = "C", mediaId = "track-c")
+
+        listOf(first, second, third).forEachIndexed { index, track ->
+            assertTrue(suppressor.shouldAnnounce(track, false, (index + 1) * 1_000L))
+            suppressor.markAnnounced(track, (index + 1) * 1_000L)
+        }
+        assertTrue(suppressor.shouldAnnounce(first.copy(observedAt = 4_000L), false, 4_000L))
+    }
+
+    @Test
+    fun previousFromBBackToAAnnouncesAAgain() {
+        val suppressor = DuplicateSuppressor()
+        val first = event().copy(title = "A", mediaId = "track-a")
+        val second = event().copy(title = "B", mediaId = "track-b")
+
+        suppressor.markAnnounced(first, 1_000L)
+        suppressor.markAnnounced(second, 2_000L)
+
+        assertTrue(suppressor.shouldAnnounce(first.copy(observedAt = 3_000L), false, 3_000L))
+    }
+
+    @Test
+    fun skippedPredictedTrackDoesNotBlockItsLaterGenuinePlayback() {
+        val suppressor = DuplicateSuppressor()
+        val first = event().copy(title = "A", mediaId = "track-a")
+        val skipped = event().copy(title = "B", mediaId = "track-b")
+        val later = event().copy(title = "C", mediaId = "track-c")
+
+        assertTrue(suppressor.shouldAnnounce(first, false, 1_000L))
+        suppressor.markAnnounced(first, 1_000L)
+
+        // B was prefetched/predicted but never became the actual current track.
+        assertTrue(suppressor.shouldAnnounce(skipped, false, 2_000L))
+        assertTrue(suppressor.shouldAnnounce(later, false, 3_000L))
+        suppressor.markAnnounced(later, 3_000L)
+
+        // A later real transition to B remains eligible; an unspoken
+        // prediction must not become historical duplicate state.
+        assertTrue(suppressor.shouldAnnounce(skipped, false, 4_000L))
+        suppressor.markAnnounced(skipped, 4_000L)
+        assertFalse(suppressor.shouldAnnounce(skipped.copy(observedAt = 4_001L), false, 4_001L))
     }
 
     @Test
@@ -320,12 +401,44 @@ class DuplicateSuppressorTest {
     }
 
     @Test
-    fun repeatModeStillHasCooldown() {
-        val suppressor = DuplicateSuppressor(repeatCooldownMs = 5_000L)
-        val event = event()
+    fun repeatOneCycleIsSuppressedWhenRepeatAnnouncementsAreOff() {
+        val suppressor = DuplicateSuppressor()
+        val event = event().copy(repeatMode = RepeatMode.ONE, playbackPosition = 0L)
+        suppressor.markAnnounced(event.copy(playbackPosition = 179_000L), 1_000L)
+
+        assertFalse(
+            suppressor.shouldAnnounce(
+                event,
+                allowRepeat = false,
+                now = 2_000L,
+                isNewRepeatCycle = true,
+            ),
+        )
+    }
+
+    @Test
+    fun repeatOneCycleIsAnnouncedWhenRepeatAnnouncementsAreOn() {
+        val suppressor = DuplicateSuppressor()
+        val event = event().copy(repeatMode = RepeatMode.ONE, playbackPosition = 0L)
+        suppressor.markAnnounced(event.copy(playbackPosition = 179_000L), 1_000L)
+
+        assertTrue(
+            suppressor.shouldAnnounce(
+                event,
+                allowRepeat = true,
+                now = 2_000L,
+                isNewRepeatCycle = true,
+            ),
+        )
+    }
+
+    @Test
+    fun repeatFlagWithoutExplicitNewCycleDoesNotRepeat() {
+        val suppressor = DuplicateSuppressor()
+        val event = event().copy(repeatMode = RepeatMode.ONE)
         suppressor.markAnnounced(event, 1_000L)
-        assertFalse(suppressor.shouldAnnounce(event, true, 4_000L))
-        assertTrue(suppressor.shouldAnnounce(event, true, 6_000L))
+
+        assertFalse(suppressor.shouldAnnounce(event.copy(observedAt = 2_000L), true, 2_000L))
     }
 
     @Test

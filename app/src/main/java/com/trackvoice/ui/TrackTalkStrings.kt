@@ -272,8 +272,8 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
         }
     }
     val minimumPlayback: String get() = t("최소 재생 시간", "Minimum playback time")
-    val repeatTrack: String get() = t("같은 곡 다시 안내", "Repeat the same track")
-    val repeatTrackSummary: String get() = t("기본값은 같은 곡을 한 번만 안내합니다.", "By default, each track is announced once.")
+    val repeatTrack: String get() = t("반복 재생도 다시 안내", "Announce repeated plays")
+    val repeatTrackSummary: String get() = t("같은 곡이 새로 반복 재생되면 다시 안내합니다.", "Announce again when the same song starts a new repeat cycle.")
     val readingFieldsSection: String get() = t("읽을 항목", "Reading fields")
     val readingFieldsTitle: String get() = t("읽기 순서", "Reading order")
     val readingFieldsSummary: String get() = t(

@@ -180,10 +180,13 @@ object AnnouncementTrackMatcher {
 }
 
 class DuplicateSuppressor(
-    private val repeatCooldownMs: Long = 30_000L,
     private val speechDuplicateCooldownMs: Long = 12_000L,
 ) {
+    // Keep the bounded history for diagnostics and future stale-event
+    // analysis, but never consult it to reject a normal A -> B -> A return.
     private val announcedTracks = linkedMapOf<String, AnnouncedTrack>()
+    /** The only occurrence that can suppress the next automatic announcement. */
+    private var currentOccurrence: AnnouncedTrack? = null
     private var lastSpeech: SpokenAnnouncement? = null
 
     fun shouldAnnounce(
@@ -191,27 +194,30 @@ class DuplicateSuppressor(
         allowRepeat: Boolean,
         now: Long,
         announcementText: String? = null,
+        isNewPlaybackOccurrence: Boolean = false,
+        isNewRepeatCycle: Boolean = false,
     ): Boolean {
         if (!event.hasTitle && event.mediaId.isNullOrBlank()) return false
+        val current = currentOccurrence
+        if (isNewPlaybackOccurrence || (isNewRepeatCycle && allowRepeat)) return true
         if (lastSpeech?.isDuplicateOf(event, announcementText, now, speechDuplicateCooldownMs) == true) {
             return false
         }
-        val previous = announcedTracks.values
-            .asSequence()
-            .filter { it.isSameTrack(event) }
-            .maxByOrNull(AnnouncedTrack::announcedAt)
-        return when {
-            previous == null -> true
-            !allowRepeat -> false
-            now - previous.announcedAt >= repeatCooldownMs -> true
-            else -> false
-        }
+        if (current == null || !current.isSameTrack(event)) return true
+
+        // Speech-text de-duplication remains a short safety net for callbacks
+        // that arrive before a new track has been accepted. Explicit playback
+        // transitions bypass it above.
+        // The setting controls a genuine repeat-one cycle only. It does not
+        // turn the whole listening history into a blacklist.
+        return allowRepeat && isNewRepeatCycle
     }
 
     fun markAnnounced(event: PlaybackEvent, now: Long, announcementText: String? = null) {
         val fingerprint = TrackFingerprint.announcement(event)
         val track = AnnouncedTrack.from(event, now)
         announcedTracks[fingerprint] = track
+        currentOccurrence = track
         if (!announcementText.isNullOrBlank()) {
             lastSpeech = SpokenAnnouncement(
                 track = track,
@@ -232,11 +238,14 @@ class DuplicateSuppressor(
     fun restoreAnnounced(event: PlaybackEvent, now: Long) {
         announcedTracks.clear()
         lastSpeech = null
-        announcedTracks[TrackFingerprint.announcement(event)] = AnnouncedTrack.from(event, now)
+        val track = AnnouncedTrack.from(event, now)
+        announcedTracks[TrackFingerprint.announcement(event)] = track
+        currentOccurrence = track
     }
 
     fun clear() {
         announcedTracks.clear()
+        currentOccurrence = null
         lastSpeech = null
     }
 
