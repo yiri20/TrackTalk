@@ -7,6 +7,7 @@ data class VoiceCandidate(
     val gender: GenderFilter,
     val quality: Int,
     val requiresNetwork: Boolean,
+    val latency: Int = VoiceMetadataPolicy.LATENCY_NORMAL,
 )
 
 data class VoiceSelection(
@@ -22,7 +23,7 @@ object VoiceSelectionPolicy {
         requestedGender: GenderFilter,
     ): VoiceSelection {
         val sorted = candidates.sortedWith(
-            compareBy<VoiceCandidate>({ it.requiresNetwork }, { -it.quality }, { it.name }),
+            compareBy<VoiceCandidate>({ it.requiresNetwork }, { -it.quality }, { it.latency }, { it.name }),
         )
         if (sorted.isEmpty()) return VoiceSelection(null, usedGenderFallback = false)
 

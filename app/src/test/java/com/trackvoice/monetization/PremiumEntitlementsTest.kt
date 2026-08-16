@@ -15,8 +15,8 @@ import org.junit.Test
 class PremiumEntitlementsTest {
     @Test
     fun freeVoiceDefaultIsSetToComfortableLevel() {
-        assertEquals(85, DEFAULT_TTS_VOLUME_PERCENT)
-        assertEquals(0.85f, DEFAULT_TTS_VOLUME, 0f)
+        assertEquals(80, DEFAULT_TTS_VOLUME_PERCENT)
+        assertEquals(0.80f, DEFAULT_TTS_VOLUME, 0f)
     }
 
     @Test

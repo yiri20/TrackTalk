@@ -7,6 +7,7 @@ import android.os.Handler
 import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import com.trackvoice.data.GenderFilter
 import com.trackvoice.data.UserSettings
 import com.trackvoice.data.VoiceLanguage
 import com.trackvoice.diagnostics.TrackTalkDebugLog
@@ -128,6 +129,7 @@ class TtsEngine(context: Context) {
         text: String,
         settings: UserSettings,
         transitionAtMs: Long? = null,
+        voiceNameOverride: String? = null,
         onFinished: (success: Boolean, message: String) -> Unit,
     ) {
         mainHandler.post {
@@ -186,7 +188,7 @@ class TtsEngine(context: Context) {
                     languageResult == TextToSpeech.LANG_NOT_SUPPORTED
                 localeFallbackUsed = localeFallbackUsed || segmentFallback
                 genderFallbackUsed = genderFallbackUsed || runCatching {
-                    selectVoice(ttsProvider, resolvedLocale, settings)
+                    selectVoice(ttsProvider, resolvedLocale, settings, voiceNameOverride)
                 }.getOrDefault(true)
                 val utteranceId = "trackvoice-${System.nanoTime()}-$index"
                 pendingResults[utteranceId] = batch
@@ -363,7 +365,12 @@ class TtsEngine(context: Context) {
         runCatching { batch.callback(false, message) }
     }
 
-    private fun selectVoice(provider: TtsProvider, locale: Locale, settings: UserSettings): Boolean {
+    private fun selectVoice(
+        provider: TtsProvider,
+        locale: Locale,
+        settings: UserSettings,
+        voiceNameOverride: String? = null,
+    ): Boolean {
         val compatibleVoices = provider.availableVoices().filter {
             Locale.forLanguageTag(it.localeTag).language == locale.language
         }
@@ -373,12 +380,13 @@ class TtsEngine(context: Context) {
                 gender = voice.gender,
                 quality = voice.quality,
                 requiresNetwork = voice.requiresNetwork,
+                latency = voice.latency,
             )
         }
         val selection = VoiceSelectionPolicy.choose(
             candidates = candidates,
-            explicitName = settings.voiceName.takeIf { settings.voiceLanguage != VoiceLanguage.AUTO },
-            requestedGender = settings.genderFilter,
+            explicitName = voiceNameOverride ?: settings.voiceName.takeIf { settings.voiceLanguage != VoiceLanguage.AUTO },
+            requestedGender = if (voiceNameOverride != null) GenderFilter.ANY else settings.genderFilter,
         )
         selection.name
             ?.let { name -> compatibleVoices.firstOrNull { it.name == name } }

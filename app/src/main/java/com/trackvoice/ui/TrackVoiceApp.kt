@@ -119,6 +119,7 @@ import com.trackvoice.announcement.AnnouncementPolicy
 import com.trackvoice.announcement.InstalledVoice
 import com.trackvoice.announcement.TtsStatus
 import com.trackvoice.announcement.VoiceCatalogPolicy
+import com.trackvoice.announcement.VoiceMetadataPolicy
 import com.trackvoice.data.AnnouncementMode
 import com.trackvoice.data.AnnouncementOrder
 import com.trackvoice.data.AnnouncementOutputPolicy
@@ -292,6 +293,7 @@ fun TrackVoiceApp(viewModel: TrackVoiceViewModel, activity: Activity) {
                     isPremium = premiumState.isPremium,
                     onUpdate = viewModel.controller::updateUserSettings,
                     onTest = viewModel.controller::speakTest,
+                    onPreviewVoice = viewModel.controller::speakVoicePreview,
                     onOpenPremium = { showPremiumDialog = true },
                     selectedPaneName = guidePaneName,
                     onPaneSelected = { guidePaneName = it.name },
@@ -942,6 +944,7 @@ internal fun GuideSettingsScreen(
     isPremium: Boolean,
     onUpdate: ((UserSettings) -> UserSettings) -> Unit,
     onTest: () -> Unit,
+    onPreviewVoice: (String) -> Unit,
     onOpenPremium: () -> Unit,
     selectedPaneName: String,
     onPaneSelected: (GuideSettingsPane) -> Unit,
@@ -989,6 +992,7 @@ internal fun GuideSettingsScreen(
                     isPremium = isPremium,
                     onUpdate = onUpdate,
                     onTest = onTest,
+                    onPreviewVoice = onPreviewVoice,
                     onOpenPremium = onOpenPremium,
                 )
             }
@@ -1598,6 +1602,7 @@ private fun VoiceSettingsScreen(
     isPremium: Boolean,
     onUpdate: ((UserSettings) -> UserSettings) -> Unit,
     onTest: () -> Unit,
+    onPreviewVoice: (String) -> Unit,
     onOpenPremium: () -> Unit,
 ) {
     val strings = LocalTrackTalkStrings.current
@@ -1628,12 +1633,20 @@ private fun VoiceSettingsScreen(
                         gender = visibleGender,
                     )
                     val selectedVoice = filteredVoices.firstOrNull { it.name == settings.voiceName }
-                    OptionDropdown(
-                        strings.voice,
-                        selectedVoice,
-                        listOf(null) + filteredVoices,
-                        { voice -> voice?.label ?: strings.autoSelect },
-                    ) { voice -> onUpdate { it.copy(voiceName = voice?.name) } }
+                    VoiceDropdown(
+                        label = strings.voice,
+                        selected = selectedVoice,
+                        voices = filteredVoices,
+                        numberByName = VoiceCatalogPolicy.stableDisplayNumbers(
+                            voices = voices,
+                            language = settings.voiceLanguage,
+                        ),
+                        english = strings.isEnglish,
+                        autoLabel = strings.autoSelect,
+                        previewLabel = strings.voicePreview,
+                        onSelected = { voice -> onUpdate { it.copy(voiceName = voice?.name) } },
+                        onPreview = onPreviewVoice,
+                    )
                     Text(
                         if (filteredVoices.isEmpty()) strings.noMatchingVoices
                         else strings.availableVoices(visibleGender, filteredVoices.size),
@@ -2055,6 +2068,104 @@ private fun SettingSwitchRow(title: String, summary: String, checked: Boolean, o
             Text(summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}
+
+@Composable
+private fun VoiceDropdown(
+    label: String,
+    selected: InstalledVoice?,
+    voices: List<InstalledVoice>,
+    numberByName: Map<String, Int>,
+    english: Boolean,
+    autoLabel: String,
+    previewLabel: String,
+    onSelected: (InstalledVoice?) -> Unit,
+    onPreview: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    fun display(voice: InstalledVoice): com.trackvoice.announcement.VoiceDisplayLabels =
+        VoiceMetadataPolicy.labels(voice, numberByName[voice.name] ?: 1, english)
+
+    Column(
+        modifier = Modifier.fillMaxWidth().then(modifier),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Box {
+            OutlinedButton(
+                onClick = { expanded = true },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+            ) {
+                Text(
+                    selected?.let(::display)?.primary ?: autoLabel,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text("⌄")
+            }
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier
+                    .widthIn(max = 340.dp)
+                    .heightIn(max = 420.dp),
+                shape = RoundedCornerShape(12.dp),
+                containerColor = MaterialTheme.colorScheme.surface,
+                tonalElevation = 3.dp,
+            ) {
+                DropdownMenuItem(
+                    text = { Text(autoLabel) },
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 2.dp),
+                    onClick = {
+                        onSelected(null)
+                        expanded = false
+                    },
+                )
+                voices.forEach { voice ->
+                    val labels = display(voice)
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(
+                                    labels.primary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    labels.secondary,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        },
+                        trailingIcon = {
+                            IconButton(
+                                onClick = {
+                                    expanded = false
+                                    onPreview(voice.name)
+                                },
+                            ) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.VolumeUp,
+                                    contentDescription = "$previewLabel: ${labels.primary}",
+                                )
+                            }
+                        },
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
+                        onClick = {
+                            onSelected(voice)
+                            expanded = false
+                        },
+                    )
+                }
+            }
+        }
     }
 }
 

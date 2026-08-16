@@ -16,6 +16,7 @@ import com.trackvoice.announcement.LegacyMusicVolumeRecovery
 import com.trackvoice.announcement.InstalledVoice
 import com.trackvoice.announcement.TtsEngine
 import com.trackvoice.announcement.TtsState
+import com.trackvoice.announcement.VoicePreviewPolicy
 import com.trackvoice.announcement.shouldReadAlbum
 import com.trackvoice.data.AnnouncementMode
 import com.trackvoice.data.AnnouncementReadField
@@ -420,7 +421,22 @@ class TrackVoiceController(
         speak(AnnouncementFormatter.testText(effectiveSettings().voiceLanguage))
     }
 
-    fun speak(text: String) {
+    fun speakVoicePreview(voiceName: String) {
+        if (voiceName.isBlank()) return
+        val settings = effectiveSettings()
+        val voiceLocaleTag = ttsEngine.voices.value
+            .firstOrNull { it.name == voiceName }
+            ?.localeTag
+        speak(
+            text = VoicePreviewPolicy.sampleFor(
+                language = settings.voiceLanguage,
+                voiceLocaleTag = voiceLocaleTag,
+            ),
+            voiceNameOverride = voiceName,
+        )
+    }
+
+    fun speak(text: String, voiceNameOverride: String? = null) {
         // A manual test should take over any delayed automatic announcement.
         cancelPendingAnnouncement()
         activeSpeechTrack = null
@@ -454,7 +470,7 @@ class TrackVoiceController(
             )
             return
         }
-        ttsEngine.speak(text, settings) { success, message ->
+        ttsEngine.speak(text, settings, voiceNameOverride = voiceNameOverride) { success, message ->
             if (generation == speechGeneration) {
                 if (shouldRequestAudioFocus) audioFocusManager.abandon()
                 resumePausedPlayback()

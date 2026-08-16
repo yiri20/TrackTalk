@@ -21,6 +21,8 @@ import androidx.compose.runtime.staticCompositionLocalOf
 class TrackTalkStrings private constructor(private val language: AppLanguage) {
     private val english = language == AppLanguage.ENGLISH
 
+    val isEnglish: Boolean get() = english
+
     private fun t(korean: String, englishText: String): String = if (english) englishText else korean
 
     fun text(korean: String, englishText: String): String = t(korean, englishText)
@@ -341,6 +343,7 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     val voice: String get() = t("목소리", "Voice")
     val autoSelect: String get() = t("자동 선택", "Automatic")
     val noMatchingVoices: String get() = t("선택한 언어와 성별의 설치 음성이 없습니다.", "No installed voice matches the selected language and gender.")
+    val voicePreview: String get() = t("음성 미리 듣기", "Preview voice")
     fun availableVoices(gender: GenderFilter, count: Int): String = if (english) {
         "${genderLabel(gender)} voices available: $count"
     } else {

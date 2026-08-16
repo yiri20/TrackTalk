@@ -17,13 +17,21 @@ object VoiceCatalogPolicy {
         systemLocale: Locale = Locale.getDefault(),
     ): List<InstalledVoice> {
         val languageCode = languageCode(language, systemLocale) ?: return emptyList()
-        return voices.filter { voice ->
-            Locale.forLanguageTag(voice.localeTag).language == languageCode &&
-                (gender == GenderFilter.ANY || voice.gender == gender)
-        }
+        return VoiceMetadataPolicy.sort(
+            voices.filter { voice ->
+                Locale.forLanguageTag(voice.localeTag).language == languageCode &&
+                    (gender == GenderFilter.ANY || voice.gender == gender)
+            },
+        )
     }
 
     fun showsManualVoicePicker(language: VoiceLanguage): Boolean = language != VoiceLanguage.AUTO
+
+    fun stableDisplayNumbers(
+        voices: List<InstalledVoice>,
+        language: VoiceLanguage,
+        systemLocale: Locale = Locale.getDefault(),
+    ): Map<String, Int> = VoiceMetadataPolicy.stableDisplayNumbers(voices, language, systemLocale)
 
     private fun languageCode(language: VoiceLanguage, systemLocale: Locale): String? = when (language) {
         VoiceLanguage.AUTO -> null

@@ -17,6 +17,8 @@ data class VoiceDescriptor(
     val quality: Int,
     val requiresNetwork: Boolean,
     val gender: GenderFilter,
+    val latency: Int = VoiceMetadataPolicy.LATENCY_NORMAL,
+    val features: Set<String> = emptySet(),
 ) {
     /** Stable provider-specific identifier used when selecting the voice. */
     val id: String get() = name
@@ -85,29 +87,21 @@ class AndroidSystemTtsProvider(context: Context) : TtsProvider {
             )
             .map { voice ->
                 val localeTag = voice.locale.toLanguageTag()
-                val gender = VoiceGenderClassifier.infer(voice.name, voice.features)
-                val language = voice.locale.getDisplayLanguage(Locale.getDefault())
-                    .ifBlank { voice.locale.language }
-                val region = voice.locale.country
-                    .takeIf { it.isNotBlank() }
-                    ?.let { "-$it" }
-                    .orEmpty()
-                val genderLabel = when (gender) {
-                    GenderFilter.FEMALE -> "female"
-                    GenderFilter.MALE -> "male"
-                    else -> "voice"
-                }
-                val source = if (voice.isNetworkConnectionRequired) "online" else "on-device"
                 VoiceDescriptor(
                     providerId = providerId,
                     name = voice.name,
-                    label = "$language$region · $genderLabel · $source",
+                    // Labels are built by the localized UI from structured
+                    // metadata; this legacy field is not a user-facing label.
+                    label = localeTag,
                     localeTag = localeTag,
                     quality = voice.quality,
                     requiresNetwork = voice.isNetworkConnectionRequired,
-                    gender = gender,
+                    gender = VoiceGenderClassifier.infer(voice.name, voice.features),
+                    latency = voice.latency,
+                    features = voice.features,
                 )
             }
+            .let(VoiceMetadataPolicy::sort)
     }
 
     override fun setLanguage(locale: Locale): Int =

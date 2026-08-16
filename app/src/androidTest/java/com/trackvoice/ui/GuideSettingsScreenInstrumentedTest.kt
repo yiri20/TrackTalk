@@ -38,6 +38,7 @@ class GuideSettingsScreenInstrumentedTest {
                         isPremium = false,
                         onUpdate = {},
                         onTest = {},
+                        onPreviewVoice = {},
                         onOpenPremium = {},
                         selectedPaneName = GuideSettingsPane.GUIDE.name,
                         onPaneSelected = {},

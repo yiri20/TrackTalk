@@ -30,7 +30,7 @@ private val Context.trackVoiceDataStore: DataStore<Preferences> by preferencesDa
 private fun appKey(packageName: String, suffix: String): Preferences.Key<String> =
     stringPreferencesKey("app.$packageName.$suffix")
 
-private const val TTS_VOLUME_DEFAULT_VERSION = 3
+private const val TTS_VOLUME_DEFAULT_VERSION = 4
 private const val CONTENT_READ_DEFAULT_VERSION = 2
 private const val CONTENT_READ_ORDER_VERSION = 2
 private const val AUDIO_OUTPUT_POLICY_VERSION = 1
@@ -137,11 +137,11 @@ class DataStoreRepository(private val context: Context) {
                 return@edit
             }
             val storedVolume = preferences[Keys.volume]
-            // Keep an explicit existing value. The previous build's 40% value
-            // cannot be distinguished from a user-selected 40%, so it must
-            // not be overwritten. New/untouched storage uses the 85% default.
-            if (storedVolume == null || storedVolume == 1f || storedVolume == 0.85f) {
-                preferences[Keys.volume] = DEFAULT_TTS_VOLUME
+            // Any existing value is user data. It may be an older default, but
+            // there is no safe way to distinguish that from an explicit
+            // choice, so only brand-new storage receives the new default.
+            if (TtsVolumeDefaultPolicy.shouldWriteDefault(storedVolume)) {
+                preferences[Keys.volume] = TtsVolumeDefaultPolicy.valueFor(storedVolume)
             }
             preferences[Keys.ttsVolumeDefaultVersion] = TTS_VOLUME_DEFAULT_VERSION
         }

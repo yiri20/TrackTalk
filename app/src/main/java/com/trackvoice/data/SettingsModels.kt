@@ -1,11 +1,22 @@
 package com.trackvoice.data
 
-const val DEFAULT_TTS_VOLUME_PERCENT = 85
-const val DEFAULT_TTS_VOLUME = 0.85f
+const val DEFAULT_TTS_VOLUME_PERCENT = 80
+const val DEFAULT_TTS_VOLUME = 0.80f
 const val DEFAULT_MUSIC_DUCK_PERCENT = 50
 const val MIN_MUSIC_DUCK_PERCENT = 10
 const val MAX_MUSIC_DUCK_PERCENT = 80
 const val YOUTUBE_PACKAGE_NAME = "com.google.android.youtube"
+
+/**
+ * The default is applied only when storage has no voice-volume value yet.
+ * Once a value exists, including a value written by an older build, it is
+ * treated as an explicit user preference and must not be replaced.
+ */
+object TtsVolumeDefaultPolicy {
+    fun valueFor(storedVolume: Float?): Float = storedVolume ?: DEFAULT_TTS_VOLUME
+
+    fun shouldWriteDefault(storedVolume: Float?): Boolean = storedVolume == null
+}
 
 fun defaultAppGuideEnabled(packageName: String, appName: String = ""): Boolean =
     AppGuideEnablementPolicy.defaultEnabled(packageName, appName)

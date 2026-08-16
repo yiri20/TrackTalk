@@ -68,6 +68,21 @@ class VoiceSelectionPolicyTest {
         assertFalse(selection.usedGenderFallback)
     }
 
+    @Test
+    fun previewSelectionUsesTheExactRequestedVoice() {
+        val selection = VoiceSelectionPolicy.choose(
+            candidates = listOf(
+                candidate("voice-1", GenderFilter.UNSPECIFIED, quality = 500),
+                candidate("voice-2", GenderFilter.UNSPECIFIED, quality = 100),
+            ),
+            explicitName = "voice-2",
+            requestedGender = GenderFilter.ANY,
+        )
+
+        assertEquals("voice-2", selection.name)
+        assertFalse(selection.usedGenderFallback)
+    }
+
     private fun candidate(
         name: String,
         gender: GenderFilter,

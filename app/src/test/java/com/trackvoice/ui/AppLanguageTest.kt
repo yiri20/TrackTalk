@@ -71,6 +71,18 @@ class AppLanguageTest {
     }
 
     @Test
+    fun defaultVoiceVolumeSummaryUsesTheNewDefaultInBothLanguages() {
+        assertEquals(
+            "음성 기본 음량 80%",
+            TrackTalkStrings.forLanguage(AppLanguage.KOREAN, "en").defaultVoiceVolumeSummary(),
+        )
+        assertEquals(
+            "Default voice volume: 80%",
+            TrackTalkStrings.forLanguage(AppLanguage.ENGLISH, "ko").defaultVoiceVolumeSummary(),
+        )
+    }
+
+    @Test
     fun announcementTimingExplainsTheActualWait() {
         val korean = TrackTalkStrings.forLanguage(AppLanguage.KOREAN, "en")
         val english = TrackTalkStrings.forLanguage(AppLanguage.ENGLISH, "ko")
