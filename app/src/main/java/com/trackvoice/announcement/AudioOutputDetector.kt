@@ -1,12 +1,41 @@
 package com.trackvoice.announcement
 
+import android.annotation.SuppressLint
 import android.content.Context
+import android.media.AudioAttributes
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
-import android.annotation.SuppressLint
-import android.media.AudioAttributes
 import android.os.Build
 import com.trackvoice.diagnostics.TrackTalkDebugLog
+
+/**
+ * A media route conclusion, deliberately separate from the inventory of
+ * connected devices. A connected Bluetooth headset is not necessarily the
+ * route used for music.
+ */
+internal enum class AudioRouteState {
+    EXTERNAL,
+    SPEAKER,
+    TRANSITIONING,
+    UNKNOWN,
+}
+
+/** Raw, non-identifying route signals captured for one resolution attempt. */
+internal data class AudioRouteEvidence(
+    val attributesRoute: List<Int>?,
+    val legacyBluetoothActive: Boolean,
+    val legacyWiredActive: Boolean,
+    val bluetoothOutputPresent: Boolean,
+    val availableOutputTypes: List<Int>,
+)
+
+internal data class AudioRouteResolution(
+    val state: AudioRouteState,
+    val reason: String,
+) {
+    val isExternal: Boolean get() = state == AudioRouteState.EXTERNAL
+    val isTransitioning: Boolean get() = state == AudioRouteState.TRANSITIONING
+}
 
 @SuppressLint("InlinedApi")
 class AudioOutputDetector(context: Context) {
@@ -16,86 +45,85 @@ class AudioOutputDetector(context: Context) {
         .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
         .build()
     private var lastLoggedRoute: String? = null
+    private var lastResolvedRoute: AudioRouteState? = null
 
     /**
-     * Returns whether the current media route is something other than the
-     * phone's built-in speaker/earpiece.
-     *
-     * `getDevices(GET_DEVICES_OUTPUTS)` is a connected-device inventory, not
-     * the route currently selected for media. On some phones a connected
-     * Bluetooth SCO device (for example a computer used for wireless ADB)
-     * remains in that inventory while music is still playing through the
-     * built-in speaker. Using that inventory made speaker suppression appear
-     * to be ignored. Android 12+ exposes the actual route for media
-     * attributes, so prefer it and only use the conservative legacy fallback
-     * on older devices or when the route query is unavailable.
+     * Resolves the media output route without treating the connected-device
+     * inventory as proof of the selected route. Android 12+ attributes are
+     * normally authoritative, but Samsung can briefly report a stale speaker
+     * route while both the active A2DP/SCO flag and a compatible Bluetooth
+     * output still corroborate Bluetooth media playback.
      */
-    fun hasExternalOutput(): Boolean {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val routedTypes = runCatching {
-                audioManager.getAudioDevicesForAttributes(mediaAttributes)
-            }.getOrNull()?.map(AudioDeviceInfo::getType)
-            if (routedTypes != null) {
-                // Samsung can return an empty attribute route even while an
-                // A2DP session is actively playing. In that specific case,
-                // use only the legacy *active-route* flags as a fallback;
-                // never use the full connected-device inventory here because
-                // a connected Bluetooth device may still be idle.
-                val external = classifyRoutedOutput(
-                    routedTypes = routedTypes,
-                    activeLegacyExternalOutput = hasActiveLegacyExternalOutput(),
-                )
-                logRoute(
-                    types = routedTypes,
-                    external = external,
-                    source = if (routedTypes.isEmpty()) "attributes_empty_legacy_active" else "attributes",
-                )
-                return external
-            }
+    internal fun resolveRoute(retryAttempt: Int = 0): AudioRouteResolution {
+        val availableOutputTypes = outputDevices().map(AudioDeviceInfo::getType)
+        val attributesRoute = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            runCatching {
+                audioManager.getAudioDevicesForAttributes(mediaAttributes).map(AudioDeviceInfo::getType)
+            }.getOrNull()
+        } else {
+            null
         }
-
-        val external = hasLegacyExternalOutput()
-        logRoute(outputDevices().map(AudioDeviceInfo::getType), external, "legacy_inventory")
-        return external
-    }
-
-    private fun logRoute(types: List<Int>, external: Boolean, source: String) {
-        val signature = "$source|${types.sorted()}|$external"
-        if (signature == lastLoggedRoute) return
-        lastLoggedRoute = signature
-        TrackTalkDebugLog.event(
-            "audio_route",
-            "source" to source,
-            "types" to types.sorted(),
-            "external" to external,
+        val evidence = AudioRouteEvidence(
+            attributesRoute = attributesRoute,
+            legacyBluetoothActive = isLegacyBluetoothActive(),
+            legacyWiredActive = isLegacyWiredActive(),
+            bluetoothOutputPresent = availableOutputTypes.any(::isBluetoothOutputType),
+            availableOutputTypes = availableOutputTypes,
         )
+        val resolution = resolveEvidence(evidence, retryAttempt)
+        logRoute(evidence, resolution, retryAttempt)
+        return resolution
     }
+
+    fun hasExternalOutput(): Boolean = resolveRoute().isExternal
 
     fun hasBluetoothOutput(): Boolean = outputDevices().any { device ->
-        device.type in setOf(
-            AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
-            AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
-            AudioDeviceInfo.TYPE_BLE_HEADSET,
-            AudioDeviceInfo.TYPE_BLE_SPEAKER,
-            AudioDeviceInfo.TYPE_BLE_BROADCAST,
+        isBluetoothOutputType(device.type)
+    }
+
+    private fun logRoute(
+        evidence: AudioRouteEvidence,
+        resolution: AudioRouteResolution,
+        retryAttempt: Int,
+    ) {
+        val attributesRoute = evidence.attributesRoute?.sorted()
+        val signature = listOf(
+            attributesRoute?.joinToString(",") ?: "unavailable",
+            evidence.legacyBluetoothActive,
+            evidence.legacyWiredActive,
+            evidence.bluetoothOutputPresent,
+            evidence.availableOutputTypes.sorted().joinToString(","),
+            resolution.state,
+            resolution.reason,
+            retryAttempt,
+        ).joinToString("|")
+        if (signature == lastLoggedRoute) return
+
+        val previousRoute = lastResolvedRoute
+        lastLoggedRoute = signature
+        lastResolvedRoute = resolution.state
+        TrackTalkDebugLog.event(
+            "audio_route",
+            "attributesRoute" to attributesRoute,
+            "legacyBluetoothActive" to evidence.legacyBluetoothActive,
+            "legacyWiredActive" to evidence.legacyWiredActive,
+            "bluetoothOutputPresent" to evidence.bluetoothOutputPresent,
+            "availableOutputTypes" to evidence.availableOutputTypes.sorted(),
+            "previousRoute" to previousRoute,
+            "resolution" to resolution.state,
+            "resolutionReason" to resolution.reason,
+            "retryAttempt" to retryAttempt,
         )
     }
 
     @Suppress("DEPRECATION")
-    private fun hasLegacyExternalOutput(): Boolean = runCatching {
-        audioManager.isWiredHeadsetOn ||
-            audioManager.isBluetoothA2dpOn ||
-        audioManager.isBluetoothScoOn ||
-            outputDevices().any { device ->
-                device.type in externalOutputTypes
-            }
+    private fun isLegacyBluetoothActive(): Boolean = runCatching {
+        audioManager.isBluetoothA2dpOn || audioManager.isBluetoothScoOn
     }.getOrDefault(false)
 
     @Suppress("DEPRECATION")
-    private fun hasActiveLegacyExternalOutput(): Boolean = runCatching {
-        audioManager.isWiredHeadsetOn ||
-            audioManager.isBluetoothA2dpOn ||
-            audioManager.isBluetoothScoOn
+    private fun isLegacyWiredActive(): Boolean = runCatching {
+        audioManager.isWiredHeadsetOn
     }.getOrDefault(false)
 
     private fun outputDevices(): Array<AudioDeviceInfo> = runCatching {
@@ -107,17 +135,79 @@ class AudioOutputDetector(context: Context) {
         fun hasExternalOutputType(types: Iterable<Int>): Boolean = types.any(::isExternalOutputType)
 
         /**
-         * Some Android/Samsung builds return an empty attribute route while a
-         * legacy active-route flag still identifies Bluetooth or wired audio.
+         * Reconciles active-route evidence. The Bluetooth inventory is only a
+         * corroborating signal after an active A2DP/SCO signal; it never
+         * independently promotes a speaker route to an external one.
          */
-        fun classifyRoutedOutput(
-            routedTypes: Iterable<Int>,
-            activeLegacyExternalOutput: Boolean,
-        ): Boolean = routedTypes.toList().let { types ->
-            if (types.isEmpty()) activeLegacyExternalOutput else hasExternalOutputType(types)
+        fun resolveEvidence(
+            evidence: AudioRouteEvidence,
+            retryAttempt: Int = 0,
+        ): AudioRouteResolution {
+            val attributesRoute = evidence.attributesRoute
+            if (attributesRoute == null) {
+                return if (
+                    evidence.legacyBluetoothActive ||
+                    evidence.legacyWiredActive ||
+                    hasExternalOutputType(evidence.availableOutputTypes)
+                ) {
+                    AudioRouteResolution(AudioRouteState.EXTERNAL, "LEGACY_FALLBACK_EXTERNAL")
+                } else {
+                    AudioRouteResolution(AudioRouteState.UNKNOWN, "LEGACY_FALLBACK_UNKNOWN")
+                }
+            }
+
+            if (hasExternalOutputType(attributesRoute)) {
+                return AudioRouteResolution(AudioRouteState.EXTERNAL, "ATTRIBUTES_EXTERNAL")
+            }
+
+            if (attributesRoute.isEmpty()) {
+                return if (evidence.legacyBluetoothActive || evidence.legacyWiredActive) {
+                    AudioRouteResolution(AudioRouteState.EXTERNAL, "ATTRIBUTES_EMPTY_LEGACY_ACTIVE")
+                } else {
+                    AudioRouteResolution(AudioRouteState.UNKNOWN, "ATTRIBUTES_EMPTY")
+                }
+            }
+
+            if (hasBuiltInOutputType(attributesRoute)) {
+                val corroboratedBluetoothConflict =
+                    evidence.legacyBluetoothActive && evidence.bluetoothOutputPresent
+                if (corroboratedBluetoothConflict) {
+                    return if (retryAttempt >= PERSISTENT_CONFLICT_RETRY_ATTEMPT) {
+                        AudioRouteResolution(
+                            AudioRouteState.EXTERNAL,
+                            "PERSISTENT_BLUETOOTH_CONFLICT_FALLBACK",
+                        )
+                    } else {
+                        AudioRouteResolution(
+                            AudioRouteState.TRANSITIONING,
+                            "SPEAKER_ATTRIBUTES_BLUETOOTH_ACTIVE",
+                        )
+                    }
+                }
+                return AudioRouteResolution(AudioRouteState.SPEAKER, "ATTRIBUTES_BUILT_IN")
+            }
+
+            return AudioRouteResolution(AudioRouteState.UNKNOWN, "ATTRIBUTES_UNKNOWN")
         }
 
         private fun isExternalOutputType(type: Int): Boolean = type in externalOutputTypes
+
+        private fun hasBuiltInOutputType(types: Iterable<Int>): Boolean = types.any { type ->
+            type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER ||
+                type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE
+        }
+
+        private fun isBluetoothOutputType(type: Int): Boolean = type in bluetoothOutputTypes
+
+        private const val PERSISTENT_CONFLICT_RETRY_ATTEMPT = 1
+
+        private val bluetoothOutputTypes = setOf(
+            AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+            AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+            AudioDeviceInfo.TYPE_BLE_HEADSET,
+            AudioDeviceInfo.TYPE_BLE_SPEAKER,
+            AudioDeviceInfo.TYPE_BLE_BROADCAST,
+        )
 
         private val externalOutputTypes = setOf(
             AudioDeviceInfo.TYPE_WIRED_HEADSET,

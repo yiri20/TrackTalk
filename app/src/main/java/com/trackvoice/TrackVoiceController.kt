@@ -6,6 +6,7 @@ import com.trackvoice.announcement.AnnouncementFormatter
 import com.trackvoice.announcement.AnnouncementTrackMatcher
 import com.trackvoice.announcement.AudioFocusManager
 import com.trackvoice.announcement.AudioOutputDetector
+import com.trackvoice.announcement.AudioRouteResolution
 import com.trackvoice.announcement.DuplicateSuppressor
 import com.trackvoice.announcement.RepeatCycleDetector
 import com.trackvoice.announcement.AudioDeviceMonitor
@@ -110,6 +111,16 @@ private fun PlaybackEvent.logicalIdentity(): String = listOf(
     artist.orEmpty().trim(),
     album.orEmpty().trim(),
 ).joinToString("|")
+
+/** A route retry must never resume an announcement for a different app or track. */
+internal fun isRouteRetryStillCurrent(
+    pendingEvent: PlaybackEvent,
+    currentEvent: PlaybackEvent?,
+): Boolean = currentEvent != null && AnnouncementTrackMatcher.matches(
+    pendingEvent,
+    currentEvent,
+    requireSameSource = true,
+)
 
 private fun PersistedAnnouncement.logicalIdentity(): String = listOf(
     sourcePackageName,
@@ -1018,6 +1029,8 @@ class TrackVoiceController(
         isNewRepeatCycle: Boolean,
         eventSequenceNumber: Long = 0L,
         logicalSessionGeneration: Long = 0L,
+        routeRetryAttempt: Int = 0,
+        routeResolutionOverride: AudioRouteResolution? = null,
     ) {
         val settings = effectiveSettings()
         val app = appSettingsFor(event)
@@ -1029,7 +1042,11 @@ class TrackVoiceController(
             cancelPendingAnnouncement()
             return
         }
-        val externalOutput = outputDetector.hasExternalOutput()
+        val routeResolution = routeResolutionOverride ?: outputDetector.resolveRoute(routeRetryAttempt)
+        // A corroborated Bluetooth conflict is deferred below. Treat it as
+        // eligible while validating ordinary settings so it is not discarded
+        // as a permanent speaker false negative before the bounded recheck.
+        val externalOutput = routeResolution.isExternal || routeResolution.isTransitioning
         val decision = AnnouncementPolicy.decide(
             event = event,
             userSettings = settings,
@@ -1067,6 +1084,9 @@ class TrackVoiceController(
             "shouldAnnounce" to decision.shouldAnnounce,
             "skipReason" to decision.skipReason,
             "delayMs" to decision.delayMs,
+            "routeResolution" to routeResolution.state,
+            "routeReason" to routeResolution.reason,
+            "routeRetryAttempt" to routeRetryAttempt,
         )
         TrackTalkDebugLog.event(
             "ANNOUNCEMENT_DECISION",
@@ -1075,6 +1095,7 @@ class TrackVoiceController(
             "shouldAnnounce" to decision.shouldAnnounce,
             "skipReason" to decision.skipReason,
             "textAvailable" to (decision.text != null),
+            "routeResolution" to routeResolution.state,
         )
         if (decision.shouldAnnounce) {
             logAnnouncementComponents(
@@ -1221,6 +1242,22 @@ class TrackVoiceController(
             return
         }
 
+        if (routeResolution.isTransitioning && !settings.outputPolicy.allows(externalAudioOutput = false)) {
+            deferAnnouncementForRouteResolution(
+                event = event,
+                collection = collection,
+                sessionKey = sessionKey,
+                sessionRefresh = sessionRefresh,
+                isNewPlaybackOccurrence = isNewPlaybackOccurrence,
+                isNewRepeatCycle = isNewRepeatCycle,
+                eventSequenceNumber = eventSequenceNumber,
+                logicalSessionGeneration = logicalSessionGeneration,
+                routeRetryAttempt = routeRetryAttempt,
+                routeResolution = routeResolution,
+            )
+            return
+        }
+
         cancelPendingAnnouncement()
         pendingAnnouncementEvent = event
         val pendingToken = ++pendingAnnouncementToken
@@ -1284,41 +1321,53 @@ class TrackVoiceController(
                 // the last possible moment so enabling speaker suppression or
                 // switching from Bluetooth to the phone speaker cannot leak
                 // a queued announcement.
+                val currentEvent = current ?: return@launch
+                val routeResolution = resolveRouteBeforeSpeech(
+                    settings = effectiveSettings(),
+                    event = currentEvent,
+                    pendingToken = pendingToken,
+                    fingerprint = fingerprint,
+                ) ?: return@launch
+                val finalEvent = _mediaState.value.currentEvent
+                if (!isRouteRetryStillCurrent(currentEvent, finalEvent)) return@launch
+                val eventForSpeech = finalEvent ?: return@launch
                 val currentSettings = effectiveSettings()
-                val currentApp = appSettingsFor(current)
+                val currentApp = appSettingsFor(eventForSpeech)
                 val currentDecision = AnnouncementPolicy.decide(
-                    event = current,
+                    event = eventForSpeech,
                     userSettings = currentSettings,
                     appSettings = currentApp,
                     effectiveEnabled = currentSettings.enabled || screenAutoActivated || deviceAutoActivated,
-                    externalAudioOutput = outputDetector.hasExternalOutput(),
+                    externalAudioOutput = routeResolution.isExternal || routeResolution.isTransitioning,
                     collectionOverride = _mediaState.value.currentCollection,
                 )
                 TrackTalkDebugLog.event(
                     "ANNOUNCEMENT_DECISION",
                     "stage" to "FINAL",
-                    "mediaId" to current.mediaId,
+                    "mediaId" to eventForSpeech.mediaId,
                     "shouldAnnounce" to currentDecision.shouldAnnounce,
                     "skipReason" to currentDecision.skipReason,
                     "textAvailable" to (currentDecision.text != null),
+                    "routeResolution" to routeResolution.state,
+                    "routeReason" to routeResolution.reason,
                 )
                 if (!currentDecision.shouldAnnounce || currentDecision.text == null) return@launch
 
                 logAnnouncementComponents(
-                    event = current,
+                    event = eventForSpeech,
                     decision = currentDecision,
                     action = "FINAL",
                 )
 
                 val announcedAt = System.currentTimeMillis()
-                lastAnnouncedTrack = current
+                lastAnnouncedTrack = eventForSpeech
                 lastAnnouncedAt = announcedAt
                 lastAnnouncedSessionKey = sessionKey
                 hardPlaybackBoundaryPending = false
                 hardPlaybackBoundarySessionKey = null
                 hardPlaybackBoundaryAllowsSameSession = false
                 duplicateSuppressor.markAnnounced(
-                    event = current,
+                    event = eventForSpeech,
                     now = announcedAt,
                     announcementText = currentDecision.text,
                 )
@@ -1326,32 +1375,32 @@ class TrackVoiceController(
                     "DUPLICATE_STATE_WRITE",
                     "stage" to "ACCEPTED",
                     "historyPresent" to true,
-                    "logicalTrack" to current.logicalIdentity(),
+                    "logicalTrack" to eventForSpeech.logicalIdentity(),
                     "announcedAt" to announcedAt,
                     "eventSequenceNumber" to eventSequenceNumber,
                     "logicalSessionGeneration" to logicalSessionGeneration,
                 )
                 persistenceScope.launch {
                     persistenceMutex.withLock {
-                        repository.savePersistedAnnouncement(current.toPersistedAnnouncement(announcedAt))
+                        repository.savePersistedAnnouncement(eventForSpeech.toPersistedAnnouncement(announcedAt))
                     }
                 }
                 val transitionAtMs = lastActualTrackChangeAtMs
                 TrackTalkDebugLog.event(
                     "TTS_REQUESTED",
-                    "mediaId" to current.mediaId,
-                    "title" to current.title,
-                    "artist" to current.artist,
-                    "album" to current.album,
-                    "observedAt" to current.observedAt,
-                    "elapsedSinceObservedMs" to (announcedAt - current.observedAt),
+                    "mediaId" to eventForSpeech.mediaId,
+                    "title" to eventForSpeech.title,
+                    "artist" to eventForSpeech.artist,
+                    "album" to eventForSpeech.album,
+                    "observedAt" to eventForSpeech.observedAt,
+                    "elapsedSinceObservedMs" to (announcedAt - eventForSpeech.observedAt),
                     "transitionToTtsRequestMs" to transitionAtMs?.let { announcedAt - it },
                     "collection" to currentDecision.collection,
                     "mode" to currentDecision.mode,
                     "eventSequenceNumber" to eventSequenceNumber,
                     "logicalSessionGeneration" to logicalSessionGeneration,
                 )
-                speakPrepared(currentDecision.text, current, fingerprint, pendingToken, transitionAtMs)
+                speakPrepared(currentDecision.text, eventForSpeech, fingerprint, pendingToken, transitionAtMs)
                 if (transitionAtMs != null) lastActualTrackChangeAtMs = null
             } finally {
                 if (pendingAnnouncementToken == pendingToken) {
@@ -1363,6 +1412,162 @@ class TrackVoiceController(
                 }
             }
         }
+    }
+
+    /**
+     * A Samsung route callback can temporarily say "speaker" while active
+     * Bluetooth evidence still corroborates media playback on a headset. Keep
+     * the existing pending-candidate state alive for one bounded recheck
+     * instead of permanently dropping the new track as SPEAKER_OUTPUT.
+     */
+    private fun deferAnnouncementForRouteResolution(
+        event: PlaybackEvent,
+        collection: PlaybackCollection,
+        sessionKey: String?,
+        sessionRefresh: Boolean,
+        isNewPlaybackOccurrence: Boolean,
+        isNewRepeatCycle: Boolean,
+        eventSequenceNumber: Long,
+        logicalSessionGeneration: Long,
+        routeRetryAttempt: Int,
+        routeResolution: AudioRouteResolution,
+    ) {
+        val fingerprint = TrackFingerprint.announcement(event)
+        cancelPendingAnnouncement()
+        pendingAnnouncementEvent = event
+        val pendingToken = ++pendingAnnouncementToken
+        pendingFingerprints += fingerprint
+        TrackTalkDebugLog.event(
+            "ROUTE_RESOLUTION_DEFERRED",
+            "mediaId" to event.mediaId,
+            "title" to event.title,
+            "resolution" to routeResolution.state,
+            "reason" to routeResolution.reason,
+            "retryAttempt" to routeRetryAttempt,
+            "recheckDelayMs" to ROUTE_CONFLICT_RECHECK_DELAY_MS,
+            "eventSequenceNumber" to eventSequenceNumber,
+        )
+        pendingJob = scope.launch {
+            try {
+                delay(ROUTE_CONFLICT_RECHECK_DELAY_MS)
+                if (!isPendingAnnouncement(pendingToken, fingerprint)) return@launch
+
+                val pendingEvent = pendingAnnouncementEvent ?: event
+                val currentEvent = _mediaState.value.currentEvent
+                val stillCurrent = isRouteRetryStillCurrent(pendingEvent, currentEvent) &&
+                    currentEvent?.isPlaying == true
+                if (!stillCurrent) {
+                    TrackTalkDebugLog.event(
+                        "ROUTE_RESOLUTION_DROPPED",
+                        "mediaId" to pendingEvent.mediaId,
+                        "reason" to "TRACK_CHANGED_OR_PAUSED",
+                        "eventSequenceNumber" to eventSequenceNumber,
+                    )
+                    return@launch
+                }
+
+                val retryEvent = currentEvent ?: return@launch
+                val retryAttempt = routeRetryAttempt + 1
+                val retryResolution = outputDetector.resolveRoute(retryAttempt)
+                TrackTalkDebugLog.event(
+                    "ROUTE_RESOLUTION_RECHECK",
+                    "mediaId" to retryEvent.mediaId,
+                    "title" to retryEvent.title,
+                    "resolution" to retryResolution.state,
+                    "reason" to retryResolution.reason,
+                    "retryAttempt" to retryAttempt,
+                    "stillCurrent" to true,
+                    "eventSequenceNumber" to eventSequenceNumber,
+                )
+                if (!consumePendingRouteResolution(pendingToken, fingerprint)) return@launch
+
+                scheduleAnnouncement(
+                    event = retryEvent,
+                    collection = _mediaState.value.currentCollection.takeIf { it != PlaybackCollection.UNKNOWN }
+                        ?: collection,
+                    sessionKey = selectedSessionKey ?: sessionKey,
+                    sessionRefresh = sessionRefresh,
+                    isNewPlaybackOccurrence = isNewPlaybackOccurrence,
+                    isNewRepeatCycle = isNewRepeatCycle,
+                    eventSequenceNumber = eventSequenceNumber,
+                    logicalSessionGeneration = logicalSessionGeneration,
+                    routeRetryAttempt = retryAttempt,
+                    routeResolutionOverride = retryResolution,
+                )
+            } finally {
+                if (pendingAnnouncementToken == pendingToken) {
+                    pendingFingerprints -= fingerprint
+                    pendingAnnouncementEvent = null
+                    pendingJob = null
+                }
+            }
+        }
+    }
+
+    /** Releases a deferred route candidate before it is re-scheduled normally. */
+    private fun consumePendingRouteResolution(token: Long, fingerprint: String): Boolean {
+        if (!isPendingAnnouncement(token, fingerprint)) return false
+        pendingAnnouncementToken += 1
+        pendingJob = null
+        pendingAnnouncementEvent = null
+        pendingFingerprints -= fingerprint
+        return true
+    }
+
+    /**
+     * The route may change while a normal metadata/timing delay is pending.
+     * Recheck a corroborated conflict once immediately before speech so it
+     * cannot turn a legitimate Bluetooth announcement into a late duplicate
+     * or a speaker leak.
+     */
+    private suspend fun resolveRouteBeforeSpeech(
+        settings: UserSettings,
+        event: PlaybackEvent,
+        pendingToken: Long,
+        fingerprint: String,
+    ): AudioRouteResolution? {
+        val initialResolution = outputDetector.resolveRoute()
+        if (
+            !initialResolution.isTransitioning ||
+            settings.outputPolicy.allows(externalAudioOutput = false)
+        ) {
+            return initialResolution
+        }
+
+        TrackTalkDebugLog.event(
+            "ROUTE_RESOLUTION_DEFERRED",
+            "stage" to "FINAL",
+            "mediaId" to event.mediaId,
+            "resolution" to initialResolution.state,
+            "reason" to initialResolution.reason,
+            "retryAttempt" to 0,
+            "recheckDelayMs" to ROUTE_CONFLICT_RECHECK_DELAY_MS,
+        )
+        delay(ROUTE_CONFLICT_RECHECK_DELAY_MS)
+        if (!isPendingAnnouncement(pendingToken, fingerprint)) return null
+
+        val currentEvent = _mediaState.value.currentEvent
+        if (!isRouteRetryStillCurrent(event, currentEvent)) {
+            TrackTalkDebugLog.event(
+                "ROUTE_RESOLUTION_DROPPED",
+                "stage" to "FINAL",
+                "mediaId" to event.mediaId,
+                "reason" to "TRACK_CHANGED",
+            )
+            return null
+        }
+
+        val retryResolution = outputDetector.resolveRoute(retryAttempt = 1)
+        TrackTalkDebugLog.event(
+            "ROUTE_RESOLUTION_RECHECK",
+            "stage" to "FINAL",
+            "mediaId" to event.mediaId,
+            "resolution" to retryResolution.state,
+            "reason" to retryResolution.reason,
+            "retryAttempt" to 1,
+            "stillCurrent" to true,
+        )
+        return retryResolution
     }
 
     /**
@@ -1862,6 +2067,9 @@ class TrackVoiceController(
         const val METADATA_SETTLE_DELAY_MS = 250L
         const val EXTERNAL_METADATA_SETTLE_DELAY_MS = 450L
         const val EXTERNAL_METADATA_TIMEOUT_MS = 600L
+        // One bounded retry is enough to distinguish Samsung's transient
+        // stale speaker route from a deliberate phone-speaker selection.
+        const val ROUTE_CONFLICT_RECHECK_DELAY_MS = 180L
     }
 
     private fun effectiveSettings(): UserSettings =
