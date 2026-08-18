@@ -1067,16 +1067,6 @@ internal fun GeneralSettingsScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            SettingCard(strings.appLanguageTitle) {
-                OptionDropdown(
-                    strings.appLanguageLabel,
-                    settings.appLanguage,
-                    APP_LANGUAGE_OPTIONS,
-                    strings::appLanguageOption,
-                ) { language -> onUpdate { it.copy(appLanguage = language) } }
-            }
-        }
-        item {
             SettingCard(strings.basicOperation) {
                 SettingSwitchRow(strings.voiceGuide, strings.voiceGuideSummary, settings.enabled) { enabled ->
                     onUpdate { current -> current.copy(enabled = enabled) }
@@ -1208,7 +1198,7 @@ internal fun GeneralSettingsScreen(
 }
 
 @Composable
-private fun DeviceSettingsScreen(
+internal fun DeviceSettingsScreen(
     settings: UserSettings,
     connectedDevices: List<ConnectedAudioDevice>,
     deviceSettings: Map<String, AudioDeviceSettings>,
@@ -1225,6 +1215,25 @@ private fun DeviceSettingsScreen(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    strings.generalSection,
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                CompactOptionSetting(
+                    title = strings.appLanguageTitle,
+                    selected = settings.appLanguage,
+                    options = APP_LANGUAGE_OPTIONS,
+                    optionLabel = strings::appLanguageOption,
+                    modifier = Modifier.testTag(APP_LANGUAGE_SETTING_TAG),
+                ) { language ->
+                    onUpdate { it.copy(appLanguage = language) }
+                }
+            }
+        }
         if (isPremium) {
             item {
                 SettingCard(strings.automationPlusTitle) {
@@ -1793,6 +1802,77 @@ private fun SettingCard(title: String, content: @Composable ColumnScope.() -> Un
 }
 
 @Composable
+private fun <T> CompactOptionSetting(
+    title: String,
+    selected: T,
+    options: List<T>,
+    optionLabel: (T) -> String,
+    modifier: Modifier = Modifier,
+    onSelected: (T) -> Unit,
+) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    Box(Modifier.fillMaxWidth()) {
+        Card(
+            modifier = modifier
+                .fillMaxWidth()
+                .clickable(role = Role.Button) { expanded = true },
+            shape = TrackVoiceCardShape,
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 56.dp)
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    title,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    optionLabel(selected),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Icon(
+                    Icons.Default.ChevronRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.widthIn(min = 220.dp, max = 320.dp),
+            shape = RoundedCornerShape(12.dp),
+            containerColor = MaterialTheme.colorScheme.surface,
+            tonalElevation = 3.dp,
+        ) {
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(optionLabel(option)) },
+                    onClick = {
+                        onSelected(option)
+                        expanded = false
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun NavigationEntryCard(
     title: String,
     summary: String,
@@ -2064,6 +2144,7 @@ internal fun ContentReadOrderPicker(
 
 internal const val CONTENT_READ_ORDER_PICKER_TAG = "content-read-order-picker"
 internal const val GENERAL_SETTINGS_SCREEN_TAG = "general-settings-screen"
+internal const val APP_LANGUAGE_SETTING_TAG = "app-language-setting"
 
 internal fun contentReadFieldItemKey(
     field: AnnouncementReadField,

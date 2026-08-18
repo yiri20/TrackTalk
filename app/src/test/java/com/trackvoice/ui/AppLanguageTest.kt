@@ -145,6 +145,8 @@ class AppLanguageTest {
         assertEquals(listOf(AnnouncementReadField.TITLE), settings.defaultReadFields)
         assertEquals("System default", TrackTalkStrings.forLanguage(AppLanguage.ENGLISH, "en").appLanguageOption(AppLanguage.SYSTEM))
         assertEquals("시스템 언어", TrackTalkStrings.forLanguage(AppLanguage.KOREAN, "ko").appLanguageOption(AppLanguage.SYSTEM))
+        assertEquals("General", TrackTalkStrings.forLanguage(AppLanguage.ENGLISH, "en").generalSection)
+        assertEquals("일반", TrackTalkStrings.forLanguage(AppLanguage.KOREAN, "ko").generalSection)
     }
 
     @Test

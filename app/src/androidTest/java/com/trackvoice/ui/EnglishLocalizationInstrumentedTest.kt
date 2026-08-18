@@ -4,8 +4,10 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -117,7 +119,8 @@ class EnglishLocalizationInstrumentedTest {
         }
 
         composeRule.onNodeWithText("Announcements").assertIsDisplayed()
-        composeRule.onNodeWithText("App language").assertIsDisplayed()
+        composeRule.onAllNodesWithText("App language").assertCountEquals(0)
+        composeRule.onNodeWithText("Basic behavior").assertIsDisplayed()
         composeRule.onNodeWithText("Voice").performClick()
         composeRule.onNodeWithText("Speech language").assertIsDisplayed()
         composeRule.onNodeWithText("Auto-detect from title").assertIsDisplayed()

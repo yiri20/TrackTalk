@@ -48,9 +48,7 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
 
     val plus: String get() = "Plus"
     val appLanguageTitle: String get() = t("앱 언어", "App language")
-    val appLanguageLabel: String get() = t("표시 언어", "Display language")
-    val appLanguageDescription: String
-        get() = t("시스템 언어를 따르거나 한국어·영어를 직접 선택합니다.", "Follow the system language or choose Korean or English.")
+    val generalSection: String get() = t("일반", "General")
 
     fun appLanguageOption(language: AppLanguage): String = when (language) {
         AppLanguage.SYSTEM -> t("시스템 언어", "System default")
