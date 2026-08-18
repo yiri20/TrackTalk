@@ -69,7 +69,7 @@ object VoiceMetadataPolicy {
         val voiceWord = if (english) "Voice" else "음성"
         val secondary = buildList {
             add(if (voice.requiresNetwork) {
-                if (english) "Online required" else "온라인 필요"
+                if (english) "Internet required" else "온라인 필요"
             } else {
                 if (english) "Offline" else "오프라인"
             })

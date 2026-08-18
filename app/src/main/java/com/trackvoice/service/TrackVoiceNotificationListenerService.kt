@@ -14,6 +14,8 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import com.trackvoice.MainActivity
 import com.trackvoice.R
+import com.trackvoice.data.UserSettings
+import com.trackvoice.localization.localizedString
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -94,23 +96,27 @@ class TrackVoiceNotificationListenerService : NotificationListenerService() {
         get() = getSystemService(NotificationManager::class.java)
 
     private fun observeShortcutNotification() {
-        notificationManager.createNotificationChannel(
-            NotificationChannel(
-                SHORTCUT_CHANNEL_ID,
-                "TrackTalk 바로가기",
-                NotificationManager.IMPORTANCE_LOW,
-            ),
-        )
         notificationJob?.cancel()
         notificationJob = scope.launch {
             application.repository.userSettings.collectLatest { settings ->
-                if (settings.showStatusNotification) showShortcutNotification(settings.enabled)
+                createShortcutChannel(settings)
+                if (settings.showStatusNotification) showShortcutNotification(settings)
                 else notificationManager.cancel(SHORTCUT_NOTIFICATION_ID)
             }
         }
     }
 
-    private fun showShortcutNotification(enabled: Boolean) {
+    private fun createShortcutChannel(settings: UserSettings) {
+        notificationManager.createNotificationChannel(
+            NotificationChannel(
+                SHORTCUT_CHANNEL_ID,
+                localizedString(settings.appLanguage, R.string.shortcut_channel_name),
+                NotificationManager.IMPORTANCE_LOW,
+            ),
+        )
+    }
+
+    private fun showShortcutNotification(settings: UserSettings) {
         val intent = Intent(this, MainActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(
             this,
@@ -120,8 +126,13 @@ class TrackVoiceNotificationListenerService : NotificationListenerService() {
         )
         val notification = NotificationCompat.Builder(this, SHORTCUT_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_trackvoice)
-            .setContentTitle(if (enabled) "TrackTalk 켜짐" else "TrackTalk 꺼짐")
-            .setContentText("눌러서 설정 열기")
+            .setContentTitle(
+                localizedString(
+                    settings.appLanguage,
+                    if (settings.enabled) R.string.shortcut_notification_on else R.string.shortcut_notification_off,
+                ),
+            )
+            .setContentText(localizedString(settings.appLanguage, R.string.shortcut_notification_summary))
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setOnlyAlertOnce(true)

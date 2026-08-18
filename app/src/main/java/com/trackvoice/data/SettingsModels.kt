@@ -309,6 +309,12 @@ enum class AppLanguage {
     ENGLISH,
 }
 
+val APP_LANGUAGE_OPTIONS = listOf(
+    AppLanguage.SYSTEM,
+    AppLanguage.ENGLISH,
+    AppLanguage.KOREAN,
+)
+
 fun AppLanguage.resolve(systemLanguage: String): AppLanguage = when (this) {
     AppLanguage.SYSTEM -> if (systemLanguage.startsWith("ko", ignoreCase = true)) {
         AppLanguage.KOREAN

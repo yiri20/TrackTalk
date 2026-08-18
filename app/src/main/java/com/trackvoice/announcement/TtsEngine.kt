@@ -10,6 +10,7 @@ import android.speech.tts.UtteranceProgressListener
 import com.trackvoice.data.GenderFilter
 import com.trackvoice.data.UserSettings
 import com.trackvoice.data.VoiceLanguage
+import com.trackvoice.diagnostics.DiagnosticMessage
 import com.trackvoice.diagnostics.TrackTalkDebugLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,7 +26,7 @@ enum class TtsStatus {
 
 data class TtsState(
     val status: TtsStatus = TtsStatus.INITIALIZING,
-    val message: String = "TTS 초기화 중",
+    val message: DiagnosticMessage = DiagnosticMessage.TTS_INITIALIZING,
     val fallbackUsed: Boolean = false,
 )
 
@@ -107,7 +108,7 @@ class TtsEngine(context: Context) {
             "status" to if (success) TextToSpeech.SUCCESS else TextToSpeech.ERROR,
         )
         if (!success) {
-            _state.value = TtsState(TtsStatus.ERROR, "기본 TTS 엔진을 초기화하지 못했습니다.")
+            _state.value = TtsState(TtsStatus.ERROR, DiagnosticMessage.TTS_INITIALIZATION_FAILED)
             return
         }
         runCatching { ttsProvider.setProgressListener(progressListener) }
@@ -122,7 +123,7 @@ class TtsEngine(context: Context) {
             "volumeControlStream" to audioAttributes.volumeControlStream,
         )
         runCatching { refreshVoices() }
-        _state.value = TtsState(TtsStatus.READY, "TTS 준비 완료")
+        _state.value = TtsState(TtsStatus.READY, DiagnosticMessage.TTS_READY)
     }
 
     fun speak(
@@ -130,15 +131,15 @@ class TtsEngine(context: Context) {
         settings: UserSettings,
         transitionAtMs: Long? = null,
         voiceNameOverride: String? = null,
-        onFinished: (success: Boolean, message: String) -> Unit,
+        onFinished: (success: Boolean, message: DiagnosticMessage) -> Unit,
     ) {
         mainHandler.post {
             if (text.isBlank()) {
-                onFinished(false, "읽을 내용이 없습니다.")
+                onFinished(false, DiagnosticMessage.TTS_NOTHING_TO_READ)
                 return@post
             }
             if (_state.value.status != TtsStatus.READY) {
-                onFinished(false, "TTS가 아직 준비되지 않았습니다.")
+                onFinished(false, DiagnosticMessage.TTS_NOT_READY)
                 return@post
             }
 
@@ -148,7 +149,7 @@ class TtsEngine(context: Context) {
             pendingResults.values.distinct().forEach { batch ->
                 if (!batch.completed) {
                     batch.completed = true
-                    batch.callback(false, "이전 음성 안내가 중단되었습니다.")
+                    batch.callback(false, DiagnosticMessage.TTS_INTERRUPTED)
                 }
             }
             pendingResults.clear()
@@ -200,17 +201,17 @@ class TtsEngine(context: Context) {
                     utteranceId,
                 ) }.getOrDefault(TextToSpeech.ERROR)
                 if (result == TextToSpeech.ERROR) {
-                    failBatch(batch, "TTS 음성 합성에 실패했습니다.")
+                    failBatch(batch, DiagnosticMessage.TTS_SYNTHESIS_FAILED)
                     return@post
                 }
             }
             _state.value = TtsState(
                 status = TtsStatus.READY,
                 message = when {
-                    localeFallbackUsed && genderFallbackUsed -> "일부 언어 또는 성별 음성이 없어 기본 음성으로 안내합니다."
-                    localeFallbackUsed -> "일부 언어 음성이 없어 기본 음성으로 안내합니다."
-                    genderFallbackUsed -> "일부 언어에 지정한 성별 음성이 없어 가능한 기본 음성으로 안내합니다."
-                    else -> "TTS 준비 완료"
+                    localeFallbackUsed && genderFallbackUsed -> DiagnosticMessage.TTS_FALLBACK_LANGUAGE_AND_GENDER
+                    localeFallbackUsed -> DiagnosticMessage.TTS_FALLBACK_LANGUAGE
+                    genderFallbackUsed -> DiagnosticMessage.TTS_FALLBACK_GENDER
+                    else -> DiagnosticMessage.TTS_READY
                 },
                 fallbackUsed = localeFallbackUsed || genderFallbackUsed,
             )
@@ -293,13 +294,13 @@ class TtsEngine(context: Context) {
             runCatching { ttsProvider.shutdown() }
             pendingResults.clear()
             utteranceTransitionAtMs.clear()
-            _state.value = TtsState(TtsStatus.CLOSED, "TTS 종료")
+            _state.value = TtsState(TtsStatus.CLOSED, DiagnosticMessage.TTS_CLOSED)
         }
     }
 
     private data class PendingBatch(
         var remaining: Int,
-        val callback: (Boolean, String) -> Unit,
+        val callback: (Boolean, DiagnosticMessage) -> Unit,
         var completed: Boolean = false,
     )
 
@@ -331,7 +332,7 @@ class TtsEngine(context: Context) {
                         "TTS_COMPLETED",
                         "utteranceId" to utteranceId,
                     )
-                    batch.callback(true, "다국어 음성 안내 완료")
+                    batch.callback(true, DiagnosticMessage.TTS_COMPLETED)
                 }
             }
         }
@@ -342,7 +343,7 @@ class TtsEngine(context: Context) {
             TrackTalkDebugLog.event("tts_error", "utteranceId" to utteranceId)
             mainHandler.post {
                 utteranceTransitionAtMs.remove(utteranceId)
-                pendingResults[utteranceId]?.let { failBatch(it, "TTS 재생 중 오류가 발생했습니다.") }
+                pendingResults[utteranceId]?.let { failBatch(it, DiagnosticMessage.TTS_PLAYBACK_ERROR) }
             }
         }
 
@@ -351,12 +352,12 @@ class TtsEngine(context: Context) {
             TrackTalkDebugLog.event("tts_error", "utteranceId" to utteranceId, "errorCode" to errorCode)
             mainHandler.post {
                 utteranceTransitionAtMs.remove(utteranceId)
-                pendingResults[utteranceId]?.let { failBatch(it, "TTS 재생 오류 코드: $errorCode") }
+                pendingResults[utteranceId]?.let { failBatch(it, DiagnosticMessage.TTS_PLAYBACK_ERROR) }
             }
         }
     }
 
-    private fun failBatch(batch: PendingBatch, message: String) {
+    private fun failBatch(batch: PendingBatch, message: DiagnosticMessage) {
         if (batch.completed) return
         batch.completed = true
         pendingResults.filterValues { it === batch }.keys.forEach(utteranceTransitionAtMs::remove)

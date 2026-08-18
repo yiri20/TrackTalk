@@ -13,7 +13,9 @@ import com.trackvoice.data.TrackStartBehavior
 import com.trackvoice.data.VoiceLanguage
 import com.trackvoice.data.DEFAULT_TTS_VOLUME_PERCENT
 import com.trackvoice.data.resolve
+import com.trackvoice.announcement.AudioDeviceKind
 import com.trackvoice.announcement.EffectiveAnnouncementConfiguration
+import com.trackvoice.diagnostics.DiagnosticMessage
 import com.trackvoice.monetization.PremiumMessage
 import androidx.compose.runtime.staticCompositionLocalOf
 
@@ -25,23 +27,24 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
 
     private fun t(korean: String, englishText: String): String = if (english) englishText else korean
 
-    fun text(korean: String, englishText: String): String = t(korean, englishText)
-
     fun sectionTitle(section: AppSection): String = when (section) {
         AppSection.HOME -> "TrackTalk"
-        AppSection.GENERAL -> t("안내·음성 설정", "Guide & voice settings")
+        AppSection.GENERAL -> t("안내·음성 설정", "Announcement & voice settings")
         AppSection.APPS -> t("앱 설정", "App settings")
-        AppSection.DEVICES -> t("기기·진단", "Devices & diagnostics")
+        AppSection.DEVICES -> t("기기·진단", "Device & diagnostics")
         AppSection.DIAGNOSTICS -> t("진단", "Diagnostics")
     }
 
     fun navLabel(section: AppSection): String = when (section) {
         AppSection.HOME -> t("홈", "Home")
-        AppSection.GENERAL -> t("안내·음성", "Guide & voice")
+        AppSection.GENERAL -> t("안내·음성", "Speech")
         AppSection.APPS -> t("앱", "Apps")
-        AppSection.DEVICES -> t("기기", "Devices")
+        AppSection.DEVICES -> t("기기", "Device")
         AppSection.DIAGNOSTICS -> t("진단", "Diagnostics")
     }
+
+    val announcementPane: String get() = t("안내", "Announcements")
+    val voicePane: String get() = t("음성", "Voice")
 
     val plus: String get() = "Plus"
     val appLanguageTitle: String get() = t("앱 언어", "App language")
@@ -50,7 +53,7 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
         get() = t("시스템 언어를 따르거나 한국어·영어를 직접 선택합니다.", "Follow the system language or choose Korean or English.")
 
     fun appLanguageOption(language: AppLanguage): String = when (language) {
-        AppLanguage.SYSTEM -> t("시스템 언어", "System language")
+        AppLanguage.SYSTEM -> t("시스템 언어", "System default")
         AppLanguage.KOREAN -> "한국어"
         AppLanguage.ENGLISH -> "English"
     }
@@ -63,21 +66,21 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     }
     fun guideTimingSummary(timing: AnnouncementTiming, delaySeconds: Int): String {
         val timingText = when (timing) {
-            AnnouncementTiming.IMMEDIATE -> t("바로 안내", "announce now")
+            AnnouncementTiming.IMMEDIATE -> t("바로 안내", "Immediately")
             AnnouncementTiming.DELAYED,
             AnnouncementTiming.BETWEEN_TRACKS,
             -> {
                 val effectiveDelay = AnnouncementTimingPolicy.normalizeStoredDelaySeconds(timing, delaySeconds)
-                t("${effectiveDelay}초 후 안내", "announce after ${effectiveDelay}s")
+                t("${effectiveDelay}초 후 안내", "After ${effectiveDelay}s")
             }
         }
         return timingText
     }
     fun seconds(value: Int): String = if (english) "${value}s" else "${value}초"
     val currentAnnouncement: String get() = t("현재 안내", "Current announcement")
-    val announcementLabel: String get() = t("안내", "Announcement")
-    val readingOrderLabel: String get() = t("읽기", "Reading order")
-    val openGuideSettings: String get() = t("안내 설정 열기", "Open guide settings")
+    val announcementLabel: String get() = t("안내", "Announcements")
+    val readingOrderLabel: String get() = t("읽기", "Spoken info")
+    val openGuideSettings: String get() = t("안내 설정 열기", "Open announcement settings")
     fun homeAnnouncementBasis(configuration: EffectiveAnnouncementConfiguration): String =
         t("기본 설정", "Default")
     fun homeAnnouncementBehavior(
@@ -95,11 +98,11 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     fun announcementFieldsSummary(fields: List<AnnouncementReadField>): String =
         fields.joinToString(" → ") { readField(it) }
 
-    val homeVoiceGuide: String get() = t("음성 안내", "Voice guide")
+    val homeVoiceGuide: String get() = t("음성 안내", "Voice announcements")
     fun statusSummary(effectiveEnabled: Boolean, enabled: Boolean): String = when {
-        !effectiveEnabled -> t("OFF · 음성 안내가 꺼져 있습니다.", "OFF · Voice guide is off.")
-        !enabled -> t("자동 활성화 · 조건에 맞을 때 안내합니다.", "Auto-enabled · Guide runs when conditions match.")
-        else -> t("ON · 새 곡을 안내합니다.", "ON · New tracks will be announced.")
+        !effectiveEnabled -> t("OFF · 음성 안내가 꺼져 있습니다.", "OFF · Voice announcements are off.")
+        !enabled -> t("자동 활성화 · 조건에 맞을 때 안내합니다.", "Auto-enabled · Announces when conditions match.")
+        else -> t("ON · 새 곡을 안내합니다.", "ON · Announces new tracks.")
     }
 
     val notificationPermissionTitle: String get() = t("상단바 바로가기", "Notification shortcut")
@@ -107,7 +110,7 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
         get() = t("알림에서 TrackTalk을 바로 켜고 끌 수 있습니다.", "Control TrackTalk directly from the notification.")
     val optionalPermissionBadge: String get() = t("선택", "Optional")
     val allowNotifications: String get() = t("허용", "Allow")
-    val musicDetectionPermissionTitle: String get() = t("음악 감지 권한 필요", "Music detection permission")
+    val musicDetectionPermissionTitle: String get() = t("음악 감지 권한 필요", "Music detection")
     val musicDetectionPermissionSummary: String
         get() = t("재생 중인 곡을 확인하려면 권한을 허용해 주세요.", "Allow access so TrackTalk can detect the song currently playing.")
     val requiredPermissionBadge: String get() = t("필수", "Required")
@@ -180,8 +183,8 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     val restorePurchase: String get() = t("구매 내역 복원", "Restore purchase")
 
     val basicOperation: String get() = t("기본 동작", "Basic behavior")
-    val voiceGuide: String get() = t("음성 안내", "Voice guide")
-    val voiceGuideSummary: String get() = t("상단바의 안내 타일과 동기화됩니다.", "Syncs with the guide tile in the notification shade.")
+    val voiceGuide: String get() = t("음성 안내", "Voice announcements")
+    val voiceGuideSummary: String get() = t("상단바의 안내 타일과 동기화됩니다.", "Matches the announcement tile in Quick Settings.")
     val announcementOutput: String get() = t("안내 출력", "Announcement output")
     fun announcementOutputOption(policy: AnnouncementOutputPolicy): String = when (policy) {
         AnnouncementOutputPolicy.ALL_OUTPUTS -> t("모든 오디오 출력", "All audio outputs")
@@ -200,6 +203,16 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     val statusShortcut: String get() = t("상단바 바로가기", "Notification shortcut")
     val statusShortcutSummary: String get() = t("알림을 눌러 앱으로 바로 이동합니다.", "Tap the notification to open the app.")
     val connectedDevices: String get() = t("연결 기기", "Connected devices")
+    fun audioDeviceType(kind: AudioDeviceKind): String = when (kind) {
+        AudioDeviceKind.WIRED_HEADPHONES -> t("유선 이어폰", "Wired headphones")
+        AudioDeviceKind.USB_AUDIO -> t("USB 오디오", "USB audio")
+        AudioDeviceKind.BLUETOOTH -> "Bluetooth"
+        AudioDeviceKind.BLUETOOTH_LE -> "Bluetooth LE"
+        AudioDeviceKind.HEARING_AID -> t("보청기", "Hearing aid")
+        AudioDeviceKind.HDMI_AUDIO -> t("HDMI 오디오", "HDMI audio")
+        AudioDeviceKind.LINE_AUDIO -> t("라인 오디오", "Line audio")
+        AudioDeviceKind.OTHER -> t("오디오 기기", "Audio device")
+    }
     val automationPlusTitle: String get() = t("자동화", "Automation")
     val automationPlusSummary: String get() = t(
         "Bluetooth·USB·HDMI 기기별 동작과 화면 꺼짐 자동 활성화를 설정할 수 있습니다.",
@@ -214,13 +227,13 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     val useOnThisDeviceSummary: String get() = t("연결 중인 이 기기에 안내합니다.", "Announce through this connected device.")
     val autoEnableOnConnect: String get() = t("연결하면 자동 켜기", "Enable when connected")
     val autoEnableOnConnectSummary: String get() = t("이 기기가 연결되면 안내를 켭니다.", "Enable announcements when this device connects.")
-    val trackGuide: String get() = t("기본 안내", "Guide defaults")
-    val guideDefaultsSummary: String get() = t("현재 안내 설정", "Current guide settings")
-    val trackStart: String get() = t("재생 시작", "Playback start")
+    val trackGuide: String get() = t("기본 안내", "Basic announcements")
+    val guideDefaultsSummary: String get() = t("현재 안내 설정", "Current settings")
+    val trackStart: String get() = t("재생 시작", "When playback starts")
     fun trackStartSummary(behavior: TrackStartBehavior): String = when (behavior) {
         TrackStartBehavior.PLAY_IMMEDIATELY -> t(
             "새 곡을 감지하면 음악과 함께 안내합니다.",
-            "Guide with music when a new track is detected.",
+            "Announce over music when a new track starts.",
         )
         TrackStartBehavior.ANNOUNCE_THEN_PLAY -> t(
             "새 곡을 먼저 안내한 뒤 음악을 재생합니다.",
@@ -229,18 +242,18 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     }
     val announceThenPlaySummary: String get() = t(
         "안내 중 음악은 멈추고, 끝나면 다시 재생합니다.",
-        "Music pauses during the guide and resumes when it ends.",
+        "Music pauses during the announcement and resumes afterward.",
     )
-    val musicDuringGuide: String get() = t("안내 중 음악", "Music during guide")
+    val musicDuringGuide: String get() = t("안내 중 음악", "Music during announcements")
     val musicVolumeSummary: String get() = t(
         "안내 중 음악은 자동으로 줄어들며, 정도는 기기와 음악 앱에 따라 다를 수 있습니다.",
         "Music is lowered automatically; the amount can vary by device and music app.",
     )
     val freeMusicDuckSummary: String get() = t(
         "안내 중 음악: 자동으로 줄이기",
-        "Music during guide: lower automatically",
+        "Music during announcements: reduce automatically",
     )
-    val freeGuideWithMusic: String get() = t("새 곡: 음악과 함께 안내", "New track: guide with music")
+    val freeGuideWithMusic: String get() = t("새 곡: 음악과 함께 안내", "New tracks: announce over music")
     fun defaultVoiceVolumeSummary(percent: Int = DEFAULT_TTS_VOLUME_PERCENT): String = t(
         "음성 기본 음량 ${percent}%",
         "Default voice volume: ${percent}%",
@@ -276,8 +289,8 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     val minimumPlayback: String get() = t("최소 재생 시간", "Minimum playback time")
     val repeatTrack: String get() = t("반복 재생도 다시 안내", "Announce repeated plays")
     val repeatTrackSummary: String get() = t("같은 곡이 새로 반복 재생되면 다시 안내합니다.", "Announce again when the same song starts a new repeat cycle.")
-    val readingFieldsSection: String get() = t("읽을 항목", "Reading fields")
-    val readingFieldsTitle: String get() = t("읽기 순서", "Reading order")
+    val readingFieldsSection: String get() = t("읽을 항목", "Spoken information")
+    val readingFieldsTitle: String get() = t("읽기 순서", "Announcement order")
     val readingFieldsSummary: String get() = t(
         "선택한 항목만 이 순서로 읽습니다.",
         "Only selected fields are read in this order.",
@@ -297,13 +310,18 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
 
     val appsIntro: String get() = t(
         "앱별로 TrackTalk 사용 여부만 선택합니다.",
-        "Choose which apps use TrackTalk.",
+        "Choose which apps TrackTalk monitors.",
     )
     val refresh: String get() = t("새로 고침", "Refresh")
     val visibleCategories: String get() = t("표시할 카테고리", "Visible categories")
     val scrollMore: String get() = t("카테고리 더 보기", "Scroll for more categories")
-    fun appCountSummary(appCount: Int, categoryCount: Int): String =
-        if (english) "$appCount apps shown · $categoryCount categories selected" else "${appCount}개 앱 표시 · ${categoryCount}개 카테고리 선택"
+    fun appCountSummary(appCount: Int, categoryCount: Int): String = if (english) {
+        val apps = if (appCount == 1) "app" else "apps"
+        val categories = if (categoryCount == 1) "category" else "categories"
+        "$appCount $apps shown · $categoryCount $categories selected"
+    } else {
+        "${appCount}개 앱 표시 · ${categoryCount}개 카테고리 선택"
+    }
     val noSupportedApps: String get() = t("지원되는 음악 앱을 찾지 못했습니다.", "No supported music apps found.")
     val appAutoAddSummary: String get() = t("앱이 미디어 세션을 만들면 자동으로 추가됩니다.", "Apps are added automatically when they create a media session.")
     val noCategorySelected: String get() = t("선택한 카테고리가 없습니다. 위에서 하나 이상 선택하세요.", "No categories selected. Choose at least one above.")
@@ -322,9 +340,9 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
         AppCategory.OTHER -> t("자동 분류되지 않은 미디어 앱", "Uncategorized media apps")
     }
     fun appCategoryCount(count: Int): String = if (english) "$count" else "${count}개"
-    val appGuideEnabled: String get() = t("안내 사용 중", "Guide on")
-    val appGuideDisabled: String get() = t("안내 꺼짐", "Guide off")
-    val readTitle: String get() = t("곡명", "Track title")
+    val appGuideEnabled: String get() = t("안내 사용 중", "Announcements on")
+    val appGuideDisabled: String get() = t("안내 꺼짐", "Announcements off")
+    val readTitle: String get() = t("곡명", "Title")
     val readArtist: String get() = t("아티스트", "Artist")
     val readTrackNumber: String get() = t("트랙 번호", "Track number")
     val readAlbum: String get() = t("앨범", "Album")
@@ -336,28 +354,32 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
         AnnouncementReadField.COLLECTION -> t("재생목록 이름", "Playlist name")
     }
 
-    val voiceSelection: String get() = t("음성 선택", "Voice selection")
-    val defaultVoiceLanguage: String get() = t("기본 언어", "Default language")
+    val voiceSelection: String get() = t("음성 선택", "Voice")
+    val defaultVoiceLanguage: String get() = t("기본 언어", "Speech language")
     val voiceLanguageHint: String get() = t("한글·영문·일문·중문이 섞이면 구간별 음성으로 자동 전환합니다.", "Mixed Korean, English, Japanese, and Chinese text switches voice by segment.")
     val gender: String get() = t("성별", "Gender")
     val voice: String get() = t("목소리", "Voice")
     val autoSelect: String get() = t("자동 선택", "Automatic")
     val noMatchingVoices: String get() = t("선택한 언어와 성별의 설치 음성이 없습니다.", "No installed voice matches the selected language and gender.")
-    val voicePreview: String get() = t("음성 미리 듣기", "Preview voice")
+    val voicePreview: String get() = t("음성 미리 듣기", "Preview")
     fun availableVoices(gender: GenderFilter, count: Int): String = if (english) {
-        "${genderLabel(gender)} voices available: $count"
+        val noun = if (count == 1) "voice" else "voices"
+        when (gender) {
+            GenderFilter.FEMALE, GenderFilter.MALE -> "${genderLabel(gender)} $noun available: $count"
+            else -> if (count == 1) "Voice available: 1" else "Voices available: $count"
+        }
     } else {
         "선택 가능한 ${genderLabel(gender)} ${count}개"
     }
     val speechControls: String get() = t("말하기 조절", "Speech controls")
     val speechRate: String get() = t("속도", "Speed")
     val pitch: String get() = t("높이", "Pitch")
-    val voiceVolumeSeparate: String get() = t("안내 음성 음량", "Speech volume")
+    val voiceVolumeSeparate: String get() = t("안내 음성 음량", "Announcement volume")
     val speechVolumeHint: String get() = t(
         "안내 음성 음량은 음악과 별도로 적용됩니다. 음악 줄이기 정도는 기기와 음악 앱에 따라 달라질 수 있습니다.",
         "Speech volume is independent of music. The amount of music lowering can vary by device and music app.",
     )
-    val testPlayback: String get() = t("테스트 재생", "Test playback")
+    val testPlayback: String get() = t("테스트 재생", "Test voice")
     val testExample: String get() = t("예: Glass Eyes · Radiohead", "Example: Glass Eyes · Radiohead")
     val voiceControlsPlusTitle: String get() = t("음성 세밀 조절은 Plus 기능입니다.", "Detailed voice controls are a Plus feature.")
     val voiceControlsFreeSummary: String get() = t("말하기 속도·높이·음량을 음악과 분리해 직접 조절할 수 있습니다.", "Adjust speech speed, pitch, and volume separately from music.")
@@ -381,7 +403,7 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     val buildNumberLabel: String get() = t("빌드 번호", "Build number")
     val developerLabel: String get() = t("개발자", "Developer")
     val developerName: String get() = "yiri20"
-    val feedbackDeveloper: String get() = t("개발자에게 피드백 보내기", "Send feedback to the developer")
+    val feedbackDeveloper: String get() = t("개발자에게 피드백 보내기", "Send feedback")
     val feedbackDeveloperSummary: String get() = t("의견이나 문제를 이메일로 보내 주세요.", "Share an idea or report a problem by email.")
     val noEmailApp: String get() = t("사용할 수 있는 이메일 앱이 없습니다.", "No compatible email app is available.")
     val privacy: String get() = t("개인정보", "Privacy")
@@ -393,6 +415,24 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     val on: String get() = "ON"
     val off: String get() = "OFF"
     val permissionShort: String get() = t("권한", "Access")
+
+    fun diagnosticMessage(message: DiagnosticMessage): String = when (message) {
+        DiagnosticMessage.NEVER_ANNOUNCED -> t("아직 음성 안내가 실행되지 않았습니다.", "No announcement has run yet.")
+        DiagnosticMessage.AUDIO_FOCUS_UNAVAILABLE -> t("오디오 포커스를 얻지 못해 안내를 건너뛰었습니다.", "Announcement skipped because audio focus was unavailable.")
+        DiagnosticMessage.TTS_INITIALIZING -> t("TTS 초기화 중", "Initializing text-to-speech")
+        DiagnosticMessage.TTS_INITIALIZATION_FAILED -> t("기본 TTS 엔진을 초기화하지 못했습니다.", "Couldn't initialize the default text-to-speech engine.")
+        DiagnosticMessage.TTS_READY -> t("TTS 준비 완료", "Text-to-speech ready")
+        DiagnosticMessage.TTS_NOTHING_TO_READ -> t("읽을 내용이 없습니다.", "Nothing to announce.")
+        DiagnosticMessage.TTS_NOT_READY -> t("TTS가 아직 준비되지 않았습니다.", "Text-to-speech isn't ready yet.")
+        DiagnosticMessage.TTS_INTERRUPTED -> t("이전 음성 안내가 중단되었습니다.", "The previous announcement was interrupted.")
+        DiagnosticMessage.TTS_SYNTHESIS_FAILED -> t("TTS 음성 합성에 실패했습니다.", "Speech synthesis failed.")
+        DiagnosticMessage.TTS_FALLBACK_LANGUAGE_AND_GENDER -> t("일부 언어 또는 성별 음성이 없어 기본 음성으로 안내합니다.", "Some language or gender voices are unavailable, so a default voice will be used.")
+        DiagnosticMessage.TTS_FALLBACK_LANGUAGE -> t("일부 언어 음성이 없어 기본 음성으로 안내합니다.", "Some language voices are unavailable, so a default voice will be used.")
+        DiagnosticMessage.TTS_FALLBACK_GENDER -> t("일부 언어에 지정한 성별 음성이 없어 가능한 기본 음성으로 안내합니다.", "The selected gender isn't available for every language, so a default voice will be used where needed.")
+        DiagnosticMessage.TTS_CLOSED -> t("TTS 종료", "Text-to-speech stopped")
+        DiagnosticMessage.TTS_COMPLETED -> t("다국어 음성 안내 완료", "Announcement completed")
+        DiagnosticMessage.TTS_PLAYBACK_ERROR -> t("TTS 재생 중 오류가 발생했습니다.", "A text-to-speech playback error occurred.")
+    }
 
     fun announcementMode(mode: AnnouncementMode): String = when (mode) {
         AnnouncementMode.SMART -> t("자동", "Automatic")
@@ -410,34 +450,34 @@ class TrackTalkStrings private constructor(private val language: AppLanguage) {
     }
 
     fun voiceLanguage(language: VoiceLanguage): String = when (language) {
-        VoiceLanguage.AUTO -> t("제목에 맞게 자동", "Automatic by title")
-        VoiceLanguage.SYSTEM -> t("시스템 언어", "System language")
+        VoiceLanguage.AUTO -> t("제목에 맞게 자동", "Auto-detect from title")
+        VoiceLanguage.SYSTEM -> t("시스템 언어", "System default")
         VoiceLanguage.KOREAN -> "한국어"
         VoiceLanguage.ENGLISH -> "English"
     }
 
     fun musicTreatment(treatment: MusicTreatment): String = when (treatment) {
-        MusicTreatment.KEEP -> t("그대로 재생", "Keep playing")
-        MusicTreatment.DUCK -> t("음량 줄이기", "Lower volume")
+        MusicTreatment.KEEP -> t("그대로 재생", "Keep music playing")
+        MusicTreatment.DUCK -> t("음량 줄이기", "Reduce music volume")
         MusicTreatment.PAUSE -> t("일시정지", "Pause")
     }
 
     fun trackStartBehavior(behavior: TrackStartBehavior): String = when (behavior) {
-        TrackStartBehavior.PLAY_IMMEDIATELY -> t("음악과 함께 안내", "Guide with music")
+        TrackStartBehavior.PLAY_IMMEDIATELY -> t("음악과 함께 안내", "Announce over music")
         TrackStartBehavior.ANNOUNCE_THEN_PLAY -> t("곡명 안내 후 재생", "Announce, then play")
     }
 
     fun genderLabel(gender: GenderFilter): String = when (gender) {
         GenderFilter.ANY,
         GenderFilter.UNSPECIFIED,
-        -> t("자동 선택", "automatic")
-        GenderFilter.FEMALE -> t("여성 음성", "female")
-        GenderFilter.MALE -> t("남성 음성", "male")
+        -> t("자동 선택", "Automatic")
+        GenderFilter.FEMALE -> t("여성 음성", "Female")
+        GenderFilter.MALE -> t("남성 음성", "Male")
     }
 
     val automaticVoiceSelection: String get() = t(
         "언어에 맞는 음성을 자동으로 선택합니다.",
-        "Automatically chooses a compatible voice for each language.",
+        "Automatically match language",
     )
 
     companion object {

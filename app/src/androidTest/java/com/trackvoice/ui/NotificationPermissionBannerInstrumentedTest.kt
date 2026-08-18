@@ -10,6 +10,7 @@ import com.trackvoice.data.AppLanguage
 import com.trackvoice.test.TrackTalkComposeTestActivity
 import com.trackvoice.ui.theme.TrackVoiceTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -60,5 +61,32 @@ class NotificationPermissionBannerInstrumentedTest {
         composeRule.onNodeWithText("필수").assertIsDisplayed()
         composeRule.onNodeWithText("권한 설정").assertIsDisplayed().performClick()
         composeRule.runOnIdle { assertEquals(1, openSettingsCount) }
+    }
+
+    @Test
+    fun englishRequiredBadgeRemainsReadableBesideLongPermissionCopy() {
+        composeRule.setContent {
+            TrackVoiceTheme {
+                CompositionLocalProvider(
+                    LocalTrackTalkStrings provides TrackTalkStrings.forLanguage(
+                        AppLanguage.ENGLISH,
+                        "en",
+                    ),
+                ) {
+                    RequiredPermissionBanner {}
+                }
+            }
+        }
+
+        composeRule.onNodeWithText("Music detection").assertIsDisplayed()
+        composeRule.onNodeWithText("Open settings").assertIsDisplayed()
+        val badgeBounds = composeRule.onNodeWithText("Required")
+            .assertIsDisplayed()
+            .fetchSemanticsNode()
+            .boundsInRoot
+        assertTrue(
+            "Required badge must remain horizontal instead of wrapping one character per line",
+            badgeBounds.width > badgeBounds.height,
+        )
     }
 }

@@ -62,7 +62,7 @@
             android:name=".quicksettings.TrackVoicePlaybackTileService"
             android:exported="true"
             android:icon="@drawable/ic_trackvoice"
-            android:label="음악 재생"
+            android:label="@string/playback_tile_label"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <intent-filter>
                 <action android:name="android.service.quicksettings.action.QS_TILE" />

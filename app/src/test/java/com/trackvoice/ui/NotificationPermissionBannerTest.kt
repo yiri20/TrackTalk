@@ -60,7 +60,7 @@ class NotificationPermissionBannerTest {
         val english = TrackTalkStrings.forLanguage(AppLanguage.ENGLISH, "ko")
         assertEquals("Notification shortcut", english.notificationPermissionTitle)
         assertEquals("Control TrackTalk directly from the notification.", english.notificationPermissionSummary)
-        assertEquals("Music detection permission", english.musicDetectionPermissionTitle)
+        assertEquals("Music detection", english.musicDetectionPermissionTitle)
         assertEquals("Required", english.requiredPermissionBadge)
         assertEquals("Optional", english.optionalPermissionBadge)
         assertEquals("Allow", english.allowNotifications)

@@ -2,8 +2,10 @@ package com.trackvoice.quicksettings
 
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
+import com.trackvoice.R
 import com.trackvoice.TrackVoiceApplication
 import com.trackvoice.data.UserSettings
+import com.trackvoice.localization.localizedString
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -26,10 +28,10 @@ class TrackVoiceTileService : TileService() {
         settingsJob = scope.launch {
             application.repository.userSettings.collectLatest { settings ->
                 latestSettings = settings
-                renderTile(settings.enabled)
+                renderTile(settings)
             }
         }
-        renderTile(latestSettings.enabled)
+        renderTile(latestSettings)
     }
 
     override fun onStopListening() {
@@ -42,12 +44,13 @@ class TrackVoiceTileService : TileService() {
         super.onClick()
         val next = !latestSettings.enabled
         application.controller.setEnabled(next)
-        renderTile(next)
+        latestSettings = latestSettings.copy(enabled = next)
+        renderTile(latestSettings)
     }
 
     override fun onTileAdded() {
         super.onTileAdded()
-        renderTile(latestSettings.enabled)
+        renderTile(latestSettings)
     }
 
     override fun onTileRemoved() {
@@ -62,11 +65,18 @@ class TrackVoiceTileService : TileService() {
         super.onDestroy()
     }
 
-    private fun renderTile(enabled: Boolean) {
+    private fun renderTile(settings: UserSettings) {
         qsTile?.let { tile ->
-            tile.state = if (enabled) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
+            tile.state = if (settings.enabled) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
             tile.label = "TrackTalk"
-            tile.contentDescription = if (enabled) "TrackTalk 음성 안내 켜짐" else "TrackTalk 음성 안내 꺼짐"
+            tile.contentDescription = localizedString(
+                settings.appLanguage,
+                if (settings.enabled) {
+                    R.string.announcement_tile_on_description
+                } else {
+                    R.string.announcement_tile_off_description
+                },
+            )
             tile.updateTile()
         }
     }

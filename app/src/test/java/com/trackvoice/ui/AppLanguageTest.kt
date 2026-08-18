@@ -1,10 +1,15 @@
 package com.trackvoice.ui
 
 import com.trackvoice.data.AppLanguage
+import com.trackvoice.data.APP_LANGUAGE_OPTIONS
 import com.trackvoice.data.AnnouncementOutputPolicy
 import com.trackvoice.data.AnnouncementTiming
 import com.trackvoice.data.AnnouncementReadField
 import com.trackvoice.data.resolve
+import com.trackvoice.data.UserSettings
+import com.trackvoice.data.VoiceLanguage
+import com.trackvoice.announcement.AudioDeviceKind
+import com.trackvoice.diagnostics.DiagnosticMessage
 import com.trackvoice.announcement.AnnouncementConfigurationSource
 import com.trackvoice.announcement.EffectiveAnnouncementConfiguration
 import com.trackvoice.media.PlaybackCollection
@@ -22,6 +27,8 @@ class AppLanguageTest {
     @Test
     fun systemNonKoreanResolvesToEnglish() {
         assertEquals(AppLanguage.ENGLISH, AppLanguage.SYSTEM.resolve("en-US"))
+        assertEquals(AppLanguage.ENGLISH, AppLanguage.SYSTEM.resolve("ja-JP"))
+        assertEquals(AppLanguage.ENGLISH, AppLanguage.SYSTEM.resolve("fr-FR"))
     }
 
     @Test
@@ -36,8 +43,8 @@ class AppLanguageTest {
         assertEquals("Home", TrackTalkStrings.forLanguage(AppLanguage.ENGLISH, "ko").navLabel(AppSection.HOME))
         assertEquals("안내·음성", TrackTalkStrings.forLanguage(AppLanguage.KOREAN, "en").navLabel(AppSection.GENERAL))
         assertEquals("기기", TrackTalkStrings.forLanguage(AppLanguage.KOREAN, "en").navLabel(AppSection.DEVICES))
-        assertEquals("Guide & voice", TrackTalkStrings.forLanguage(AppLanguage.ENGLISH, "ko").navLabel(AppSection.GENERAL))
-        assertEquals("Devices", TrackTalkStrings.forLanguage(AppLanguage.ENGLISH, "ko").navLabel(AppSection.DEVICES))
+        assertEquals("Speech", TrackTalkStrings.forLanguage(AppLanguage.ENGLISH, "ko").navLabel(AppSection.GENERAL))
+        assertEquals("Device", TrackTalkStrings.forLanguage(AppLanguage.ENGLISH, "ko").navLabel(AppSection.DEVICES))
     }
 
     @Test
@@ -64,7 +71,7 @@ class AppLanguageTest {
         assertFalse(korean.readingFieldsSummary.contains("무료"))
         assertFalse(english.readingFieldsSummary.contains("Free", ignoreCase = true))
         assertEquals("기기·진단", korean.sectionTitle(AppSection.DEVICES))
-        assertEquals("Devices & diagnostics", english.sectionTitle(AppSection.DEVICES))
+        assertEquals("Device & diagnostics", english.sectionTitle(AppSection.DEVICES))
         assertEquals("PLUS", korean.plusBadge)
         assertEquals("자동화", korean.automationPlusTitle)
         assertEquals("Automation", english.automationPlusTitle)
@@ -113,7 +120,7 @@ class AppLanguageTest {
         )
         assertEquals("기본 설정", korean.homeAnnouncementBasis(defaultConfiguration))
         assertEquals("트랙 번호 → 곡명", korean.announcementFieldsSummary(listOf(AnnouncementReadField.TRACK_NUMBER, AnnouncementReadField.TITLE)))
-        assertEquals("Track number → Track title", english.announcementFieldsSummary(listOf(AnnouncementReadField.TRACK_NUMBER, AnnouncementReadField.TITLE)))
+        assertEquals("Track number → Title", english.announcementFieldsSummary(listOf(AnnouncementReadField.TRACK_NUMBER, AnnouncementReadField.TITLE)))
     }
 
     @Test
@@ -123,5 +130,50 @@ class AppLanguageTest {
 
         assertEquals("모든 오디오 출력", korean.announcementOutputOption(AnnouncementOutputPolicy.ALL_OUTPUTS))
         assertEquals("External audio only", english.announcementOutputOption(AnnouncementOutputPolicy.EXTERNAL_ONLY))
+    }
+
+    @Test
+    fun freshSettingsUseSystemLanguageAndTitleOnlyReading() {
+        val settings = UserSettings()
+
+        assertEquals(AppLanguage.SYSTEM, settings.appLanguage)
+        assertEquals(
+            listOf(AppLanguage.SYSTEM, AppLanguage.ENGLISH, AppLanguage.KOREAN),
+            APP_LANGUAGE_OPTIONS,
+        )
+        assertEquals(VoiceLanguage.AUTO, settings.voiceLanguage)
+        assertEquals(listOf(AnnouncementReadField.TITLE), settings.defaultReadFields)
+        assertEquals("System default", TrackTalkStrings.forLanguage(AppLanguage.ENGLISH, "en").appLanguageOption(AppLanguage.SYSTEM))
+        assertEquals("시스템 언어", TrackTalkStrings.forLanguage(AppLanguage.KOREAN, "ko").appLanguageOption(AppLanguage.SYSTEM))
+    }
+
+    @Test
+    fun changingInterfaceLanguageDoesNotChangeSpeechOrReadingSettings() {
+        val original = UserSettings(
+            appLanguage = AppLanguage.SYSTEM,
+            voiceLanguage = VoiceLanguage.KOREAN,
+            defaultReadFields = listOf(AnnouncementReadField.ARTIST, AnnouncementReadField.TITLE),
+        )
+
+        val changed = original.copy(appLanguage = AppLanguage.ENGLISH)
+
+        assertEquals(VoiceLanguage.KOREAN, changed.voiceLanguage)
+        assertEquals(original.defaultReadFields, changed.defaultReadFields)
+    }
+
+    @Test
+    fun englishCoverageUsesNaturalCopyAcrossEveryMainSurface() {
+        val english = TrackTalkStrings.forLanguage(AppLanguage.ENGLISH, "ko")
+
+        assertEquals("Voice announcements", english.homeVoiceGuide)
+        assertEquals("Basic announcements", english.trackGuide)
+        assertEquals("Spoken information", english.readingFieldsSection)
+        assertEquals("Speech language", english.defaultVoiceLanguage)
+        assertEquals("Auto-detect from title", english.voiceLanguage(VoiceLanguage.AUTO))
+        assertEquals("Choose which apps TrackTalk monitors.", english.appsIntro)
+        assertEquals("Device & diagnostics", english.sectionTitle(AppSection.DEVICES))
+        assertEquals("Send feedback", english.feedbackDeveloper)
+        assertEquals("Wired headphones", english.audioDeviceType(AudioDeviceKind.WIRED_HEADPHONES))
+        assertEquals("Text-to-speech ready", english.diagnosticMessage(DiagnosticMessage.TTS_READY))
     }
 }

@@ -26,6 +26,7 @@ import com.trackvoice.data.DataStoreRepository
 import com.trackvoice.data.PersistedAnnouncement
 import com.trackvoice.data.UserSettings
 import com.trackvoice.diagnostics.TrackTalkDebugLog
+import com.trackvoice.diagnostics.DiagnosticMessage
 import com.trackvoice.data.AudioDeviceSettings
 import com.trackvoice.monetization.PremiumState
 import com.trackvoice.monetization.forPremiumEntitlement
@@ -93,7 +94,7 @@ data class DiagnosticsState(
     val lastPlaybackStateEventAt: Long? = null,
     val lastAnnouncementAt: Long? = null,
     val lastAnnouncementSucceeded: Boolean? = null,
-    val lastAnnouncementMessage: String = "아직 음성 안내가 실행되지 않았습니다.",
+    val lastAnnouncementMessage: DiagnosticMessage = DiagnosticMessage.NEVER_ANNOUNCED,
     val ttsState: TtsState = TtsState(),
 )
 
@@ -466,7 +467,7 @@ class TrackVoiceController(
             _diagnostics.value = _diagnostics.value.copy(
                 lastAnnouncementAt = System.currentTimeMillis(),
                 lastAnnouncementSucceeded = false,
-                lastAnnouncementMessage = "오디오 포커스를 얻지 못해 안내를 건너뛰었습니다.",
+                lastAnnouncementMessage = DiagnosticMessage.AUDIO_FOCUS_UNAVAILABLE,
             )
             return
         }
@@ -558,7 +559,7 @@ class TrackVoiceController(
             if (audioDeviceSettings.value[device.key] == null) {
                 scope.launch {
                     repository.updateAudioDeviceSettings(
-                        AudioDeviceSettings(device.key, device.name),
+                        AudioDeviceSettings(device.key, device.productName ?: device.kind.name),
                     )
                 }
             }
@@ -1511,7 +1512,7 @@ class TrackVoiceController(
             _diagnostics.value = _diagnostics.value.copy(
                 lastAnnouncementAt = System.currentTimeMillis(),
                 lastAnnouncementSucceeded = false,
-                lastAnnouncementMessage = "?ㅻ뵒???ъ빱?ㅻ? ?살? 紐삵빐 ?덈궡瑜?嫄대꼫?곗뿀?듬땲??",
+                lastAnnouncementMessage = DiagnosticMessage.AUDIO_FOCUS_UNAVAILABLE,
             )
             return false
         }

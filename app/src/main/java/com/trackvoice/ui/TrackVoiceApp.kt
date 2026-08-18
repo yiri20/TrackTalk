@@ -129,6 +129,7 @@ import com.trackvoice.data.AnnouncementTimingPolicy
 import com.trackvoice.data.AppSettings
 import com.trackvoice.data.AppCategory
 import com.trackvoice.data.AppLanguage
+import com.trackvoice.data.APP_LANGUAGE_OPTIONS
 import com.trackvoice.data.categorizeApp
 import com.trackvoice.data.GenderFilter
 import com.trackvoice.data.UserSettings
@@ -354,7 +355,13 @@ private fun RowScope.NavigationItem(
         selected = selected == section,
         onClick = { onSelected(section) },
         icon = { Icon(icon, contentDescription = strings.sectionTitle(section)) },
-        label = { Text(strings.navLabel(section), maxLines = 1) },
+        label = {
+            Text(
+                strings.navLabel(section),
+                maxLines = 1,
+                style = MaterialTheme.typography.labelSmall,
+            )
+        },
     )
 }
 
@@ -765,14 +772,19 @@ internal fun RequiredPermissionBanner(onOpenPermission: () -> Unit) {
                 ) {
                     Text(
                         strings.musicDetectionPermissionTitle,
+                        modifier = Modifier.weight(1f),
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.SemiBold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                     )
                     Text(
                         strings.requiredPermissionBadge,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        softWrap = false,
                     )
                 }
                 Text(
@@ -966,13 +978,13 @@ internal fun GuideSettingsScreen(
             GuidePaneSegment(
                 selected = selectedPane == GuideSettingsPane.GUIDE,
                 onClick = { onPaneSelected(GuideSettingsPane.GUIDE) },
-                label = strings.text("안내", "Guide"),
+                label = strings.announcementPane,
                 modifier = Modifier.weight(1f),
             )
             GuidePaneSegment(
                 selected = selectedPane == GuideSettingsPane.VOICE,
                 onClick = { onPaneSelected(GuideSettingsPane.VOICE) },
-                label = strings.text("음성", "Voice"),
+                label = strings.voicePane,
                 modifier = Modifier.weight(1f),
             )
         }
@@ -1059,7 +1071,7 @@ internal fun GeneralSettingsScreen(
                 OptionDropdown(
                     strings.appLanguageLabel,
                     settings.appLanguage,
-                    AppLanguage.values().toList(),
+                    APP_LANGUAGE_OPTIONS,
                     strings::appLanguageOption,
                 ) { language -> onUpdate { it.copy(appLanguage = language) } }
             }
@@ -1221,9 +1233,11 @@ private fun DeviceSettingsScreen(
                         Text(strings.noConnectedDevices, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     connectedDevices.forEach { device ->
-                        val saved = deviceSettings[device.key] ?: AudioDeviceSettings(device.key, device.name)
-                        Text(device.name, fontWeight = FontWeight.SemiBold)
-                        Text(device.typeLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        val typeLabel = strings.audioDeviceType(device.kind)
+                        val displayName = device.productName ?: typeLabel
+                        val saved = deviceSettings[device.key] ?: AudioDeviceSettings(device.key, displayName)
+                        Text(displayName, fontWeight = FontWeight.SemiBold)
+                        Text(typeLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         SettingSwitchRow(strings.useOnThisDevice, strings.useOnThisDeviceSummary, saved.enabled) {
                             onUpdateDevice(saved.copy(enabled = it))
                         }
@@ -1661,7 +1675,7 @@ private fun VoiceSettingsScreen(
                 }
                 if (ttsStatus.status == TtsStatus.ERROR) {
                     Text(
-                        ttsStatus.message,
+                        strings.diagnosticMessage(ttsStatus.message),
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
@@ -1725,14 +1739,14 @@ private fun DiagnosticsScreen(
                 DiagnosticRow(strings.notificationAccess, if (diagnostics.notificationListenerConnected) strings.connected else strings.notConnected, diagnostics.notificationListenerConnected)
                 DiagnosticRow(strings.activeMediaSessions, diagnostics.activeSessionCount.toString(), diagnostics.activeSessionCount > 0)
                 DiagnosticRow(strings.selectedApp, diagnostics.selectedSourcePackage ?: strings.none, diagnostics.selectedSourcePackage != null)
-                DiagnosticRow(strings.voiceEngine, diagnostics.ttsState.message, diagnostics.ttsState.status == TtsStatus.READY)
+                DiagnosticRow(strings.voiceEngine, strings.diagnosticMessage(diagnostics.ttsState.message), diagnostics.ttsState.status == TtsStatus.READY)
             }
         }
         item {
             SettingCard(strings.recentLog) {
                 DiagnosticRow(strings.metadataDetected, formatTimeOrDash(diagnostics.lastMetadataEventAt, strings.none), diagnostics.lastMetadataEventAt != null)
                 DiagnosticRow(strings.playbackDetected, formatTimeOrDash(diagnostics.lastPlaybackStateEventAt, strings.none), diagnostics.lastPlaybackStateEventAt != null)
-                DiagnosticRow(strings.lastAnnouncement, diagnostics.lastAnnouncementMessage, diagnostics.lastAnnouncementSucceeded == true)
+                DiagnosticRow(strings.lastAnnouncement, strings.diagnosticMessage(diagnostics.lastAnnouncementMessage), diagnostics.lastAnnouncementSucceeded == true)
                 DiagnosticRow(strings.announcementTime, formatTimeOrDash(diagnostics.lastAnnouncementAt, strings.none), diagnostics.lastAnnouncementAt != null)
             }
         }
@@ -2111,7 +2125,7 @@ private fun VoiceDropdown(
                 expanded = expanded,
                 onDismissRequest = { expanded = false },
                 modifier = Modifier
-                    .widthIn(max = 340.dp)
+                    .widthIn(min = 340.dp, max = 380.dp)
                     .heightIn(max = 420.dp),
                 shape = RoundedCornerShape(12.dp),
                 containerColor = MaterialTheme.colorScheme.surface,
@@ -2290,4 +2304,4 @@ private fun StatusBadge(enabled: Boolean, notificationAccess: Boolean) {
 }
 
 private fun formatTime(timestamp: Long): String = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(timestamp))
-private fun formatTimeOrDash(timestamp: Long?, emptyLabel: String = "없음"): String = timestamp?.let(::formatTime) ?: emptyLabel
+private fun formatTimeOrDash(timestamp: Long?, emptyLabel: String): String = timestamp?.let(::formatTime) ?: emptyLabel

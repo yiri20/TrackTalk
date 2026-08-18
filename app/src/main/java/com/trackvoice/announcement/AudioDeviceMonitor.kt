@@ -10,9 +10,20 @@ import android.os.Looper
 
 data class ConnectedAudioDevice(
     val key: String,
-    val name: String,
-    val typeLabel: String,
+    val productName: String?,
+    val kind: AudioDeviceKind,
 )
+
+enum class AudioDeviceKind {
+    WIRED_HEADPHONES,
+    USB_AUDIO,
+    BLUETOOTH,
+    BLUETOOTH_LE,
+    HEARING_AID,
+    HDMI_AUDIO,
+    LINE_AUDIO,
+    OTHER,
+}
 
 @SuppressLint("InlinedApi")
 class AudioDeviceMonitor(context: Context, private val onChanged: (List<ConnectedAudioDevice>) -> Unit) {
@@ -38,12 +49,16 @@ class AudioDeviceMonitor(context: Context, private val onChanged: (List<Connecte
             audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
                 .filter { it.type in supportedTypes }
                 .map { device ->
-                    val name = device.productName?.toString()?.ifBlank { null } ?: typeLabel(device.type)
+                    val productName = device.productName?.toString()?.ifBlank { null }
+                    val kind = deviceKind(device.type)
                     val address = device.address.orEmpty()
+                    // Keep the historical no-address key stable so a language
+                    // update cannot orphan an existing device automation rule.
+                    val stableName = productName ?: legacyKeyLabel(kind)
                     ConnectedAudioDevice(
-                        key = if (address.isNotBlank()) "${device.type}:$address" else "${device.type}:$name",
-                        name = name,
-                        typeLabel = typeLabel(device.type),
+                        key = if (address.isNotBlank()) "${device.type}:$address" else "${device.type}:$stableName",
+                        productName = productName,
+                        kind = kind,
                     )
                 }
                 .distinctBy { it.key }
@@ -51,16 +66,39 @@ class AudioDeviceMonitor(context: Context, private val onChanged: (List<Connecte
         runCatching { onChanged(devices) }
     }
 
-    private fun typeLabel(type: Int): String = when (type) {
-        AudioDeviceInfo.TYPE_WIRED_HEADSET, AudioDeviceInfo.TYPE_WIRED_HEADPHONES -> "유선 이어폰"
-        AudioDeviceInfo.TYPE_USB_HEADSET, AudioDeviceInfo.TYPE_USB_DEVICE -> "USB 오디오"
-        AudioDeviceInfo.TYPE_USB_ACCESSORY -> "USB 오디오"
-        AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, AudioDeviceInfo.TYPE_BLUETOOTH_SCO -> "Bluetooth"
-        AudioDeviceInfo.TYPE_BLE_HEADSET -> "Bluetooth LE"
-        AudioDeviceInfo.TYPE_HEARING_AID -> "보청기"
-        AudioDeviceInfo.TYPE_HDMI, AudioDeviceInfo.TYPE_HDMI_ARC, AudioDeviceInfo.TYPE_HDMI_EARC -> "HDMI 오디오"
-        AudioDeviceInfo.TYPE_LINE_ANALOG, AudioDeviceInfo.TYPE_LINE_DIGITAL -> "라인 오디오"
-        else -> "오디오 기기"
+    private fun deviceKind(type: Int): AudioDeviceKind = when (type) {
+        AudioDeviceInfo.TYPE_WIRED_HEADSET,
+        AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+        -> AudioDeviceKind.WIRED_HEADPHONES
+        AudioDeviceInfo.TYPE_USB_HEADSET,
+        AudioDeviceInfo.TYPE_USB_DEVICE,
+        AudioDeviceInfo.TYPE_USB_ACCESSORY,
+        -> AudioDeviceKind.USB_AUDIO
+        AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+        AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+        -> AudioDeviceKind.BLUETOOTH
+        AudioDeviceInfo.TYPE_BLE_HEADSET -> AudioDeviceKind.BLUETOOTH_LE
+        AudioDeviceInfo.TYPE_HEARING_AID -> AudioDeviceKind.HEARING_AID
+        AudioDeviceInfo.TYPE_HDMI,
+        AudioDeviceInfo.TYPE_HDMI_ARC,
+        AudioDeviceInfo.TYPE_HDMI_EARC,
+        -> AudioDeviceKind.HDMI_AUDIO
+        AudioDeviceInfo.TYPE_LINE_ANALOG,
+        AudioDeviceInfo.TYPE_LINE_DIGITAL,
+        -> AudioDeviceKind.LINE_AUDIO
+        else -> AudioDeviceKind.OTHER
+    }
+
+    /** Values used by releases that persisted a localized fallback in the device key. */
+    private fun legacyKeyLabel(kind: AudioDeviceKind): String = when (kind) {
+        AudioDeviceKind.WIRED_HEADPHONES -> "유선 이어폰"
+        AudioDeviceKind.USB_AUDIO -> "USB 오디오"
+        AudioDeviceKind.BLUETOOTH -> "Bluetooth"
+        AudioDeviceKind.BLUETOOTH_LE -> "Bluetooth LE"
+        AudioDeviceKind.HEARING_AID -> "보청기"
+        AudioDeviceKind.HDMI_AUDIO -> "HDMI 오디오"
+        AudioDeviceKind.LINE_AUDIO -> "라인 오디오"
+        AudioDeviceKind.OTHER -> "오디오 기기"
     }
 
     private companion object {

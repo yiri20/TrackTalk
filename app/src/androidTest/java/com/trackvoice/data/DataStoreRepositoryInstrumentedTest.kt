@@ -16,6 +16,42 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class DataStoreRepositoryInstrumentedTest {
     @Test
+    fun explicitAppLanguagePersistsWithoutChangingSpeechOrReadingPreferences() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val repository = DataStoreRepository(context)
+        val original = repository.currentUserSettings()
+        val readFields = listOf(AnnouncementReadField.ALBUM, AnnouncementReadField.TITLE)
+
+        try {
+            repository.updateUserSettings { current ->
+                current.copy(
+                    appLanguage = AppLanguage.ENGLISH,
+                    voiceLanguage = VoiceLanguage.KOREAN,
+                    defaultReadFields = readFields,
+                )
+            }
+            repository.migrateTtsVolumeDefault()
+            repository.migrateContentReadDefaults()
+            repository.migrateContentReadOrder()
+            repository.migratePlaybackContextSettings()
+            repository.migrateAudioOutputPolicy()
+
+            val english = DataStoreRepository(context).currentUserSettings()
+            assertEquals(AppLanguage.ENGLISH, english.appLanguage)
+            assertEquals(VoiceLanguage.KOREAN, english.voiceLanguage)
+            assertEquals(readFields, english.defaultReadFields)
+
+            repository.updateUserSettings { it.copy(appLanguage = AppLanguage.KOREAN) }
+            val korean = DataStoreRepository(context).currentUserSettings()
+            assertEquals(AppLanguage.KOREAN, korean.appLanguage)
+            assertEquals(VoiceLanguage.KOREAN, korean.voiceLanguage)
+            assertEquals(readFields, korean.defaultReadFields)
+        } finally {
+            repository.updateUserSettings { original }
+        }
+    }
+
+    @Test
     fun appEnablementDefaultsAndExplicitChoicesSurviveRepositoryRecreation() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val repository = DataStoreRepository(context)

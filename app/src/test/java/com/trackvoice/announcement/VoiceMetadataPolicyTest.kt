@@ -45,6 +45,13 @@ class VoiceMetadataPolicyTest {
         assertTrue(online.secondary.contains("온라인 필요"))
         assertFalse(offline.secondary.contains("on-device"))
         assertFalse(online.secondary.contains("online"))
+        assertTrue(
+            VoiceMetadataPolicy.labels(
+                voice("online-en", localeTag = "en-AU", requiresNetwork = true),
+                number = 1,
+                english = true,
+            ).secondary.contains("Internet required"),
+        )
     }
 
     @Test

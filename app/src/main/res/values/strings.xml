@@ -1,3 +1,16 @@
 <resources>
     <string name="app_name">TrackTalk</string>
+
+    <string name="playback_tile_label">Play music</string>
+    <string name="shortcut_channel_name">TrackTalk shortcut</string>
+    <string name="shortcut_notification_on">TrackTalk is on</string>
+    <string name="shortcut_notification_off">TrackTalk is off</string>
+    <string name="shortcut_notification_summary">Tap to open settings</string>
+    <string name="announcement_tile_on_description">TrackTalk voice announcements on</string>
+    <string name="announcement_tile_off_description">TrackTalk voice announcements off</string>
+    <string name="playback_tile_pause_label">Pause music</string>
+    <string name="playback_tile_play_label">Play music</string>
+    <string name="playback_tile_pause_description">Pause the current track</string>
+    <string name="playback_tile_play_description">Resume the current track</string>
+    <string name="playback_tile_unavailable_description">No music is playing</string>
 </resources>
