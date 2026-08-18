@@ -75,6 +75,7 @@ class DataStoreRepository(private val context: Context) {
 
     suspend fun currentUserSettings(): UserSettings = userSettings.first()
     suspend fun currentAppSettings(): Map<String, AppSettings> = appSettings.first()
+    suspend fun currentAudioDeviceSettings(): Map<String, AudioDeviceSettings> = audioDeviceSettings.first()
 
     suspend fun currentPersistedAnnouncement(): PersistedAnnouncement? =
         dataStore.data.first().toPersistedAnnouncement()
@@ -334,9 +335,52 @@ class DataStoreRepository(private val context: Context) {
             val keys = preferences[Keys.knownDeviceKeys].orEmpty().toMutableSet()
             keys += settings.deviceKey
             preferences[Keys.knownDeviceKeys] = keys
-            preferences[deviceKey(settings.deviceKey, "name")] = settings.displayName
-            preferences[deviceBooleanKey(settings.deviceKey, "auto_enable")] = settings.autoEnable
-            preferences[deviceBooleanKey(settings.deviceKey, "enabled")] = settings.enabled
+            preferences.writeAudioDeviceSettings(settings)
+        }
+    }
+
+    suspend fun reconcileAudioDeviceSettings(
+        canonicalKey: String,
+        displayName: String,
+        legacyKeys: Set<String>,
+    ): AudioDeviceSettings {
+        var reconciled = AudioDeviceSettings(canonicalKey, displayName)
+        dataStore.edit { preferences ->
+            val knownKeys = preferences[Keys.knownDeviceKeys].orEmpty().toMutableSet()
+            val aliases = legacyKeys - canonicalKey
+            val candidateKeys = buildSet {
+                add(canonicalKey)
+                addAll(aliases)
+            }
+            val candidates = candidateKeys
+                .filter { it in knownKeys }
+                .map(preferences::readAudioDeviceSettings)
+            reconciled = mergeAudioDeviceSettings(
+                canonicalKey = canonicalKey,
+                displayName = displayName,
+                candidates = candidates,
+            )
+
+            aliases.forEach { alias ->
+                preferences.removeAudioDeviceSettings(alias)
+                knownKeys -= alias
+            }
+            knownKeys += canonicalKey
+            preferences[Keys.knownDeviceKeys] = knownKeys
+            preferences.writeAudioDeviceSettings(reconciled)
+        }
+        return reconciled
+    }
+
+    suspend fun removeAudioDeviceSettings(deviceKeys: Set<String>) {
+        if (deviceKeys.isEmpty()) return
+        dataStore.edit { preferences ->
+            val knownKeys = preferences[Keys.knownDeviceKeys].orEmpty().toMutableSet()
+            deviceKeys.forEach { key ->
+                preferences.removeAudioDeviceSettings(key)
+                knownKeys -= key
+            }
+            preferences[Keys.knownDeviceKeys] = knownKeys
         }
     }
 
@@ -532,12 +576,7 @@ class DataStoreRepository(private val context: Context) {
 
     private fun Preferences.toAudioDeviceSettings(): Map<String, AudioDeviceSettings> =
         this[Keys.knownDeviceKeys].orEmpty().associateWith { key ->
-            AudioDeviceSettings(
-                deviceKey = key,
-                displayName = this[deviceKey(key, "name")] ?: key,
-                autoEnable = this[deviceBooleanKey(key, "auto_enable")] ?: false,
-                enabled = this[deviceBooleanKey(key, "enabled")] ?: true,
-            )
+            readAudioDeviceSettings(key)
         }
 
     private fun Preferences.toAppSettings(): Map<String, AppSettings> = this[Keys.knownPackages]
@@ -801,6 +840,25 @@ private fun deviceKey(key: String, suffix: String): Preferences.Key<String> =
 
 private fun deviceBooleanKey(key: String, suffix: String): Preferences.Key<Boolean> =
     booleanPreferencesKey("device.${key.hashCode()}.$suffix")
+
+private fun Preferences.readAudioDeviceSettings(key: String): AudioDeviceSettings = AudioDeviceSettings(
+    deviceKey = key,
+    displayName = this[deviceKey(key, "name")] ?: key,
+    autoEnable = this[deviceBooleanKey(key, "auto_enable")] ?: false,
+    enabled = this[deviceBooleanKey(key, "enabled")] ?: true,
+)
+
+private fun MutablePreferences.writeAudioDeviceSettings(settings: AudioDeviceSettings) {
+    this[deviceKey(settings.deviceKey, "name")] = settings.displayName
+    this[deviceBooleanKey(settings.deviceKey, "auto_enable")] = settings.autoEnable
+    this[deviceBooleanKey(settings.deviceKey, "enabled")] = settings.enabled
+}
+
+private fun MutablePreferences.removeAudioDeviceSettings(key: String) {
+    remove(deviceKey(key, "name"))
+    remove(deviceBooleanKey(key, "auto_enable"))
+    remove(deviceBooleanKey(key, "enabled"))
+}
 
 private fun externalMetadataKey(cacheKey: String): Preferences.Key<String> =
     stringPreferencesKey("external_metadata.${sha256(cacheKey)}")

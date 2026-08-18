@@ -203,6 +203,8 @@ class TrackVoiceController(
     private var monitorStartJob: Job? = null
     private var screenAutoActivated = false
     private var deviceAutoActivated = false
+    private var audioDeviceSnapshotGeneration = 0L
+    private var latestConnectedAudioDevices: List<ConnectedAudioDevice> = emptyList()
     private val externalMetadataCache = mutableMapOf<String, ExternalMetadataCacheEntry>()
     private val externalMetadataLookupJobs = mutableMapOf<String, Job>()
 
@@ -286,13 +288,13 @@ class TrackVoiceController(
                 _mediaState.value = _mediaState.value.copy(
                     effectiveEnabled = settings.enabled || screenAutoActivated || deviceAutoActivated,
                 )
-                evaluateDeviceAutoActivation(_connectedAudioDevices.value, audioDeviceSettings.value)
+                evaluateDeviceAutoActivation(latestConnectedAudioDevices, audioDeviceSettings.value)
             }
         }
         discoverSupportedMediaApps()
         audioDeviceMonitor.start()
         scope.launch {
-            audioDeviceSettings.collectLatest { evaluateDeviceAutoActivation(_connectedAudioDevices.value, it) }
+            audioDeviceSettings.collectLatest { evaluateDeviceAutoActivation(latestConnectedAudioDevices, it) }
         }
         scope.launch {
             ttsEngine.state.collectLatest { state ->
@@ -554,27 +556,39 @@ class TrackVoiceController(
     }
 
     private fun handleAudioDevices(devices: List<ConnectedAudioDevice>) {
-        _connectedAudioDevices.value = devices
-        devices.forEach { device ->
-            if (audioDeviceSettings.value[device.key] == null) {
-                scope.launch {
-                    repository.updateAudioDeviceSettings(
-                        AudioDeviceSettings(device.key, device.productName ?: device.kind.name),
-                    )
-                }
-            }
-        }
+        val generation = ++audioDeviceSnapshotGeneration
+        latestConnectedAudioDevices = devices
+        // Disconnects and reconnects should update automation from the latest
+        // route snapshot immediately. Reconciliation may then supply a
+        // migrated canonical preference without replaying the same transition.
         evaluateDeviceAutoActivation(devices, audioDeviceSettings.value)
+        scope.launch {
+            devices.forEach { device ->
+                repository.reconcileAudioDeviceSettings(
+                    canonicalKey = device.key,
+                    displayName = device.productName ?: device.kind.name,
+                    legacyKeys = device.legacyKeys,
+                )
+            }
+            val reconciledSettings = repository.currentAudioDeviceSettings()
+            if (generation != audioDeviceSnapshotGeneration) return@launch
+            _connectedAudioDevices.value = devices
+            evaluateDeviceAutoActivation(devices, reconciledSettings)
+        }
     }
 
     private fun evaluateDeviceAutoActivation(
         devices: List<ConnectedAudioDevice>,
         settings: Map<String, AudioDeviceSettings>,
     ) {
-        val shouldActivate = premiumState.value.isPremium && devices.any { device ->
-            settings[device.key]?.let { it.enabled && it.autoEnable } == true
-        }
-        deviceAutoActivated = shouldActivate
+        val decision = DeviceAutomationPolicy.decide(
+            currentlyActive = deviceAutoActivated,
+            isPremium = premiumState.value.isPremium,
+            devices = devices,
+            settings = settings,
+        )
+        if (!decision.changed) return
+        deviceAutoActivated = decision.active
         _mediaState.value = _mediaState.value.copy(
             effectiveEnabled = effectiveSettings().enabled || screenAutoActivated || deviceAutoActivated,
         )

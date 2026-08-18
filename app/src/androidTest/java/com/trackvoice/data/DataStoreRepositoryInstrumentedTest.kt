@@ -16,6 +16,62 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class DataStoreRepositoryInstrumentedTest {
     @Test
+    fun legacyBluetoothProfilesMergeIntoOnePersistentLogicalDevice() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val repository = DataStoreRepository(context)
+        val suffix = System.nanoTime().toString()
+        val canonicalKey = "bluetooth:test-$suffix"
+        val a2dpKey = "8:AA:BB:CC:$suffix"
+        val scoKey = "7:AA:BB:CC:$suffix"
+        val allKeys = setOf(canonicalKey, a2dpKey, scoKey)
+
+        try {
+            repository.removeAudioDeviceSettings(allKeys)
+            repository.updateAudioDeviceSettings(
+                AudioDeviceSettings(
+                    deviceKey = a2dpKey,
+                    displayName = "Space One Pro",
+                    autoEnable = true,
+                    enabled = true,
+                ),
+            )
+            repository.updateAudioDeviceSettings(
+                AudioDeviceSettings(
+                    deviceKey = scoKey,
+                    displayName = "Space One Pro",
+                    autoEnable = false,
+                    enabled = false,
+                ),
+            )
+
+            repository.reconcileAudioDeviceSettings(
+                canonicalKey = canonicalKey,
+                displayName = "Space One Pro",
+                legacyKeys = setOf(a2dpKey, scoKey),
+            )
+
+            val recreated = DataStoreRepository(context).currentAudioDeviceSettings()
+            assertFalse(a2dpKey in recreated)
+            assertFalse(scoKey in recreated)
+            assertEquals(setOf(canonicalKey), recreated.keys.intersect(allKeys))
+            assertTrue(recreated.getValue(canonicalKey).autoEnable)
+            assertFalse(recreated.getValue(canonicalKey).enabled)
+
+            // A reconnect is idempotent and retains the merged choices.
+            repository.reconcileAudioDeviceSettings(
+                canonicalKey = canonicalKey,
+                displayName = "Space One Pro",
+                legacyKeys = setOf(a2dpKey, scoKey),
+            )
+            val reconnected = DataStoreRepository(context).currentAudioDeviceSettings().getValue(canonicalKey)
+            assertTrue(reconnected.autoEnable)
+            assertFalse(reconnected.enabled)
+        } finally {
+            repository.removeAudioDeviceSettings(allKeys)
+        }
+    }
+
+    @Test
     fun explicitAppLanguagePersistsWithoutChangingSpeechOrReadingPreferences() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val repository = DataStoreRepository(context)

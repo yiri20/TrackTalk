@@ -371,6 +371,24 @@ data class AudioDeviceSettings(
     val enabled: Boolean = true,
 )
 
+/**
+ * Merges settings formerly stored under profile-specific keys.
+ *
+ * The old schema did not persist explicit/default provenance. Its defaults
+ * were enabled=true and autoEnable=false, so the opposite values are the only
+ * choices known to be intentional and therefore win conflicts.
+ */
+internal fun mergeAudioDeviceSettings(
+    canonicalKey: String,
+    displayName: String,
+    candidates: List<AudioDeviceSettings>,
+): AudioDeviceSettings = AudioDeviceSettings(
+    deviceKey = canonicalKey,
+    displayName = displayName,
+    enabled = candidates.all(AudioDeviceSettings::enabled),
+    autoEnable = candidates.any(AudioDeviceSettings::autoEnable),
+)
+
 data class AppSettings(
     val packageName: String,
     val appName: String,

@@ -8,23 +8,6 @@ import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
 
-data class ConnectedAudioDevice(
-    val key: String,
-    val productName: String?,
-    val kind: AudioDeviceKind,
-)
-
-enum class AudioDeviceKind {
-    WIRED_HEADPHONES,
-    USB_AUDIO,
-    BLUETOOTH,
-    BLUETOOTH_LE,
-    HEARING_AID,
-    HDMI_AUDIO,
-    LINE_AUDIO,
-    OTHER,
-}
-
 @SuppressLint("InlinedApi")
 class AudioDeviceMonitor(context: Context, private val onChanged: (List<ConnectedAudioDevice>) -> Unit) {
     private val audioManager = context.applicationContext.getSystemService(AudioManager::class.java)
@@ -46,22 +29,29 @@ class AudioDeviceMonitor(context: Context, private val onChanged: (List<Connecte
 
     private fun publish() {
         val devices = runCatching {
-            audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+            val discovered = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
                 .filter { it.type in supportedTypes }
                 .map { device ->
                     val productName = device.productName?.toString()?.ifBlank { null }
                     val kind = deviceKind(device.type)
                     val address = device.address.orEmpty()
-                    // Keep the historical no-address key stable so a language
-                    // update cannot orphan an existing device automation rule.
+                    // This reproduces the old profile-specific key exactly so
+                    // persisted automation choices can be migrated safely.
                     val stableName = productName ?: legacyKeyLabel(kind)
-                    ConnectedAudioDevice(
-                        key = if (address.isNotBlank()) "${device.type}:$address" else "${device.type}:$stableName",
+                    DiscoveredAudioDevice(
+                        systemId = device.id,
+                        profile = deviceProfile(device.type),
                         productName = productName,
+                        stableAddress = address.ifBlank { null },
+                        legacyKey = if (address.isNotBlank()) {
+                            "${device.type}:$address"
+                        } else {
+                            "${device.type}:$stableName"
+                        },
                         kind = kind,
                     )
                 }
-                .distinctBy { it.key }
+            LogicalAudioDeviceNormalizer.normalize(discovered)
         }.getOrDefault(emptyList())
         runCatching { onChanged(devices) }
     }
@@ -77,7 +67,9 @@ class AudioDeviceMonitor(context: Context, private val onChanged: (List<Connecte
         AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
         AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
         -> AudioDeviceKind.BLUETOOTH
-        AudioDeviceInfo.TYPE_BLE_HEADSET -> AudioDeviceKind.BLUETOOTH_LE
+        AudioDeviceInfo.TYPE_BLE_HEADSET,
+        AudioDeviceInfo.TYPE_BLE_SPEAKER,
+        -> AudioDeviceKind.BLUETOOTH_LE
         AudioDeviceInfo.TYPE_HEARING_AID -> AudioDeviceKind.HEARING_AID
         AudioDeviceInfo.TYPE_HDMI,
         AudioDeviceInfo.TYPE_HDMI_ARC,
@@ -87,6 +79,25 @@ class AudioDeviceMonitor(context: Context, private val onChanged: (List<Connecte
         AudioDeviceInfo.TYPE_LINE_DIGITAL,
         -> AudioDeviceKind.LINE_AUDIO
         else -> AudioDeviceKind.OTHER
+    }
+
+    private fun deviceProfile(type: Int): AudioDeviceProfile = when (type) {
+        AudioDeviceInfo.TYPE_WIRED_HEADSET -> AudioDeviceProfile.WIRED_HEADSET
+        AudioDeviceInfo.TYPE_WIRED_HEADPHONES -> AudioDeviceProfile.WIRED_HEADPHONES
+        AudioDeviceInfo.TYPE_USB_HEADSET -> AudioDeviceProfile.USB_HEADSET
+        AudioDeviceInfo.TYPE_USB_DEVICE -> AudioDeviceProfile.USB_DEVICE
+        AudioDeviceInfo.TYPE_USB_ACCESSORY -> AudioDeviceProfile.USB_ACCESSORY
+        AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> AudioDeviceProfile.BLUETOOTH_A2DP
+        AudioDeviceInfo.TYPE_BLUETOOTH_SCO -> AudioDeviceProfile.BLUETOOTH_SCO
+        AudioDeviceInfo.TYPE_BLE_HEADSET -> AudioDeviceProfile.BLUETOOTH_LE_HEADSET
+        AudioDeviceInfo.TYPE_BLE_SPEAKER -> AudioDeviceProfile.BLUETOOTH_LE_SPEAKER
+        AudioDeviceInfo.TYPE_HEARING_AID -> AudioDeviceProfile.HEARING_AID
+        AudioDeviceInfo.TYPE_HDMI -> AudioDeviceProfile.HDMI
+        AudioDeviceInfo.TYPE_HDMI_ARC -> AudioDeviceProfile.HDMI_ARC
+        AudioDeviceInfo.TYPE_HDMI_EARC -> AudioDeviceProfile.HDMI_EARC
+        AudioDeviceInfo.TYPE_LINE_ANALOG -> AudioDeviceProfile.LINE_ANALOG
+        AudioDeviceInfo.TYPE_LINE_DIGITAL -> AudioDeviceProfile.LINE_DIGITAL
+        else -> AudioDeviceProfile.OTHER
     }
 
     /** Values used by releases that persisted a localized fallback in the device key. */
@@ -111,6 +122,7 @@ class AudioDeviceMonitor(context: Context, private val onChanged: (List<Connecte
             AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
             AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
             AudioDeviceInfo.TYPE_BLE_HEADSET,
+            AudioDeviceInfo.TYPE_BLE_SPEAKER,
             AudioDeviceInfo.TYPE_HEARING_AID,
             AudioDeviceInfo.TYPE_HDMI,
             AudioDeviceInfo.TYPE_HDMI_ARC,
